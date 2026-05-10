@@ -1,11 +1,6 @@
 // pm-ext-todos — Markdown TODO round-trip for pm-cli
-// Inline defineExtension to avoid SDK import at runtime.
 
-function defineExtension(ext: any) {
-  return Object.assign({ activate() {} }, ext, {
-    activate(api: any) { ext.activate?.(api); },
-  });
-}
+import { defineExtension } from "@unbrained/pm-cli/sdk";
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
