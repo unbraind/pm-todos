@@ -2,6 +2,14 @@
   "name": "pm-ext-todos",
   "version": "0.1.0",
   "description": "Markdown TODO round-trip extension for pm-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unbraind/pm-ext-todos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/unbraind/pm-ext-todos/issues"
+  },
+  "homepage": "https://github.com/unbraind/pm-ext-todos#readme",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
