@@ -1,8 +1,8 @@
 // pm-ext-todos — Markdown TODO round-trip for pm-cli
-import { defineExtension } from "@unbrained/pm-cli/sdk";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+const defineExtension = ((extension) => extension);
 // ---------------------------------------------------------------------------
 // Markdown TODO parser
 // ---------------------------------------------------------------------------
