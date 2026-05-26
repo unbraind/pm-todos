@@ -1,4 +1,4 @@
-// pm-ext-todos — Markdown TODO round-trip for pm-cli
+// pm-todos — Markdown TODO round-trip for pm-cli
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -67,7 +67,7 @@ function mapPmStatusToChecked(status: string): boolean {
 // ---------------------------------------------------------------------------
 
 export default defineExtension({
-  name: "pm-ext-todos",
+  name: "pm-todos",
   version: "0.1.0",
 
   activate(api: any) {

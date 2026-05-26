@@ -1,5 +1,5 @@
 {
-  "name": "pm-ext-todos",
+  "name": "pm-todos",
   "version": "0.1.0",
   "description": "Markdown TODO round-trip. Import markdown checkboxes as pm items and export pm items back to markdown TODO lists.",
   "author": "@unbraind",
@@ -9,5 +9,8 @@
     "commands",
     "schema",
     "importers"
-  ]
+  ],
+  "pm": {
+    "compatibility": "v2"
+  }
 }
