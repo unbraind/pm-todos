@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.1.0 - 2026-05-26
+## 2026.05.26 - 2026-05-26
+
+### Fixed
+
+- Fix .gitignore + release workflow conflict for dist/ ([pm-todos-rx7k](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-rx7k.toon))
+- ci: fix release workflow step ordering ([pm-todos-rh95](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-rh95.toon))
 
 ### Other
 
