@@ -12,6 +12,8 @@
 
 - Add bun-install verification to release workflow ([pm-todos-y5jp](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-y5jp.toon))
 
+## 2026.05.26 - 2026-05-26
+
 ### Fixed
 
 - Fix .gitignore + release workflow conflict for dist/ ([pm-todos-rx7k](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-rx7k.toon))
