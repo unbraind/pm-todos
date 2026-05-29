@@ -7,6 +7,18 @@ const defineExtension = ((extension) => extension);
 // Markdown TODO parser
 // ---------------------------------------------------------------------------
 const TODO_RE = /^(\s*)- \[([ xX])\] (.+)$/;
+/**
+ * Read a boolean option honoring both the kebab-case long flag and the
+ * camelCase key the runtime normalizes it to (e.g. `--dry-run` -> `dryRun`).
+ * Without this, `ctx.options["dry-run"]` is silently `undefined`.
+ */
+function readBoolOption(options, ...keys) {
+    for (const key of keys) {
+        if (options[key] !== undefined)
+            return Boolean(options[key]);
+    }
+    return false;
+}
 function parseMarkdownTodos(md) {
     const lines = md.split("\n");
     const todos = [];
@@ -58,10 +70,9 @@ export default defineExtension({
             async run(ctx) {
                 const filePath = ctx.args[0];
                 if (!filePath) {
-                    console.error("Usage: pm todos import <file> [--dry-run] [--type Task]");
-                    return { error: "No file path provided" };
+                    throw new Error("Usage: pm todos import <file> [--dry-run] [--type Task]");
                 }
-                const dryRun = Boolean(ctx.options["dry-run"]);
+                const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
                 const itemType = ctx.options["type"] || "Task";
                 const priority = ctx.options["priority"];
                 const tags = ctx.options["tags"];
@@ -73,8 +84,7 @@ export default defineExtension({
                 }
                 catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);
-                    console.error(`Failed to read file: ${msg}`);
-                    return { error: msg };
+                    throw new Error(`Failed to read file: ${msg}`);
                 }
                 const todos = parseMarkdownTodos(md);
                 if (todos.length === 0) {
@@ -150,8 +160,7 @@ export default defineExtension({
                 const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
                 if (result.status !== 0) {
                     const msg = result.stderr || "pm list-all failed";
-                    console.error(msg);
-                    return { error: msg };
+                    throw new Error(msg);
                 }
                 let items = JSON.parse(result.stdout).items ?? [];
                 if (statusFilter) {

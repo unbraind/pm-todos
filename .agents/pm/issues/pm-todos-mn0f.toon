@@ -1,0 +1,13 @@
+id: pm-todos-mn0f
+title: todos import --dry-run silently ignored (still writes)
+description: ""
+type: Issue
+status: closed
+priority: 1
+tags: []
+created_at: "2026-05-29T15:46:02.383Z"
+updated_at: "2026-05-29T15:46:14.300Z"
+author: codex
+parent: pm-todos-nhiu
+close_reason: Fixed via readBoolOption. Verified --dry-run writes nothing (before=0 after=0).
+body: "Bug class #1 (option-key normalization). Runtime normalizes --dry-run to dryRun; handler read ctx.options[\"dry-run\"] (always undefined).\nRepro: pm todos import TODO.md --dry-run\nObserved: actually imported 5 items (before=0 after=5), printed \"Imported 5\". Exit 0.\nExpected: write nothing, print [dry-run] previews.\nFix: added readBoolOption(options,\"dry-run\",\"dryRun\"). Verified before=0 after=0, prints [dry-run] previews."

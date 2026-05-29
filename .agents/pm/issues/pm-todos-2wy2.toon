@@ -1,0 +1,13 @@
+id: pm-todos-2wy2
+title: todos import/export return error object instead of throwing (exit 0 on failure)
+description: ""
+type: Issue
+status: closed
+priority: 1
+tags: []
+created_at: "2026-05-29T15:46:04.921Z"
+updated_at: "2026-05-29T15:46:16.212Z"
+author: codex
+parent: pm-todos-nhiu
+close_reason: throw in import (no-arg/read-fail) and export (list-all fail). Verified exit 1 for missing-file/no-arg; export-stdout exit 0.
+body: "Bug class #4 (wrong exit code). Failure paths returned { error } -> host exit 0.\nRepro (before fix):\n  pm todos import /tmp/nope.md ; echo $? -> 0\n  pm todos import ; echo $?              -> 0\nExpected: non-zero.\nFix: throw on no-arg and read failure in import handler; also throw on list-all failure in export handler. Verified missing-file/no-arg exit 1; export-to-stdout still exit 0. (File with zero checkboxes stays lenient: exit 0.)"

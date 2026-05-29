@@ -1,0 +1,12 @@
+id: pm-todos-nhiu
+title: Hands-on functional test pass 2026-05-29 (real data)
+description: ""
+type: Feature
+status: closed
+priority: 2
+tags: []
+created_at: "2026-05-29T15:45:50.305Z"
+updated_at: "2026-05-29T15:46:19.097Z"
+author: codex
+close_reason: "Both bugs fixed, rebuilt, re-tested green. pm-todos functional pass complete."
+body: "Functional test pass: markdown TODO import/export round-trip against a real workspace. Verifying checkbox states, nesting, exit codes, and that --dry-run takes effect. Hunting the 4 known bug classes."

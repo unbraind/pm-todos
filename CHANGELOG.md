@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Hands-on functional test pass 2026-05-29 \(real data\) ([pm-todos-nhiu](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-nhiu.toon))
+
+### Other
+
+- todos import/export return error object instead of throwing \(exit 0 on failure\) ([pm-todos-2wy2](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-2wy2.toon))
+- todos import --dry-run silently ignored \(still writes\) ([pm-todos-mn0f](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-mn0f.toon))
+
 ## 2026.05.28 - 2026-05-28
 
 ### Added

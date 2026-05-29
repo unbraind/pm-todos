@@ -36,6 +36,18 @@ interface PmItem {
 
 const TODO_RE = /^(\s*)- \[([ xX])\] (.+)$/;
 
+/**
+ * Read a boolean option honoring both the kebab-case long flag and the
+ * camelCase key the runtime normalizes it to (e.g. `--dry-run` -> `dryRun`).
+ * Without this, `ctx.options["dry-run"]` is silently `undefined`.
+ */
+function readBoolOption(options: Record<string, unknown>, ...keys: string[]): boolean {
+  for (const key of keys) {
+    if (options[key] !== undefined) return Boolean(options[key]);
+  }
+  return false;
+}
+
 function parseMarkdownTodos(md: string): TodoItem[] {
   const lines = md.split("\n");
   const todos: TodoItem[] = [];
@@ -94,11 +106,10 @@ export default defineExtension({
       async run(ctx: any) {
         const filePath = ctx.args[0] as string | undefined;
         if (!filePath) {
-          console.error("Usage: pm todos import <file> [--dry-run] [--type Task]");
-          return { error: "No file path provided" };
+          throw new Error("Usage: pm todos import <file> [--dry-run] [--type Task]");
         }
 
-        const dryRun = Boolean(ctx.options["dry-run"]);
+        const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
         const itemType = (ctx.options["type"] as string) || "Task";
         const priority = ctx.options["priority"] as string | undefined;
         const tags = ctx.options["tags"] as string | undefined;
@@ -111,8 +122,7 @@ export default defineExtension({
           md = readFileSync(absolutePath, "utf-8");
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.error(`Failed to read file: ${msg}`);
-          return { error: msg };
+          throw new Error(`Failed to read file: ${msg}`);
         }
 
         const todos = parseMarkdownTodos(md);
@@ -196,8 +206,7 @@ export default defineExtension({
         const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
         if (result.status !== 0) {
           const msg = result.stderr || "pm list-all failed";
-          console.error(msg);
-          return { error: msg };
+          throw new Error(msg);
         }
 
         let items: PmItem[] = JSON.parse(result.stdout).items ?? [];
