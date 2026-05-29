@@ -46,7 +46,7 @@ function mapPmStatusToChecked(status) {
 // ---------------------------------------------------------------------------
 export default defineExtension({
     name: "pm-todos",
-    version: "2026.5.28",
+    version: "2026.5.29",
     activate(api) {
         // -----------------------------------------------------------------------
         // Command: pm todos import <file>
