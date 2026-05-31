@@ -80,7 +80,7 @@ function mapPmStatusToChecked(status: string): boolean {
 
 export default defineExtension({
   name: "pm-todos",
-  version: "2026.5.30",
+  version: "2026.5.31",
 
   activate(api: any) {
     // -----------------------------------------------------------------------
