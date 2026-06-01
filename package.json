@@ -1,6 +1,6 @@
 {
   "name": "pm-todos",
-  "version": "2026.5.31",
+  "version": "2026.6.1",
   "description": "Markdown TODO round-trip extension for pm-cli",
   "repository": {
     "type": "git",
