@@ -4,6 +4,29 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 const defineExtension = ((extension) => extension);
 // ---------------------------------------------------------------------------
+// Error contract
+// ---------------------------------------------------------------------------
+// pm's extension command runtime only treats a thrown error as a cleanly
+// handled non-zero exit when the error carries a numeric `exitCode` property
+// (see @unbrained/pm-cli runCommandHandler). A plain `Error` makes the runtime
+// fall through to its "unhandled" path, which RE-INVOKES the command handler a
+// second time and exits with a generic code. We mirror the SDK's EXIT_CODE
+// contract here rather than importing it: standalone-installed extensions load
+// only their own `dist/`, so `@unbrained/pm-cli` is not resolvable at runtime.
+const EXIT_CODE = {
+    GENERIC_FAILURE: 1,
+    USAGE: 2,
+    NOT_FOUND: 3,
+};
+class CommandError extends Error {
+    exitCode;
+    constructor(message, exitCode = EXIT_CODE.GENERIC_FAILURE) {
+        super(message);
+        this.name = "CommandError";
+        this.exitCode = exitCode;
+    }
+}
+// ---------------------------------------------------------------------------
 // Markdown TODO parser
 // ---------------------------------------------------------------------------
 const TODO_RE = /^(\s*)- \[([ xX])\] (.+)$/;
@@ -70,7 +93,7 @@ export default defineExtension({
             async run(ctx) {
                 const filePath = ctx.args[0];
                 if (!filePath) {
-                    throw new Error("Usage: pm todos import <file> [--dry-run] [--type Task]");
+                    throw new CommandError("Usage: pm todos import <file> [--dry-run] [--type Task]", EXIT_CODE.USAGE);
                 }
                 const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
                 const itemType = ctx.options["type"] || "Task";
@@ -84,7 +107,8 @@ export default defineExtension({
                 }
                 catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);
-                    throw new Error(`Failed to read file: ${msg}`);
+                    const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
+                    throw new CommandError(`Failed to read file: ${msg}`, exitCode);
                 }
                 const todos = parseMarkdownTodos(md);
                 if (todos.length === 0) {
@@ -160,7 +184,7 @@ export default defineExtension({
                 const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
                 if (result.status !== 0) {
                     const msg = result.stderr || "pm list-all failed";
-                    throw new Error(msg);
+                    throw new CommandError(msg);
                 }
                 let items = JSON.parse(result.stdout).items ?? [];
                 if (statusFilter) {
