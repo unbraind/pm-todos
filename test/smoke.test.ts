@@ -11,19 +11,26 @@ test("extension has required shape", () => {
   assert.strictEqual(typeof extension.activate, "function", "activate should be a function");
 });
 
-test("extension registers at least one capability", () => {
+test("extension registers commands plus the native todos importer and exporter", () => {
   const registered: string[] = [];
+  const importers: string[] = [];
+  const exporters: string[] = [];
   const noop = () => {};
+  // Mirror the full ExtensionApi surface so activate() can register every
+  // capability the extension uses (commands, importer, exporter). A partial
+  // mock would throw TypeError when activate() calls a missing method.
   const api = {
     registerCommand: () => { registered.push("command"); },
-    registerHook: () => { registered.push("hook"); },
-    registerImporter: () => { registered.push("importer"); },
-    registerSchema: () => { registered.push("schema"); },
-    registerRenderer: () => { registered.push("renderer"); },
-    registerSearchProvider: () => { registered.push("search"); },
-    registerPreflight: () => { registered.push("preflight"); },
-    registerService: () => { registered.push("service"); },
+    registerParser: noop, registerPreflight: noop, registerService: noop,
+    registerFlags: noop, registerItemFields: noop, registerItemTypes: noop,
+    registerMigration: noop, registerRenderer: noop,
+    registerImporter: (name: string) => { registered.push("importer"); importers.push(name); },
+    registerExporter: (name: string) => { registered.push("exporter"); exporters.push(name); },
+    registerSearchProvider: noop, registerVectorStoreAdapter: noop,
+    hooks: { beforeCommand: noop, afterCommand: noop, onWrite: noop, onRead: noop, onIndex: noop },
   };
   extension.activate(api as any);
   assert.ok(registered.length > 0, `extension should register at least one capability, got: ${JSON.stringify(registered)}`);
+  assert.ok(importers.includes("todos"), `should register the native 'todos' importer, got: ${JSON.stringify(importers)}`);
+  assert.ok(exporters.includes("todos"), `should register the native 'todos' exporter, got: ${JSON.stringify(exporters)}`);
 });

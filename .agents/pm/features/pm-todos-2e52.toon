@@ -1,0 +1,14 @@
+id: pm-todos-2e52
+title: Enhance markdown TODO parser + native importer/exporter pipeline
+description: "Add registerImporter/registerExporter('todos') native pipeline; improve parser: nested sub-tasks, multi-file --glob, ## section->tags, (p1)/! priority; flags --section, --closed-as, --glob"
+type: Feature
+status: closed
+priority: 2
+tags: []
+created_at: "2026-06-02T05:18:39.807Z"
+updated_at: "2026-06-02T05:23:55.414Z"
+author: codex
+notes[1]{created_at,author,text}:
+  "2026-06-02T05:23:36.705Z",codex,"Added native registerImporter('todos') + registerExporter('todos') pipeline (reusing shared runTodoImport/buildTodoMarkdown cores). Importer serves the pm todos import route and reads positional <file> arg + --glob/--section/--closed-as/--no-section-tags/--type/--priority/--tags. Parser now handles -/*/+ bullets, nested sub-tasks (indent preserved), ## section headers slugged to tags, and (p0-4)/!/!!/!!! priority markers stripped from titles. Functional: throwaway pm init+install, doctor active 0 failures, imported 7-item nested+sectioned TODO, round-trip export back to markdown verified. build+tsc+test all green."
+close_reason: "Shipped: native todos importer/exporter pipeline + enhanced parser (nested sub-tasks, --glob multi-file, ## section->tags, (p1)/! priority) + --section/--closed-as/--glob/--no-section-tags flags. All verification passed (build, tsc --noEmit, test, functional round-trip)."
+body: ""
