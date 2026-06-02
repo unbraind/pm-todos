@@ -1,0 +1,13 @@
+id: pm-todos-hiry
+title: GitHub-flavored task-list export (--format tasklist)
+description: "Export - [ ]/- [x] task lists with --group-by status|sprint|type section headers."
+type: Task
+status: closed
+priority: 3
+tags: []
+created_at: "2026-06-02T21:58:51.608Z"
+updated_at: "2026-06-02T22:13:35.113Z"
+author: codex
+parent: pm-todos-vqr8
+close_reason: "Shipped GitHub task-list export via --format tasklist with --group-by status|sprint|type. renderTaskList emits - [ ]/- [x] under ## headings with <!-- id --> round-trip comments. Verified group-by sprint output."
+body: ""

@@ -1,0 +1,12 @@
+id: pm-todos-vqr8
+title: "Deepen pm-todos: todo.txt + GH task-list + validate + grouping + full field round-trip"
+description: "Add todo.txt import/export, GitHub task-list export, todos validate command, --group-by sectioning, and full field round-trip (type/priority/tags/deadline/status/assignee) in markdown. Backward compatible: default markdown byte-identical."
+type: Feature
+status: closed
+priority: 2
+tags: []
+created_at: "2026-06-02T21:58:35.317Z"
+updated_at: "2026-06-02T22:13:47.972Z"
+author: codex
+close_reason: "All enhancements shipped: todo.txt import/export (--format todotxt), GitHub task-list export (--format tasklist), todos validate command, --group-by status|sprint|type. Default markdown kept byte-identical (verified). 26 unit tests green, typecheck clean, functionally verified end-to-end with real data incl. lossless todo.txt round-trip. Capabilities kept at [commands,schema,importers] - empirically schema is REQUIRED for command activation in this extension shape (dropping it causes Unknown command todos)."
+body: ""

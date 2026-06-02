@@ -1,0 +1,13 @@
+id: pm-todos-1q04
+title: todo.txt format import + export (--format todotxt)
+description: "Parse/serialize todo.txt: x done marker, (A)-(Z) priority, +project/@context tags, due:YYYY-MM-DD. Map priority letters<->pm numeric, projects/contexts<->tags, due<->deadline, completion<->status."
+type: Task
+status: closed
+priority: 2
+tags: []
+created_at: "2026-06-02T21:58:51.375Z"
+updated_at: "2026-06-02T22:13:34.903Z"
+author: codex
+parent: pm-todos-vqr8
+close_reason: "Shipped todo.txt import+export via --format todotxt. parseTodoTxt/serializeTodoTxt handle x marker, (A-Z) priority, +project/@context->tags, due:->deadline, completion->status. Functionally verified: imported hand-written todo.txt, fields mapped correctly (prio/tags/due/status), lossless round-trip re-export."
+body: ""

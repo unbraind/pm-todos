@@ -1,0 +1,13 @@
+id: pm-todos-q1v5
+title: todos validate <file> command
+description: "Parse + report issues (unparseable lines, unknown priorities, bad dates) without importing; nonzero exit on structural problems; --json."
+type: Task
+status: closed
+priority: 3
+tags: []
+created_at: "2026-06-02T21:58:52.077Z"
+updated_at: "2026-06-02T22:13:35.338Z"
+author: codex
+parent: pm-todos-vqr8
+close_reason: "Shipped todos validate command. validateTodoFile reports errors (bad due date via real calendar check, out-of-range (pN) markers) and warnings (empty text, unparseable checkbox) without importing. Nonzero exit on structural errors (verified single-invocation, exit 1). --json returns full issues array on stdout for valid files; stderr summary always. 7 unit tests."
+body: ""

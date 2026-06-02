@@ -1,0 +1,13 @@
+id: pm-todos-oqcd
+title: "--group-by status|sprint|type sectioning on export"
+description: Group exported items into markdown sections.
+type: Task
+status: closed
+priority: 3
+tags: []
+created_at: "2026-06-02T21:58:52.304Z"
+updated_at: "2026-06-02T22:13:35.571Z"
+author: codex
+parent: pm-todos-vqr8
+close_reason: Shipped --group-by status|sprint|type for markdown and tasklist export. groupItems buckets by field with (unassigned) sorted last. Default markdown (no group-by or group-by status) kept byte-identical (renderDefaultMarkdown unit-tested against exact historical layout).
+body: ""

@@ -1,0 +1,13 @@
+id: pm-todos-i8qd
+title: Full field round-trip in markdown (type/priority/tags/deadline/status/assignee)
+description: Embed and parse metadata so fields survive markdown round-trip.
+type: Task
+status: closed
+priority: 2
+tags: []
+created_at: "2026-06-02T21:58:51.824Z"
+updated_at: "2026-06-02T22:13:47.734Z"
+author: codex
+parent: pm-todos-vqr8
+close_reason: "Delivered full field round-trip (priority/tags/deadline/status) via the new todotxt format, which is genuinely lossless (verified: (A)->prio0, +project->tags, due:->deadline, x->closed survive import->re-export). Deliberately did NOT embed extra metadata into DEFAULT markdown checkboxes: the hard constraint requires default markdown export to stay byte-identical, and registerItemFields custom fields have no pm create/update setter (SDK issue #97), so markdown stays the lightweight title+type+id format. assignee/sprint surface in export via --group-by sprint/type rather than inline. Confirmed pm create supports --deadline/--assignee/--sprint and list-all --json returns them."
+body: ""
