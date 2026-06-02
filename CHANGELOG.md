@@ -1,6 +1,12 @@
 # Changelog
 
-## 2026.6.1 - 2026-06-01
+## 2026.6.2 - 2026-06-02
+
+### Added
+
+- Enhance markdown TODO parser + native importer/exporter pipeline ([pm-todos-2e52](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-2e52.toon))
+
+## 2026.06.01 - 2026-06-01
 
 ### Fixed
 
