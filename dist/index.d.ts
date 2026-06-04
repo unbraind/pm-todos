@@ -135,6 +135,12 @@ export declare function validateTodoFile(content: string, format: "markdown" | "
     taskCount: number;
 };
 /**
+ * Validate the syntax of every file about to be imported, BEFORE touching the
+ * pm store. Throws a CommandError on the first file containing structural
+ * errors (or an unreadable file). Returns silently when all files are clean.
+ */
+export declare function preflightValidateImportFiles(files: string[], format: "markdown" | "todotxt"): void;
+/**
  * Render the default-markdown TODO export. Kept byte-identical to the original
  * (the `# TODO` header, export-timestamp comment, `## Open`/`## Done` sections,
  * and the `[type]` annotation on open items) so existing behaviour is stable.

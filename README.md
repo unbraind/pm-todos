@@ -39,6 +39,17 @@ npm run build
 
 Parse a markdown file for `- [ ]` and `- [x]` checkboxes and create pm items.
 
+> **Fail-fast syntax preflight.** Before any pm item is created, `import`
+> validates the **syntax of every input file** (the same checks as
+> `pm todos validate`). If any file contains a structural error — e.g. an
+> invalid `due:` date or an out-of-range priority marker — the import **aborts
+> immediately with a non-zero exit and creates no items**, naming the offending
+> file, line and problem. This prevents partial imports where malformed input
+> would otherwise be silently skipped (and, with `--glob`/multiple files, stops
+> a bad file from landing only *after* earlier files were already written).
+> Warnings (e.g. a line that resembles a checkbox but does not parse) are
+> non-fatal and reported but do not block the import.
+
 ```bash
 pm todos import TODO.md
 pm todos import notes.md --dry-run

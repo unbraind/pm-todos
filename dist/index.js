@@ -549,6 +549,56 @@ export function validateTodoFile(content, format) {
     return { issues, taskCount };
 }
 // ---------------------------------------------------------------------------
+// Import preflight (fail-fast syntax gate)
+//
+// `pm todos import` previously read and wrote each file in turn, so a malformed
+// line in (say) the second file would surface only AFTER the first file's items
+// were already written to the pm store — leaving a partial import behind. To
+// fail fast, every input file is validated UP FRONT, before any pm-store write,
+// reusing the same `validateTodoFile` grammar the `todos validate` command uses.
+//
+// On any structural error in any file this throws a CommandError naming the
+// problem (file + line + reason). On clean input it returns silently and the
+// import proceeds. Warnings (e.g. lines that resemble checkboxes but don't
+// parse) are NOT fatal — they keep the existing lenient import behaviour and are
+// echoed to stderr so they remain visible.
+// ---------------------------------------------------------------------------
+/**
+ * Validate the syntax of every file about to be imported, BEFORE touching the
+ * pm store. Throws a CommandError on the first file containing structural
+ * errors (or an unreadable file). Returns silently when all files are clean.
+ */
+export function preflightValidateImportFiles(files, format) {
+    for (const file of files) {
+        let content;
+        try {
+            content = readFileSync(file, "utf-8");
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
+            throw new CommandError(`Preflight: cannot read ${file}: ${msg}`, exitCode);
+        }
+        const { issues } = validateTodoFile(content, format);
+        const errors = issues.filter((i) => i.severity === "error");
+        const warnings = issues.filter((i) => i.severity === "warning");
+        // Surface warnings (non-fatal) so they stay visible even though we don't
+        // abort on them — matches the lenient pre-existing import behaviour.
+        for (const w of warnings) {
+            const where = w.line > 0 ? `line ${w.line}` : "file";
+            console.error(`  [warning] ${file}:${where}: ${w.message}` + (w.text ? `  >> ${w.text}` : ""));
+        }
+        if (errors.length > 0) {
+            const detail = errors
+                .map((e) => `  ${file}:${e.line > 0 ? `line ${e.line}` : "file"}: ${e.message}` + (e.text ? `  >> ${e.text}` : ""))
+                .join("\n");
+            throw new CommandError(`Preflight: ${errors.length} structural error(s) in ${file} — import aborted before any items were created.\n` +
+                `${detail}\n` +
+                `Fix the file (or run \`pm todos validate ${file}\`) and re-import.`, EXIT_CODE.GENERIC_FAILURE);
+        }
+    }
+}
+// ---------------------------------------------------------------------------
 // File discovery (glob)
 // ---------------------------------------------------------------------------
 /**
@@ -912,6 +962,9 @@ export default defineExtension({
                     files = [resolve(filePath)];
                 }
                 const extraTags = (tagsOpt ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+                // Fail-fast syntax gate: validate ALL input files before any pm-store
+                // write so malformed input aborts cleanly with no partial import.
+                preflightValidateImportFiles(files, format);
                 const { imported, skipped, previews } = runTodoImport({
                     files,
                     itemType,
@@ -1092,6 +1145,11 @@ export default defineExtension({
                 .split(",").map((t) => t.trim()).filter(Boolean);
             const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
             const format = readImportFormat(ctx.options);
+            // Fail-fast syntax gate: this importer is the real `pm todos import` path
+            // (the action contract shadows the like-named command). Validate every
+            // file before any pm-store write so malformed input aborts immediately
+            // with a clear error and leaves the store untouched.
+            preflightValidateImportFiles(files, format);
             const { imported, skipped, previews } = runTodoImport({
                 files,
                 itemType,
@@ -1155,6 +1213,9 @@ export default defineExtension({
                 return;
             }
             const closedAs = readStringOption(ctx.options, "closed-as", "closedAs") ?? "closed";
+            const legacyFormat = readImportFormat(ctx.options);
+            // Fail-fast syntax gate before any pm-store write.
+            preflightValidateImportFiles([resolve(filePath)], legacyFormat);
             const { imported, skipped } = runTodoImport({
                 files: [resolve(filePath)],
                 itemType: readStringOption(ctx.options, "type") ?? "Task",
@@ -1168,6 +1229,59 @@ export default defineExtension({
                 format: readImportFormat(ctx.options),
             });
             console.error(`todos-import: done — imported ${imported}, skipped ${skipped}.`);
+        });
+        // -----------------------------------------------------------------------
+        // Preflight: fail-fast syntax gate for `pm todos import`
+        //
+        // This registers the SDK preflight override (manifest capability
+        // "preflight"). It is scoped to the import path and runs the same up-front
+        // syntax validation as the handler-level gate, so malformed input is caught
+        // as early as possible in the pipeline.
+        //
+        // IMPORTANT (runtime fact): the pm runtime's `runPreflightOverride` wraps
+        // this callback in a try/catch and SWALLOWS a thrown error (it merely emits
+        // a `preflight_override_failed` warning and continues). So a throw here can
+        // NOT by itself abort the command. The authoritative fail-fast enforcement
+        // therefore lives inside the import handler/importer
+        // (`preflightValidateImportFiles`), which runs as the command action where a
+        // thrown CommandError DOES produce a clean non-zero exit before any
+        // pm-store write. This override is the documented, scoped preflight surface
+        // and a best-effort early check; it returns a pass-through decision so it
+        // never changes the runtime's gate behaviour.
+        // -----------------------------------------------------------------------
+        api.registerPreflight((ctx) => {
+            const d = ctx?.decision ?? {};
+            const passthrough = {
+                enforce_item_format_gate: d.enforce_item_format_gate ?? true,
+                run_preflight_item_format_sync: d.run_preflight_item_format_sync ?? false,
+                run_extension_migrations: d.run_extension_migrations ?? true,
+                enforce_mandatory_migration_gate: d.enforce_mandatory_migration_gate ?? false,
+            };
+            // Scope strictly to the import command; never touch export/validate.
+            if (ctx?.command !== "todos import")
+                return passthrough;
+            // Resolve the input file(s) exactly as the import handler does.
+            const glob = readStringOption(ctx.options ?? {}, "glob");
+            const fileArg = (ctx.args && ctx.args[0]);
+            const fileOpt = readStringOption(ctx.options ?? {}, "file");
+            let files = [];
+            if (glob) {
+                files = resolveGlob(glob, process.cwd());
+                if (files.length === 0 && ctx.pm_root) {
+                    files = resolveGlob(glob, resolve(ctx.pm_root, ".."));
+                }
+            }
+            else if (fileArg || fileOpt) {
+                files = [resolve((fileArg ?? fileOpt))];
+            }
+            if (files.length === 0)
+                return passthrough; // usage error surfaces in the handler
+            const format = readImportFormat(ctx.options ?? {});
+            // Best-effort early gate. The handler re-runs (and enforces) the same
+            // check, so even though a throw here is swallowed by the runtime, the
+            // import still fails fast with no partial write.
+            preflightValidateImportFiles(files, format);
+            return passthrough;
         });
     },
 });

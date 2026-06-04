@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import {
   priorityLetterToPm,
   pmPriorityToLetter,
@@ -11,6 +15,7 @@ import {
   renderTaskList,
   groupItems,
   validateTodoFile,
+  preflightValidateImportFiles,
   renderDefaultMarkdown,
   renderGroupedMarkdown,
   todoTxtItemToPm,
@@ -379,4 +384,61 @@ test("default markdown export is byte-identical to the frozen contract", () => {
     "",
   ].join("\n");
   assert.equal(out, expected);
+});
+
+// ---------------------------------------------------------------------------
+// Import preflight (fail-fast syntax gate)
+// ---------------------------------------------------------------------------
+
+test("preflightValidateImportFiles throws on a malformed todo.txt (structural error)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pmtodos-pf-"));
+  const file = join(dir, "bad.txt");
+  writeFileSync(file, "Task due:2026-13-99\n", "utf-8");
+  assert.throws(
+    () => preflightValidateImportFiles([file], "todotxt"),
+    (err: any) => {
+      assert.match(err.message, /Preflight: 1 structural error/);
+      assert.match(err.message, /Invalid due date/);
+      assert.equal(err.exitCode, 1);
+      return true;
+    },
+  );
+});
+
+test("preflightValidateImportFiles passes silently on a clean todo.txt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pmtodos-pf-"));
+  const file = join(dir, "good.txt");
+  writeFileSync(file, "(A) Real task +proj due:2026-07-01\nx Done\n", "utf-8");
+  assert.doesNotThrow(() => preflightValidateImportFiles([file], "todotxt"));
+});
+
+test("preflightValidateImportFiles throws NOT_FOUND on an unreadable file", () => {
+  assert.throws(
+    () => preflightValidateImportFiles(["/no/such/file-xyz.txt"], "markdown"),
+    (err: any) => {
+      assert.match(err.message, /Preflight: cannot read/);
+      assert.equal(err.exitCode, 3);
+      return true;
+    },
+  );
+});
+
+test("preflightValidateImportFiles does NOT throw on markdown warnings (lenient)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pmtodos-pf-"));
+  const file = join(dir, "warn.md");
+  // `- [y]` is a warning (resembles a checkbox, doesn't parse), not a fatal error.
+  writeFileSync(file, "- [y] busted marker\n- [ ] fine\n", "utf-8");
+  assert.doesNotThrow(() => preflightValidateImportFiles([file], "markdown"));
+});
+
+test("preflightValidateImportFiles aborts before later files when an earlier file is bad", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pmtodos-pf-"));
+  const bad = join(dir, "a-bad.md");
+  const good = join(dir, "b-good.md");
+  writeFileSync(bad, "- [ ] (p9) out of range priority\n", "utf-8");
+  writeFileSync(good, "- [ ] fine\n", "utf-8");
+  assert.throws(
+    () => preflightValidateImportFiles([bad, good], "markdown"),
+    /a-bad\.md/,
+  );
 });

@@ -1,6 +1,12 @@
 # Changelog
 
-## 2026.6.4 - 2026-06-04
+## Unreleased
+
+### Added
+
+- preflight: fail-fast todo.txt/markdown syntax gate before import ([pm-todos-86gr](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-86gr.toon))
+
+## 2026.06.04 - 2026-06-04
 
 ### Other
 
