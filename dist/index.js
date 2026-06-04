@@ -106,6 +106,49 @@ function readGroupBy(options) {
     throw new CommandError(`Unknown --group-by '${raw}' (expected status|sprint|type)`, EXIT_CODE.USAGE);
 }
 /**
+ * Read and validate the export `--sort` option (priority | deadline | title).
+ * Returns undefined when absent (preserves pm's native ordering).
+ */
+function readSort(options) {
+    const raw = readStringOption(options, "sort");
+    if (raw === undefined)
+        return undefined;
+    const v = raw.toLowerCase();
+    if (v === "priority" || v === "deadline" || v === "title")
+        return v;
+    throw new CommandError(`Unknown --sort '${raw}' (expected priority|deadline|title)`, EXIT_CODE.USAGE);
+}
+/**
+ * Return a new, stably-sorted copy of `items` by the requested key:
+ *   - priority: ascending (0 = highest first); missing priority sorts last
+ *   - deadline: ascending ISO date; missing deadline sorts last
+ *   - title:    case-insensitive alphabetical
+ * Pure (does not mutate the input). Undefined `sort` returns the input as-is.
+ */
+export function sortItems(items, sort) {
+    if (!sort)
+        return items;
+    const copy = [...items];
+    if (sort === "priority") {
+        copy.sort((a, b) => {
+            const pa = a.priority ?? Number.POSITIVE_INFINITY;
+            const pb = b.priority ?? Number.POSITIVE_INFINITY;
+            return pa - pb;
+        });
+    }
+    else if (sort === "deadline") {
+        copy.sort((a, b) => {
+            const da = a.deadline ?? "￿";
+            const db = b.deadline ?? "￿";
+            return da < db ? -1 : da > db ? 1 : 0;
+        });
+    }
+    else {
+        copy.sort((a, b) => (a.title ?? "").toLowerCase().localeCompare((b.title ?? "").toLowerCase()));
+    }
+    return copy;
+}
+/**
  * Strip priority markers from a TODO's text and return the inferred priority.
  *
  * Recognised markers (case-insensitive), anywhere in the text:
@@ -187,8 +230,8 @@ function filterBySection(todos, section) {
     const want = section.trim().toLowerCase();
     return todos.filter((t) => (t.section ?? "").toLowerCase() === want);
 }
-function mapStatusToPm(checked, closedAs) {
-    return checked ? closedAs : "open";
+function mapStatusToPm(checked, closedAs, openAs = "open") {
+    return checked ? closedAs : openAs;
 }
 function mapPmStatusToChecked(status) {
     return status === "closed" || status === "canceled";
@@ -326,9 +369,19 @@ export function serializeTodoTxtLine(item) {
     const done = mapPmStatusToChecked(item.status);
     if (done)
         parts.push("x");
+    // Completion date follows the `x` marker (todo.txt: `x <completion> …`).
+    // Only meaningful for done items.
+    if (done && item.completionDate && DATE_RE.test(item.completionDate)) {
+        parts.push(item.completionDate);
+    }
     const letter = pmPriorityToLetter(item.priority);
     if (letter && !done)
         parts.push(`(${letter})`);
+    // Creation date sits before the description (after priority on an open item,
+    // after the completion date on a done item) — the position the parser reads.
+    if (item.creationDate && DATE_RE.test(item.creationDate)) {
+        parts.push(item.creationDate);
+    }
     parts.push(item.title);
     for (const tag of item.tags ?? []) {
         parts.push(`+${tag}`);
@@ -338,7 +391,35 @@ export function serializeTodoTxtLine(item) {
         if (DATE_RE.test(date))
             parts.push(`due:${date}`);
     }
+    // Arbitrary key:value metadata preserved verbatim (sorted for stable output).
+    if (item.kv) {
+        for (const key of Object.keys(item.kv).sort()) {
+            const val = item.kv[key];
+            if (val !== undefined && val !== "")
+                parts.push(`${key}:${val}`);
+        }
+    }
     return parts.join(" ");
+}
+/**
+ * Convert a parsed todo.txt item into the PmItem shape used by the serializer.
+ * Preserves the structured fields (priority, projects/contexts as tags, due as
+ * deadline, creation/completion dates, and arbitrary key:value metadata) so a
+ * `parse → toPm → serialize` cycle is lossless on all captured fields. Used for
+ * round-trip fidelity (and testing); not a pm persistence path.
+ */
+export function todoTxtItemToPm(item, id = "") {
+    return {
+        id,
+        title: item.text,
+        status: item.done ? "closed" : "open",
+        priority: priorityLetterToPm(item.priorityLetter),
+        tags: [...item.projects, ...item.contexts],
+        deadline: item.due,
+        creationDate: item.creationDate,
+        completionDate: item.completionDate,
+        kv: Object.keys(item.kv).length > 0 ? { ...item.kv } : undefined,
+    };
 }
 /**
  * Serialize pm items to a todo.txt document (one line per item, trailing NL).
@@ -621,7 +702,7 @@ function runTodoImport(opts) {
                 : todo.priority !== undefined
                     ? String(todo.priority)
                     : undefined;
-            const status = mapStatusToPm(todo.checked, opts.closedAs);
+            const status = mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
             if (opts.dryRun) {
                 previews.push({
                     checked: todo.checked,
@@ -683,6 +764,8 @@ function fetchPmItems(opts) {
         items = items.filter((i) => i.status === opts.statusFilter);
     if (opts.typeFilter)
         items = items.filter((i) => i.type === opts.typeFilter);
+    if (opts.sort)
+        items = sortItems(items, opts.sort);
     return items;
 }
 /**
@@ -767,7 +850,7 @@ function buildTodoMarkdown(opts) {
 // ---------------------------------------------------------------------------
 export default defineExtension({
     name: "pm-todos",
-    version: "2026.6.3",
+    version: "2026.6.4",
     activate(api) {
         // -----------------------------------------------------------------------
         // Command: pm todos import <file>
@@ -786,6 +869,7 @@ export default defineExtension({
                 "pm todos import --glob 'docs/**/*.md'",
                 "pm todos import TODO.md --section Backlog",
                 "pm todos import TODO.md --closed-as canceled",
+                "pm todos import TODO.md --status in_progress",
                 "pm todos import todo.txt --format todotxt",
             ],
             flags: [
@@ -797,6 +881,7 @@ export default defineExtension({
                 { long: "--glob", value_name: "pattern", description: "Import every markdown file matching this glob (e.g. 'docs/**/*.md')" },
                 { long: "--section", value_name: "name", description: "Import only items under this ## section heading" },
                 { long: "--closed-as", value_name: "status", description: "Status to assign checked items (default: closed)" },
+                { long: "--status", value_name: "status", description: "Status to assign open (unchecked) items (default: open)" },
                 { long: "--no-section-tags", description: "Do not derive tags from section headings" },
             ],
             async run(ctx) {
@@ -808,6 +893,7 @@ export default defineExtension({
                 const glob = readStringOption(ctx.options, "glob");
                 const section = readStringOption(ctx.options, "section");
                 const closedAs = readStringOption(ctx.options, "closed-as", "closedAs") ?? "closed";
+                const openAs = readStringOption(ctx.options, "status");
                 // `--no-section-tags` arrives as sectionTags=false; default on.
                 const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
                 let files;
@@ -830,6 +916,7 @@ export default defineExtension({
                     files,
                     itemType,
                     closedAs,
+                    openAs,
                     priority,
                     extraTags,
                     section,
@@ -866,11 +953,14 @@ export default defineExtension({
                 "pm todos export --format todotxt --output todo.txt",
                 "pm todos export --format tasklist --group-by sprint",
                 "pm todos export --group-by type",
+                "pm todos export --sort priority",
+                "pm todos export --sort deadline --status open",
             ],
             flags: [
                 { long: "--output", value_name: "file", description: "Write output to file (default: stdout)" },
                 { long: "--format", value_name: "fmt", description: "Output format: markdown (default) | todotxt | tasklist" },
                 { long: "--group-by", value_name: "field", description: "Section markdown/tasklist by status (default) | sprint | type" },
+                { long: "--sort", value_name: "key", description: "Sort items by priority | deadline | title (preserves pm order if unset)" },
                 { long: "--status", value_name: "status", description: "Filter by status" },
                 { long: "--type", value_name: "type", description: "Filter by item type" },
             ],
@@ -878,6 +968,7 @@ export default defineExtension({
                 const outputPath = ctx.options["output"];
                 const format = readExportFormat(ctx.options);
                 const groupBy = readGroupBy(ctx.options);
+                const sort = readSort(ctx.options);
                 console.error("Fetching pm items…");
                 const { markdown, count } = buildTodoMarkdown({
                     statusFilter: ctx.options["status"],
@@ -885,6 +976,7 @@ export default defineExtension({
                     pmRoot: ctx.pm_root,
                     format,
                     groupBy,
+                    sort,
                 });
                 if (count === 0) {
                     console.error("No items found.");
@@ -993,6 +1085,7 @@ export default defineExtension({
             }
             const itemType = readStringOption(ctx.options, "type") ?? "Task";
             const closedAs = readStringOption(ctx.options, "closed-as", "closedAs") ?? "closed";
+            const openAs = readStringOption(ctx.options, "status");
             const priority = readStringOption(ctx.options, "priority");
             const section = readStringOption(ctx.options, "section");
             const extraTags = (readStringOption(ctx.options, "tags") ?? "")
@@ -1003,6 +1096,7 @@ export default defineExtension({
                 files,
                 itemType,
                 closedAs,
+                openAs,
                 priority,
                 extraTags,
                 section,
@@ -1036,6 +1130,7 @@ export default defineExtension({
                 pmRoot: ctx.pm_root,
                 format: readExportFormat(ctx.options),
                 groupBy: readGroupBy(ctx.options),
+                sort: readSort(ctx.options),
             });
             if (count === 0) {
                 console.error("todos: no items found.");

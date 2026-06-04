@@ -1,6 +1,6 @@
 {
   "name": "pm-todos",
-  "version": "2026.6.3",
+  "version": "2026.6.4",
   "description": "Markdown TODO round-trip. Import markdown checkboxes as pm items and export pm items back to markdown TODO lists.",
   "author": "@unbraind",
   "entry": "./dist/index.js",

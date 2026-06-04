@@ -13,6 +13,8 @@ import {
   validateTodoFile,
   renderDefaultMarkdown,
   renderGroupedMarkdown,
+  todoTxtItemToPm,
+  sortItems,
 } from "../dist/index.js";
 
 // ---------------------------------------------------------------------------
@@ -240,4 +242,141 @@ test("validateTodoFile warns when no tasks exist in markdown", () => {
 test("validateTodoFile warns on empty todo.txt task text", () => {
   const { issues } = validateTodoFile("+proj @ctx due:2026-07-01", "todotxt");
   assert.ok(issues.some((i) => /no description text/.test(i.message)));
+});
+
+// ---------------------------------------------------------------------------
+// todo.txt date round-trip (lossless on creation/completion dates)
+// ---------------------------------------------------------------------------
+
+test("serializeTodoTxtLine emits a creation date for an open item", () => {
+  const line = serializeTodoTxtLine({
+    id: "", title: "Write docs", status: "open", priority: 1,
+    tags: ["docs"], creationDate: "2026-01-01",
+  });
+  assert.equal(line, "(B) 2026-01-01 Write docs +docs");
+});
+
+test("serializeTodoTxtLine emits completion + creation dates for a done item", () => {
+  const line = serializeTodoTxtLine({
+    id: "", title: "Buy milk", status: "closed",
+    tags: ["groceries"], creationDate: "2026-01-01", completionDate: "2026-01-02",
+  });
+  assert.equal(line, "x 2026-01-02 2026-01-01 Buy milk +groceries");
+});
+
+test("todo.txt creation+completion dates survive a parse -> toPm -> serialize round-trip", () => {
+  // The canonical lossy case called out in the bug report: dates used to be
+  // PARSED but DROPPED on re-serialization. (projects/contexts both fold to
+  // pm tags by existing design, so this case uses only a +project.)
+  const original = "x 2026-01-02 2026-01-01 Buy milk +groceries due:2026-02-01";
+  const parsed = parseTodoTxtLine(original);
+  assert.ok(parsed);
+  assert.equal(parsed!.completionDate, "2026-01-02");
+  assert.equal(parsed!.creationDate, "2026-01-01");
+
+  const roundTripped = serializeTodoTxtLine(todoTxtItemToPm(parsed!));
+  assert.equal(roundTripped, original);
+});
+
+test("open-item creation date + priority round-trips losslessly", () => {
+  const original = "(A) 2026-03-15 Plan sprint +work due:2026-04-01";
+  const parsed = parseTodoTxtLine(original);
+  assert.ok(parsed);
+  const roundTripped = serializeTodoTxtLine(todoTxtItemToPm(parsed!));
+  assert.equal(roundTripped, original);
+});
+
+// ---------------------------------------------------------------------------
+// todo.txt key:value passthrough
+// ---------------------------------------------------------------------------
+
+test("arbitrary key:value pairs survive a round-trip", () => {
+  const original = "Ship release id:gh-123 rec:1w due:2026-08-01";
+  const parsed = parseTodoTxtLine(original);
+  assert.ok(parsed);
+  assert.equal(parsed!.kv["id"], "gh-123");
+  assert.equal(parsed!.kv["rec"], "1w");
+
+  const line = serializeTodoTxtLine(todoTxtItemToPm(parsed!));
+  // kv is emitted sorted; due comes from the deadline slot which precedes kv.
+  assert.equal(line, "Ship release due:2026-08-01 id:gh-123 rec:1w");
+  // And it re-parses identically (round-trip stable).
+  const reparsed = parseTodoTxtLine(line);
+  assert.equal(reparsed!.kv["id"], "gh-123");
+  assert.equal(reparsed!.kv["rec"], "1w");
+  assert.equal(reparsed!.due, "2026-08-01");
+});
+
+test("serializeTodoTxtLine omits date/kv fields when absent (back-compat)", () => {
+  // Items with no creation/completion/kv fields serialize exactly as before.
+  const open = serializeTodoTxtLine({ id: "pm-1", title: "Write docs", status: "open", priority: 1, tags: ["docs"], deadline: "2026-09-01T00:00:00.000Z" });
+  assert.equal(open, "(B) Write docs +docs due:2026-09-01");
+  const done = serializeTodoTxtLine({ id: "pm-2", title: "Done thing", status: "closed", priority: 0, tags: [] });
+  assert.equal(done, "x Done thing");
+});
+
+// ---------------------------------------------------------------------------
+// Export sort
+// ---------------------------------------------------------------------------
+
+const sortSample = [
+  { id: "pm-1", title: "Banana", status: "open", priority: 2, deadline: "2026-05-01" },
+  { id: "pm-2", title: "apple", status: "open", priority: 0, deadline: "2026-07-01" },
+  { id: "pm-3", title: "Cherry", status: "open", deadline: "2026-06-01" }, // no priority
+];
+
+test("sortItems by priority puts highest (0) first, missing last", () => {
+  const out = sortItems(sortSample, "priority");
+  assert.deepEqual(out.map((i) => i.id), ["pm-2", "pm-1", "pm-3"]);
+});
+
+test("sortItems by deadline orders ascending", () => {
+  const out = sortItems(sortSample, "deadline");
+  assert.deepEqual(out.map((i) => i.id), ["pm-1", "pm-3", "pm-2"]);
+});
+
+test("sortItems by title is case-insensitive alphabetical", () => {
+  const out = sortItems(sortSample, "title");
+  assert.deepEqual(out.map((i) => i.title), ["apple", "Banana", "Cherry"]);
+});
+
+test("sortItems with no key returns input unchanged (and does not mutate)", () => {
+  const input = [...sortSample];
+  const out = sortItems(input, undefined);
+  assert.equal(out, input);
+  // sorting returns a copy, original order preserved
+  const copy = sortItems(input, "title");
+  assert.notEqual(copy, input);
+  assert.deepEqual(input.map((i) => i.id), ["pm-1", "pm-2", "pm-3"]);
+});
+
+// ---------------------------------------------------------------------------
+// Default markdown export is byte-identical regardless of new fields
+// ---------------------------------------------------------------------------
+
+test("default markdown export is byte-identical to the frozen contract", () => {
+  // Same items the historical test uses, plus the new optional fields populated
+  // to prove they NEVER leak into the default markdown export.
+  const items = [
+    { id: "pm-a", title: "Open task", status: "open", type: "Task", sprint: "S1", creationDate: "2026-01-01", kv: { rec: "1w" } },
+    { id: "pm-b", title: "In progress", status: "in_progress", type: "Bug", sprint: "S2" },
+    { id: "pm-c", title: "Closed task", status: "closed", type: "Task", sprint: "S1", completionDate: "2026-01-02" },
+  ];
+  const out = renderDefaultMarkdown(items, "2026-06-02T00:00:00.000Z");
+  const expected = [
+    "# TODO",
+    "",
+    "<!-- Exported from pm-cli on 2026-06-02T00:00:00.000Z -->",
+    "",
+    "## Open",
+    "",
+    "- [ ] Open task [Task] <!-- pm-a -->",
+    "- [ ] In progress [Bug] <!-- pm-b -->",
+    "",
+    "## Done",
+    "",
+    "- [x] Closed task <!-- pm-c -->",
+    "",
+  ].join("\n");
+  assert.equal(out, expected);
 });

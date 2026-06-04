@@ -46,6 +46,7 @@ pm todos import backlog.md --type Task --priority 2
 pm todos import --glob 'docs/**/*.md'
 pm todos import TODO.md --section Backlog
 pm todos import TODO.md --closed-as canceled
+pm todos import TODO.md --status in_progress
 pm todos import todo.txt --format todotxt
 ```
 
@@ -61,6 +62,7 @@ pm todos import todo.txt --format todotxt
 | `--glob <pattern>` | string | Import every markdown file matching the glob (e.g. `docs/**/*.md`) instead of a single positional file |
 | `--section <name>` | string | Import only items found under this `##` section heading |
 | `--closed-as <status>` | string | Status assigned to checked (`- [x]`) items (default: `closed`) |
+| `--status <status>` | string | Status assigned to open (unchecked, `- [ ]`) items (default: `open`) |
 | `--no-section-tags` | boolean | Do not derive tags from section headings |
 
 **Parsing rules**
@@ -77,7 +79,8 @@ With `--format todotxt`, lines are parsed as [todo.txt](https://github.com/todot
 - `x` at the start marks completion → status `closed` (an optional completion date is recognised and skipped).
 - `(A)`…`(Z)` priority letter → pm numeric priority (`(A)`→`0`, …, `(E)`→`4`; letters past `E` clamp to `4`). An explicit `--priority` flag still wins.
 - `+project` and `@context` tokens → tags (pm folds tags to lowercase).
-- `due:YYYY-MM-DD` → the item deadline. Other `key:value` pairs are ignored on import.
+- `due:YYYY-MM-DD` → the item deadline. Other `key:value` pairs are ignored on pm import (pm has no field for them), but are **preserved through a todo.txt round-trip** at the format layer.
+- **Creation and completion dates** (`x <completion> <creation> …` for done items, `(A) <creation> …` for open items) are parsed and **re-emitted on todo.txt export**, so a todo.txt → todo.txt round-trip is lossless on dates and `key:value` metadata.
 
 ### `pm todos export`
 
@@ -91,6 +94,8 @@ pm todos export --type Task
 pm todos export --format todotxt --output todo.txt
 pm todos export --format tasklist --group-by sprint
 pm todos export --group-by type
+pm todos export --sort priority
+pm todos export --sort deadline --status open
 ```
 
 **Flags**
@@ -100,6 +105,7 @@ pm todos export --group-by type
 | `--output <file>` | string | Write to file instead of stdout |
 | `--format <fmt>` | string | Output format: `markdown` (default), `todotxt`, or `tasklist` (GitHub task list) |
 | `--group-by <field>` | string | Section markdown/tasklist output by `status` (default), `sprint`, or `type` |
+| `--sort <key>` | string | Sort items by `priority` (0 highest first), `deadline` (ascending), or `title` (alphabetical). Unset preserves pm's native order |
 | `--status <status>` | string | Filter by status |
 | `--type <type>` | string | Filter by item type |
 
@@ -156,10 +162,11 @@ export` routes above and can also be driven programmatically:
 }
 ```
 
-The `todos` exporter accepts `output`, `status`, `type`, `format` and `group-by`
-options and emits the same output produced by `pm todos export` (default markdown,
-or `todotxt` / `tasklist`). The `todos` importer additionally accepts `format`
-(`markdown` | `todotxt`).
+The `todos` exporter accepts `output`, `status`, `type`, `format`, `group-by` and
+`sort` options and emits the same output produced by `pm todos export` (default
+markdown, or `todotxt` / `tasklist`). The `todos` importer additionally accepts
+`format` (`markdown` | `todotxt`) and `status` (status for open items, complementing
+`closed-as`).
 
 ### Legacy importer: `todos-import`
 

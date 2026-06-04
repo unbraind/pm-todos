@@ -1,6 +1,12 @@
 # Changelog
 
-## 2026.6.3 - 2026-06-02
+## 2026.6.4 - 2026-06-04
+
+### Other
+
+- todo.txt date + key:value round-trip fidelity, --status import, export --sort ([pm-todos-qyv4](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-qyv4.toon))
+
+## 2026.06.03 - 2026-06-02
 
 ### Added
 

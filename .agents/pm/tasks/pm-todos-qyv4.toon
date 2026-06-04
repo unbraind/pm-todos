@@ -1,0 +1,12 @@
+id: pm-todos-qyv4
+title: "todo.txt date + key:value round-trip fidelity, --status import, export --sort"
+description: "Fix todo.txt serializer dropping parsed creation/completion dates and key:value tokens (now lossless round-trip). Add --status to set status for open items on import (complements --closed-as). Add --sort priority|deadline|title to export. All additive; default markdown export byte-identical."
+type: Task
+status: closed
+priority: 2
+tags: []
+created_at: "2026-06-04T05:11:50.210Z"
+updated_at: "2026-06-04T05:12:14.926Z"
+author: codex
+close_reason: "Shipped: date+kv round-trip fix, --status import, --sort export; tests green, byte-identical default markdown verified"
+body: ""

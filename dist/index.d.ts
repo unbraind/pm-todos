@@ -10,7 +10,30 @@ interface PmItem {
     sprint?: string;
     created_at?: string;
     updated_at?: string;
+    /**
+     * Optional todo.txt creation date (`YYYY-MM-DD`). When present, emitted on
+     * todo.txt export. Used to carry a parsed creation date through round-trips.
+     */
+    creationDate?: string;
+    /**
+     * Optional todo.txt completion date (`YYYY-MM-DD`). When present and the item
+     * is done, emitted right after the `x` marker on todo.txt export.
+     */
+    completionDate?: string;
+    /**
+     * Arbitrary todo.txt `key:value` metadata (e.g. `rec:1w`, `id:gh-123`)
+     * preserved verbatim so it survives a todo.txt round-trip.
+     */
+    kv?: Record<string, string>;
 }
+/**
+ * Return a new, stably-sorted copy of `items` by the requested key:
+ *   - priority: ascending (0 = highest first); missing priority sorts last
+ *   - deadline: ascending ISO date; missing deadline sorts last
+ *   - title:    case-insensitive alphabetical
+ * Pure (does not mutate the input). Undefined `sort` returns the input as-is.
+ */
+export declare function sortItems(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined): PmItem[];
 /**
  * A parsed todo.txt line. `raw` is the original line; the structured fields are
  * the de-facto todo.txt grammar:
@@ -64,6 +87,14 @@ export declare function parseTodoTxt(content: string): TodoTxtItem[];
  * derived from tags (todo.txt has no separate notion), `due:` from deadline.
  */
 export declare function serializeTodoTxtLine(item: PmItem): string;
+/**
+ * Convert a parsed todo.txt item into the PmItem shape used by the serializer.
+ * Preserves the structured fields (priority, projects/contexts as tags, due as
+ * deadline, creation/completion dates, and arbitrary key:value metadata) so a
+ * `parse → toPm → serialize` cycle is lossless on all captured fields. Used for
+ * round-trip fidelity (and testing); not a pm persistence path.
+ */
+export declare function todoTxtItemToPm(item: TodoTxtItem, id?: string): PmItem;
 /**
  * Serialize pm items to a todo.txt document (one line per item, trailing NL).
  */
