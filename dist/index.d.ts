@@ -1,3 +1,21 @@
+interface TodoItem {
+    checked: boolean;
+    text: string;
+    indent: number;
+    lineNumber: number;
+    /** Section header (`## …`) this item lives under, if any. Used as a tag. */
+    section?: string;
+    /** Priority inferred from `(p1)` / `!` markers (0 = highest). */
+    priority?: number;
+    /** Source file the item was parsed from (absolute path). */
+    file?: string;
+    /**
+     * pm id parsed out of a trailing `<!-- pm-id -->` provenance comment (the same
+     * comment the exporter emits). Lets `--upsert` re-import update the original
+     * item instead of creating a duplicate. Undefined when no comment is present.
+     */
+    pmId?: string;
+}
 interface PmItem {
     id: string;
     title: string;
@@ -34,6 +52,28 @@ interface PmItem {
  * Pure (does not mutate the input). Undefined `sort` returns the input as-is.
  */
 export declare function sortItems(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined): PmItem[];
+/**
+ * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
+ * cleaned text plus the captured id. When there is no comment, `id` is
+ * undefined and `text` is returned unchanged. Only the LAST trailing comment is
+ * consumed (the exporter always emits exactly one, at end of line).
+ */
+export declare function extractPmIdComment(text: string): {
+    text: string;
+    id?: string;
+};
+/**
+ * Parse a markdown string into TODO items.
+ *
+ * Supports:
+ *  - `-`/`*`/`+` bullets with `[ ]` / `[x]` checkboxes
+ *  - nested/indented sub-tasks (indentation captured on `.indent`)
+ *  - section headers (`## Foo`) attached to every following item as `.section`
+ *  - priority markers (`(p1)`, `!`/`!!`/`!!!`) parsed out of the text
+ *
+ * @param file  absolute source path recorded on each item (for provenance)
+ */
+export declare function parseMarkdownTodos(md: string, file?: string): TodoItem[];
 /**
  * A parsed todo.txt line. `raw` is the original line; the structured fields are
  * the de-facto todo.txt grammar:
@@ -140,6 +180,45 @@ export declare function validateTodoFile(content: string, format: "markdown" | "
  * errors (or an unreadable file). Returns silently when all files are clean.
  */
 export declare function preflightValidateImportFiles(files: string[], format: "markdown" | "todotxt"): void;
+/**
+ * An existing pm item the upsert path may target. `status` is carried so the
+ * update can omit `--status` when unchanged: re-sending a terminal status
+ * (closed/canceled) makes `pm update` demand `--force`.
+ */
+export interface ExistingTodoItem {
+    pmId: string;
+    status?: string;
+}
+/**
+ * Build a stable signature key for an incoming TODO from its title (and an
+ * optional section). Used as the fallback upsert key when a line carries no
+ * `<!-- pm-id -->` comment (e.g. a hand-written markdown file that was never
+ * exported by pm-todos).
+ *
+ * The title is lowercased and whitespace-collapsed; the optional section is
+ * slugged the same way it becomes a tag. The import path keys on the TITLE
+ * ALONE (passing no section) because a stored pm item has no reliable markdown
+ * section heading; the `section` parameter is retained for callers that do have
+ * a trustworthy section to disambiguate on. Returns undefined for an empty
+ * title (nothing stable to key on).
+ */
+export declare function todoSignatureKey(title: string, section?: string): string | undefined;
+/**
+ * Build the two lookup indexes an `--upsert` import needs from the current
+ * workspace items:
+ *   - byId:  pm id  → existing item (exact match on the embedded comment id)
+ *   - bySig: (title+section) signature → existing item (fallback match)
+ *
+ * For the signature index, first write wins so the oldest matching item is the
+ * stable upsert target (mirrors pm-beads' "oldest wins" rule). The id index is
+ * keyed on the item's own `id`, which is exactly what the exporter embeds.
+ */
+export declare function buildExistingTodoIndex(items: PmItem[]): {
+    byId: Map<string, ExistingTodoItem>;
+    bySig: Map<string, ExistingTodoItem>;
+};
+/** Pull the created item id out of `pm --json create` output (shape varies). */
+export declare function extractCreatedTodoId(stdout: string): string | undefined;
 /**
  * Render the default-markdown TODO export. Kept byte-identical to the original
  * (the `# TODO` header, export-timestamp comment, `## Open`/`## Done` sections,

@@ -174,6 +174,24 @@ function extractPriority(text) {
     }
     return { text: cleaned.replace(/\s+/g, " ").trim(), priority };
 }
+// A trailing `<!-- pm-id -->` provenance comment, exactly as the exporter
+// emits it (`- [ ] Title <!-- pm-abc123 -->`). We capture the id and strip the
+// comment from the visible title so a round-trip (export → edit → import) does
+// not fold the comment into the item title.
+const PM_ID_COMMENT_RE = /\s*<!--\s*([^\s<>][^<>]*?)\s*-->\s*$/;
+/**
+ * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
+ * cleaned text plus the captured id. When there is no comment, `id` is
+ * undefined and `text` is returned unchanged. Only the LAST trailing comment is
+ * consumed (the exporter always emits exactly one, at end of line).
+ */
+export function extractPmIdComment(text) {
+    const m = PM_ID_COMMENT_RE.exec(text);
+    if (!m)
+        return { text };
+    const id = m[1].trim();
+    return { text: text.slice(0, m.index).trim(), id: id || undefined };
+}
 /**
  * Normalise a section heading into a tag-safe slug (lowercase, dashes).
  */
@@ -194,7 +212,7 @@ function sectionToTag(section) {
  *
  * @param file  absolute source path recorded on each item (for provenance)
  */
-function parseMarkdownTodos(md, file) {
+export function parseMarkdownTodos(md, file) {
     const lines = md.split("\n");
     const todos = [];
     let currentSection;
@@ -208,7 +226,10 @@ function parseMarkdownTodos(md, file) {
         const match = TODO_RE.exec(line);
         if (match) {
             const raw = match[3].trim();
-            const { text, priority } = extractPriority(raw);
+            // Strip a trailing `<!-- pm-id -->` provenance comment first so it never
+            // becomes part of the title or interferes with priority-marker parsing.
+            const { text: withoutId, id: pmId } = extractPmIdComment(raw);
+            const { text, priority } = extractPriority(withoutId);
             todos.push({
                 indent: match[1].replace(/\t/g, "    ").length,
                 checked: match[2] !== " ",
@@ -217,6 +238,7 @@ function parseMarkdownTodos(md, file) {
                 section: currentSection,
                 lineNumber: i + 1,
                 file,
+                pmId,
             });
         }
     }
@@ -709,7 +731,81 @@ function parseFileToNormalized(md, file, format) {
         indent: t.indent,
         lineNumber: t.lineNumber,
         file: t.file,
+        pmId: t.pmId,
     }));
+}
+/**
+ * Build a stable signature key for an incoming TODO from its title (and an
+ * optional section). Used as the fallback upsert key when a line carries no
+ * `<!-- pm-id -->` comment (e.g. a hand-written markdown file that was never
+ * exported by pm-todos).
+ *
+ * The title is lowercased and whitespace-collapsed; the optional section is
+ * slugged the same way it becomes a tag. The import path keys on the TITLE
+ * ALONE (passing no section) because a stored pm item has no reliable markdown
+ * section heading; the `section` parameter is retained for callers that do have
+ * a trustworthy section to disambiguate on. Returns undefined for an empty
+ * title (nothing stable to key on).
+ */
+export function todoSignatureKey(title, section) {
+    const t = title.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!t)
+        return undefined;
+    const s = section ? sectionToTag(section) : "";
+    return `${s} ${t}`;
+}
+/**
+ * Build the two lookup indexes an `--upsert` import needs from the current
+ * workspace items:
+ *   - byId:  pm id  → existing item (exact match on the embedded comment id)
+ *   - bySig: (title+section) signature → existing item (fallback match)
+ *
+ * For the signature index, first write wins so the oldest matching item is the
+ * stable upsert target (mirrors pm-beads' "oldest wins" rule). The id index is
+ * keyed on the item's own `id`, which is exactly what the exporter embeds.
+ */
+export function buildExistingTodoIndex(items) {
+    const byId = new Map();
+    const bySig = new Map();
+    for (const item of items) {
+        if (!item.id)
+            continue;
+        const entry = { pmId: item.id, status: item.status };
+        byId.set(item.id, entry);
+        // The exported section heading is the pm status group (Open/Done) or a
+        // sprint/type value; a hand-edited file usually keeps the original heading.
+        // We index by title alone AND by every plausible section so the fallback
+        // tolerates a missing/renamed heading on the incoming side.
+        const sigNoSection = todoSignatureKey(item.title ?? "");
+        if (sigNoSection && !bySig.has(sigNoSection))
+            bySig.set(sigNoSection, entry);
+    }
+    return { byId, bySig };
+}
+/** Pull the created item id out of `pm --json create` output (shape varies). */
+export function extractCreatedTodoId(stdout) {
+    try {
+        const j = JSON.parse(stdout);
+        return j?.id || j?.item?.id || j?.result?.id;
+    }
+    catch {
+        return undefined;
+    }
+}
+/** Fetch current workspace items via `pm list-all --json` (for the upsert index). */
+function readPmItemsForUpsert(pmRoot) {
+    const result = spawnSync("pm", ["--path", pmRoot, "--json", "list-all", "--limit", "10000"], { encoding: "utf-8" });
+    if (result.status !== 0) {
+        throw new CommandError(result.stderr || "pm list-all failed (needed for --upsert)");
+    }
+    try {
+        const parsed = JSON.parse(result.stdout);
+        const items = Array.isArray(parsed) ? parsed : parsed.items ?? parsed.results ?? [];
+        return items;
+    }
+    catch {
+        throw new CommandError("Could not parse `pm list-all --json` output (needed for --upsert).");
+    }
 }
 /**
  * Read, parse and (unless dry-run) create pm items for every TODO found across
@@ -718,7 +814,29 @@ function parseFileToNormalized(md, file, format) {
 function runTodoImport(opts) {
     let imported = 0;
     let skipped = 0;
+    let updated = 0;
     const previews = [];
+    // With --upsert, build the lookup indexes once up front (also in dry-run so
+    // the preview reports create vs. update accurately). Without --upsert these
+    // stay empty and every item is created — the unchanged historical behaviour.
+    const index = opts.upsert
+        ? buildExistingTodoIndex(readPmItemsForUpsert(opts.pmRoot))
+        : { byId: new Map(), bySig: new Map() };
+    // Resolve an incoming TODO to an existing item: prefer the embedded pm-id
+    // comment (exact), then fall back to the title signature. A stored pm item
+    // carries no reliable markdown section heading (the section becomes a
+    // case-folded tag), so the fallback keys on the title alone — matching how
+    // `buildExistingTodoIndex` builds `bySig`.
+    const resolveExisting = (todo) => {
+        if (!opts.upsert)
+            return undefined;
+        if (todo.pmId && index.byId.has(todo.pmId))
+            return index.byId.get(todo.pmId);
+        const sig = todoSignatureKey(todo.text);
+        if (sig && index.bySig.has(sig))
+            return index.bySig.get(sig);
+        return undefined;
+    };
     for (const file of opts.files) {
         let md;
         try {
@@ -753,8 +871,12 @@ function runTodoImport(opts) {
                     ? String(todo.priority)
                     : undefined;
             const status = mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
+            const existing = resolveExisting(todo);
             if (opts.dryRun) {
+                const action = existing ? "update" : "create";
                 previews.push({
+                    action,
+                    existingId: existing?.pmId,
                     checked: todo.checked,
                     title: todo.text,
                     status,
@@ -766,42 +888,87 @@ function runTodoImport(opts) {
                     file: todo.file,
                     line: todo.lineNumber,
                 });
-                console.error(`  [dry-run] ${todo.checked ? "[x]" : "[ ]"} ${"  ".repeat(Math.floor(todo.indent / 2))}${todo.text}` +
+                console.error(`  [dry-run] ${action}${existing ? ` ${existing.pmId}` : ""} ${todo.checked ? "[x]" : "[ ]"} ${"  ".repeat(Math.floor(todo.indent / 2))}${todo.text}` +
                     (tags.length ? ` (tags: ${tags.join(",")})` : "") +
                     (priority !== undefined ? ` (p${priority})` : "") +
                     (todo.deadline ? ` (due: ${todo.deadline})` : ""));
-                imported++;
+                if (action === "update")
+                    updated++;
+                else
+                    imported++;
                 continue;
             }
             try {
-                const spawnArgs = [
-                    "--path", opts.pmRoot,
-                    "create",
-                    "--title", todo.text,
-                    "--type", opts.itemType,
-                    "--status", status,
-                    "--description", `Imported from ${todo.file ?? "stdin"} line ${todo.lineNumber}`,
-                ];
-                if (priority !== undefined && priority !== "")
-                    spawnArgs.push("--priority", priority);
-                if (tags.length > 0)
-                    spawnArgs.push("--tags", tags.join(","));
-                if (todo.deadline)
-                    spawnArgs.push("--deadline", todo.deadline);
-                const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
-                if (result.status !== 0) {
-                    throw new Error(result.stderr || "pm create failed");
+                if (existing) {
+                    // UPSERT: update the matched item in place rather than duplicating.
+                    const updArgs = [
+                        "--path", opts.pmRoot,
+                        "--json",
+                        "update", existing.pmId,
+                        "--title", todo.text,
+                        "--type", opts.itemType,
+                    ];
+                    // Only set status when it actually changes. Re-sending a terminal
+                    // status (closed/canceled) makes `pm update` require --force; omitting
+                    // it keeps re-import idempotent without forcing a spurious re-close.
+                    if (status !== existing.status)
+                        updArgs.push("--status", status);
+                    if (priority !== undefined && priority !== "")
+                        updArgs.push("--priority", priority);
+                    if (tags.length > 0)
+                        updArgs.push("--tags", tags.join(",")); // --tags replaces
+                    if (todo.deadline)
+                        updArgs.push("--deadline", todo.deadline);
+                    const result = spawnSync("pm", updArgs, { encoding: "utf-8" });
+                    if (result.status !== 0) {
+                        throw new Error(result.stderr || "pm update failed");
+                    }
+                    updated++;
                 }
-                imported++;
+                else {
+                    const spawnArgs = [
+                        "--path", opts.pmRoot,
+                        ...(opts.upsert ? ["--json"] : []),
+                        "create",
+                        "--title", todo.text,
+                        "--type", opts.itemType,
+                        "--status", status,
+                        "--description", `Imported from ${todo.file ?? "stdin"} line ${todo.lineNumber}`,
+                    ];
+                    if (priority !== undefined && priority !== "")
+                        spawnArgs.push("--priority", priority);
+                    if (tags.length > 0)
+                        spawnArgs.push("--tags", tags.join(","));
+                    if (todo.deadline)
+                        spawnArgs.push("--deadline", todo.deadline);
+                    const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
+                    if (result.status !== 0) {
+                        throw new Error(result.stderr || "pm create failed");
+                    }
+                    imported++;
+                    // Under --upsert, record the just-created item in both indexes so a
+                    // later line in the SAME run (or file) that repeats it upserts onto
+                    // this item instead of creating yet another duplicate.
+                    if (opts.upsert) {
+                        const createdId = extractCreatedTodoId(result.stdout);
+                        if (createdId) {
+                            const entry = { pmId: createdId, status };
+                            index.byId.set(createdId, entry);
+                            const sig = todoSignatureKey(todo.text);
+                            if (sig && !index.bySig.has(sig))
+                                index.bySig.set(sig, entry);
+                        }
+                    }
+                }
             }
             catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                console.error(`${todo.file}:${todo.lineNumber}: create failed — ${msg}`);
+                console.error(`${todo.file}:${todo.lineNumber}: ${existing ? "update" : "create"} failed — ${msg}`);
                 skipped++;
             }
         }
     }
-    return { imported, skipped, previews: opts.dryRun ? previews : undefined };
+    return { imported, skipped, updated, previews: opts.dryRun ? previews : undefined };
 }
 /** Fetch + filter pm items via `pm list-all --json`. */
 function fetchPmItems(opts) {
@@ -921,9 +1088,11 @@ export default defineExtension({
                 "pm todos import TODO.md --closed-as canceled",
                 "pm todos import TODO.md --status in_progress",
                 "pm todos import todo.txt --format todotxt",
+                "pm todos import TODO.md --upsert",
             ],
             flags: [
                 { long: "--dry-run", description: "Preview without writing" },
+                { long: "--upsert", description: "Update existing items (matched by embedded <!-- pm-id --> comment, else title+section) instead of creating duplicates" },
                 { long: "--format", value_name: "fmt", description: "Source format: markdown (default) | todotxt" },
                 { long: "--type", value_name: "type", description: "Item type for imported items (default: Task)" },
                 { long: "--priority", value_name: "n", description: "Priority for imported items (0-4); overrides inferred markers" },
@@ -936,6 +1105,7 @@ export default defineExtension({
             ],
             async run(ctx) {
                 const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
+                const upsert = readBoolOption(ctx.options, "upsert");
                 const format = readImportFormat(ctx.options);
                 const itemType = ctx.options["type"] || "Task";
                 const priority = ctx.options["priority"];
@@ -965,7 +1135,7 @@ export default defineExtension({
                 // Fail-fast syntax gate: validate ALL input files before any pm-store
                 // write so malformed input aborts cleanly with no partial import.
                 preflightValidateImportFiles(files, format);
-                const { imported, skipped, previews } = runTodoImport({
+                const { imported, skipped, updated, previews } = runTodoImport({
                     files,
                     itemType,
                     closedAs,
@@ -977,17 +1147,20 @@ export default defineExtension({
                     dryRun,
                     pmRoot: ctx.pm_root,
                     format,
+                    upsert,
                 });
-                if (imported === 0 && skipped === 0) {
+                if (imported === 0 && skipped === 0 && (updated ?? 0) === 0) {
                     console.error("No TODO items found.");
                     return { imported: 0, skipped: 0 };
                 }
                 if (dryRun) {
-                    console.error(`[dry-run] Would import ${imported} TODO item(s), skip ${skipped}.`);
-                    return { dryRun: true, wouldImport: imported, wouldSkip: skipped, previews };
+                    const updPart = upsert ? `, update ${updated ?? 0}` : "";
+                    console.error(`[dry-run] Would import ${imported}${updPart} TODO item(s), skip ${skipped}.`);
+                    return { dryRun: true, wouldImport: imported, wouldUpdate: updated ?? 0, wouldSkip: skipped, previews };
                 }
-                console.error(`Imported ${imported} TODO item(s), skipped ${skipped}.`);
-                return { imported, skipped };
+                const updPart = upsert ? `, updated ${updated ?? 0}` : "";
+                console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
+                return upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
             },
         });
         // -----------------------------------------------------------------------
@@ -1116,6 +1289,7 @@ export default defineExtension({
         // existing CLI usage would silently break.
         api.registerImporter("todos", async (ctx) => {
             const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
+            const upsert = readBoolOption(ctx.options, "upsert");
             const glob = readStringOption(ctx.options, "glob");
             const fileArg = (ctx.args && ctx.args[0]);
             const fileOpt = readStringOption(ctx.options, "file");
@@ -1150,7 +1324,7 @@ export default defineExtension({
             // file before any pm-store write so malformed input aborts immediately
             // with a clear error and leaves the store untouched.
             preflightValidateImportFiles(files, format);
-            const { imported, skipped, previews } = runTodoImport({
+            const { imported, skipped, updated, previews } = runTodoImport({
                 files,
                 itemType,
                 closedAs,
@@ -1162,17 +1336,20 @@ export default defineExtension({
                 dryRun,
                 pmRoot: ctx.pm_root,
                 format,
+                upsert,
             });
-            if (imported === 0 && skipped === 0) {
+            if (imported === 0 && skipped === 0 && (updated ?? 0) === 0) {
                 console.error("No TODO items found.");
                 return { imported: 0, skipped: 0 };
             }
             if (dryRun) {
-                console.error(`[dry-run] Would import ${imported} TODO item(s), skip ${skipped}.`);
-                return { dryRun: true, wouldImport: imported, wouldSkip: skipped, previews };
+                const updPart = upsert ? `, update ${updated ?? 0}` : "";
+                console.error(`[dry-run] Would import ${imported}${updPart} TODO item(s), skip ${skipped}.`);
+                return { dryRun: true, wouldImport: imported, wouldUpdate: updated ?? 0, wouldSkip: skipped, previews };
             }
-            console.error(`Imported ${imported} TODO item(s), skipped ${skipped}.`);
-            return { imported, skipped };
+            const updPart = upsert ? `, updated ${updated ?? 0}` : "";
+            console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
+            return upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
         });
         // -----------------------------------------------------------------------
         // Exporter: todos  (native `pm export todos` pipeline)

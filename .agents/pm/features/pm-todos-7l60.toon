@@ -1,0 +1,12 @@
+id: pm-todos-7l60
+title: Idempotent --upsert import (no duplicates on re-import)
+description: "Add an opt-in --upsert flag to 'pm todos import' that updates existing pm items instead of creating duplicates on re-import. Matches each incoming markdown checkbox to an existing item by (1) the embedded <!-- pm-id --> provenance comment the exporter emits, then (2) a stable title signature for hand-written files. Also parses the <!-- pm-id --> comment out of the title on every import so export->edit->import-with-upsert round-trips land edits on the same items. Default (no flag) behavior is unchanged: items are always created."
+type: Feature
+status: open
+priority: 2
+tags: []
+created_at: "2026-06-05T04:44:50.008Z"
+updated_at: "2026-06-05T04:44:50.008Z"
+author: codex
+acceptance_criteria: "Default import still duplicates on re-run; --upsert keeps the item count stable and updates in place; export->import --upsert preserves ids and creates no duplicates; status not re-sent when unchanged; non-recursive bounded spawning; unit tests + functional test pass; changelog:check exits 0."
+body: ""

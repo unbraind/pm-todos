@@ -20,6 +20,11 @@ import {
   renderGroupedMarkdown,
   todoTxtItemToPm,
   sortItems,
+  extractPmIdComment,
+  todoSignatureKey,
+  buildExistingTodoIndex,
+  extractCreatedTodoId,
+  parseMarkdownTodos,
 } from "../dist/index.js";
 
 // ---------------------------------------------------------------------------
@@ -441,4 +446,97 @@ test("preflightValidateImportFiles aborts before later files when an earlier fil
     () => preflightValidateImportFiles([bad, good], "markdown"),
     /a-bad\.md/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Round-trip id preservation: <!-- pm-id --> comment parsing
+// ---------------------------------------------------------------------------
+
+test("extractPmIdComment captures the id and strips the comment from the title", () => {
+  const r = extractPmIdComment("Open task <!-- pm-abc123 -->");
+  assert.equal(r.text, "Open task");
+  assert.equal(r.id, "pm-abc123");
+});
+
+test("extractPmIdComment leaves text without a comment untouched (default-path stability)", () => {
+  const r = extractPmIdComment("Just a plain task");
+  assert.equal(r.text, "Just a plain task");
+  assert.equal(r.id, undefined);
+});
+
+test("extractPmIdComment only consumes a TRAILING comment, not mid-line text", () => {
+  // A comment that is not at end-of-line is left in place (no id captured).
+  const r = extractPmIdComment("task <!-- not-trailing --> more words");
+  assert.equal(r.id, undefined);
+  assert.equal(r.text, "task <!-- not-trailing --> more words");
+});
+
+test("extractPmIdComment ignores an empty comment (no id, line left untouched)", () => {
+  // An empty `<!--  -->` is not a pm-id marker, so we capture no id and leave
+  // the text exactly as written rather than risk mangling a hand-edited line.
+  const r = extractPmIdComment("task <!--  -->");
+  assert.equal(r.id, undefined);
+  assert.equal(r.text, "task <!--  -->");
+});
+
+test("parseMarkdownTodos strips the pm-id comment and records pmId (round-trip)", () => {
+  // The shape the exporter emits: `- [ ] Title [Type] <!-- id -->`. Re-parsing
+  // must NOT fold the comment into the title (the latent round-trip bug) and
+  // must capture the id for --upsert keying.
+  const md = "## Open\n\n- [ ] Open task <!-- pm-a -->\n- [x] Done task <!-- pm-b -->\n";
+  const todos = parseMarkdownTodos(md);
+  assert.equal(todos.length, 2);
+  assert.equal(todos[0].text, "Open task");
+  assert.equal(todos[0].pmId, "pm-a");
+  assert.equal(todos[0].checked, false);
+  assert.equal(todos[1].text, "Done task");
+  assert.equal(todos[1].pmId, "pm-b");
+  assert.equal(todos[1].checked, true);
+});
+
+test("parseMarkdownTodos strips the pm-id comment AND a priority marker together", () => {
+  const todos = parseMarkdownTodos("- [ ] Ship it (p1) <!-- pm-z -->\n");
+  assert.equal(todos.length, 1);
+  assert.equal(todos[0].text, "Ship it");
+  assert.equal(todos[0].priority, 1);
+  assert.equal(todos[0].pmId, "pm-z");
+});
+
+test("parseMarkdownTodos leaves pmId undefined for a hand-written line", () => {
+  const todos = parseMarkdownTodos("- [ ] hand written task\n");
+  assert.equal(todos[0].text, "hand written task");
+  assert.equal(todos[0].pmId, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Upsert keying + index
+// ---------------------------------------------------------------------------
+
+test("todoSignatureKey is case/whitespace-insensitive and section-aware", () => {
+  assert.equal(todoSignatureKey("Buy   Milk"), todoSignatureKey("buy milk"));
+  // Section slug participates in the key.
+  assert.notEqual(todoSignatureKey("task", "Backlog"), todoSignatureKey("task", "Done"));
+  assert.equal(todoSignatureKey("task", "In Progress"), todoSignatureKey("task", "in-progress"));
+  assert.equal(todoSignatureKey("   "), undefined); // empty title → no key
+});
+
+test("buildExistingTodoIndex keys by id and by title signature (oldest wins on sig)", () => {
+  const items = [
+    { id: "pm-1", title: "Write docs", status: "open" },
+    { id: "pm-2", title: "Write docs", status: "closed" }, // dup title, later → ignored in bySig
+    { id: "pm-3", title: "Ship it", status: "open" },
+  ];
+  const { byId, bySig } = buildExistingTodoIndex(items);
+  assert.equal(byId.get("pm-1")!.pmId, "pm-1");
+  assert.equal(byId.get("pm-2")!.status, "closed");
+  // Signature lookup matches the FIRST (oldest) item with that title.
+  assert.equal(bySig.get(todoSignatureKey("write docs")!)!.pmId, "pm-1");
+  assert.equal(bySig.get(todoSignatureKey("ship it")!)!.pmId, "pm-3");
+});
+
+test("extractCreatedTodoId reads the id out of pm --json create output (several shapes)", () => {
+  assert.equal(extractCreatedTodoId('{"id":"pm-9"}'), "pm-9");
+  assert.equal(extractCreatedTodoId('{"item":{"id":"pm-10"}}'), "pm-10");
+  assert.equal(extractCreatedTodoId('{"result":{"id":"pm-11"}}'), "pm-11");
+  assert.equal(extractCreatedTodoId("not json"), undefined);
 });
