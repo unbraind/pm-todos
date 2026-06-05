@@ -21,6 +21,8 @@ import {
   todoTxtItemToPm,
   sortItems,
   extractPmIdComment,
+  extractTypeTag,
+  resolveUpsertTitleType,
   todoSignatureKey,
   buildExistingTodoIndex,
   extractCreatedTodoId,
@@ -509,6 +511,153 @@ test("parseMarkdownTodos leaves pmId undefined for a hand-written line", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Type-tag round-trip (export emits ` [Type]`; import must parse it back)
+// ---------------------------------------------------------------------------
+
+test("extractTypeTag captures a trailing [Type] tag and strips it from the title", () => {
+  const r = extractTypeTag("Build dashboard [Feature]");
+  assert.equal(r.text, "Build dashboard");
+  assert.equal(r.type, "Feature");
+});
+
+test("extractTypeTag leaves text without a trailing tag untouched", () => {
+  const r = extractTypeTag("Just a plain task");
+  assert.equal(r.text, "Just a plain task");
+  assert.equal(r.type, undefined);
+});
+
+test("extractTypeTag only consumes the LAST trailing bracket group", () => {
+  // A title that itself ends in "[staging]" keeps that bracket; only the
+  // appended Title-Case type tag is shed.
+  const r = extractTypeTag("Deploy [staging] [Task]");
+  assert.equal(r.text, "Deploy [staging]");
+  assert.equal(r.type, "Task");
+});
+
+test("extractTypeTag matches Title-Case pm types but NOT all-caps/lowercase technical tags", () => {
+  for (const t of ["Feature", "Issue", "Task", "Epic", "Chore", "Milestone", "Decision"]) {
+    assert.equal(extractTypeTag(`Title [${t}]`).type, t, `should strip [${t}]`);
+  }
+  // ALL-CAPS acronyms and lowercase tags are NOT types → left in the title.
+  for (const tag of ["WIP", "CI", "PR", "staging", "prod", "x"]) {
+    const r = extractTypeTag(`Title [${tag}]`);
+    assert.equal(r.type, undefined, `should NOT strip [${tag}]`);
+    assert.equal(r.text, `Title [${tag}]`);
+  }
+});
+
+test("parseMarkdownTodos round-trips the exporter shape: title clean + type recovered", () => {
+  // Exactly what renderDefaultMarkdown emits for an open item.
+  const md = "## Open\n\n- [ ] Build dashboard [Feature] <!-- pm-a -->\n";
+  const todos = parseMarkdownTodos(md);
+  assert.equal(todos.length, 1);
+  assert.equal(todos[0].text, "Build dashboard"); // tag NOT folded into the title
+  assert.equal(todos[0].itemType, "Feature"); // type recovered for --type
+  assert.equal(todos[0].pmId, "pm-a");
+});
+
+test("parseMarkdownTodos recovers type AND priority AND id together", () => {
+  // The exporter emits canonical types (the `bug` alias is normalized to
+  // `Issue`), so the round-trip tag is `[Issue]`, not `[Bug]`.
+  const todos = parseMarkdownTodos("- [ ] Ship it (p1) [Issue] <!-- pm-z -->\n");
+  assert.equal(todos[0].text, "Ship it");
+  assert.equal(todos[0].priority, 1);
+  assert.equal(todos[0].itemType, "Issue");
+  assert.equal(todos[0].pmId, "pm-z");
+});
+
+test("parseMarkdownTodos does NOT strip a [bracket] from a hand-written line (no pm-id)", () => {
+  // Without a provenance comment the trailing bracket is real title content and
+  // must be preserved — keeps the default (non-round-trip) path byte-stable.
+  const todos = parseMarkdownTodos("- [ ] Refactor [legacy] module\n- [ ] Title ends in [WIP]\n");
+  assert.equal(todos[0].text, "Refactor [legacy] module");
+  assert.equal(todos[0].itemType, undefined);
+  assert.equal(todos[1].text, "Title ends in [WIP]");
+  assert.equal(todos[1].itemType, undefined);
+});
+
+test("parseMarkdownTodos preserves a real trailing bracket in the title even WITH a pm-id (only type tag shed)", () => {
+  const todos = parseMarkdownTodos("- [ ] Deploy [staging] [Task] <!-- pm-q -->\n");
+  assert.equal(todos[0].text, "Deploy [staging]");
+  assert.equal(todos[0].itemType, "Task");
+  assert.equal(todos[0].pmId, "pm-q");
+});
+
+test("a free-form trailing <!-- comment --> is NOT treated as provenance (no bogus pmId, no type-tag stripping)", () => {
+  // Regression guard: a hand-written note must not set a bogus pmId, which would
+  // (a) let --upsert match a phantom id and (b) trip the type-tag gate and strip
+  // a legitimate trailing `[WIP]`. The non-id comment + tag stay in the title.
+  const todos = parseMarkdownTodos("- [ ] Polish UI [WIP] <!-- note -->\n- [ ] Review <!-- see figure 1 -->\n");
+  assert.equal(todos[0].pmId, undefined);
+  assert.equal(todos[0].itemType, undefined);
+  assert.equal(todos[0].text, "Polish UI [WIP] <!-- note -->");
+  assert.equal(todos[1].pmId, undefined);
+  assert.equal(todos[1].text, "Review <!-- see figure 1 -->");
+});
+
+test("parseMarkdownTodos: a CHECKED item whose title ends in a non-type bracket is NOT stripped", () => {
+  // gemini-code-assist (high): a closed/checked item whose title naturally ends
+  // in a capitalized bracket that is NOT a pm type (`Support [Safari]`,
+  // `Fix [Firefox]`) must keep that bracket. The exact-vocabulary regex
+  // guarantees this regardless of the checkbox state.
+  const todos = parseMarkdownTodos("## Done\n\n- [x] Support [Safari] <!-- pm-1 -->\n- [x] Fix [Firefox] <!-- pm-2 -->\n");
+  assert.equal(todos[0].checked, true);
+  assert.equal(todos[0].itemType, undefined);
+  assert.equal(todos[0].text, "Support [Safari]");
+  assert.equal(todos[1].itemType, undefined);
+  assert.equal(todos[1].text, "Fix [Firefox]");
+});
+
+test("parseMarkdownTodos: ticking off an exported open item still recognises its type tag (check-off workflow)", () => {
+  // gemini-code-assist (critical): the common round-trip is export → tick a box
+  // in the editor → re-import to close it. The line is still `Task [Feature]`
+  // with the open-export tag, just `[x]` now. `[Feature]` must be parsed as the
+  // type, not folded into the title.
+  const todos = parseMarkdownTodos("- [x] Implement login [Feature] <!-- pm-3 -->\n");
+  assert.equal(todos[0].checked, true);
+  assert.equal(todos[0].text, "Implement login");
+  assert.equal(todos[0].itemType, "Feature");
+  assert.equal(todos[0].pmId, "pm-3");
+});
+
+test("parseMarkdownTodos: an item titled with a [Bracket] keeps it; only the appended type tag is shed", () => {
+  // `Deploy to [Staging]` of type Task exports as `… [Staging] [Task] <!-- id -->`.
+  const todos = parseMarkdownTodos("- [ ] Deploy to [Staging] [Task] <!-- pm-4 -->\n");
+  assert.equal(todos[0].text, "Deploy to [Staging]");
+  assert.equal(todos[0].itemType, "Task");
+});
+
+test("extractTypeTag matches only the fixed pm type set, not arbitrary Title-Case words", () => {
+  assert.equal(extractTypeTag("x [Feature]").type, "Feature");
+  // Title-Case words that are NOT pm types are left in place.
+  for (const w of ["Safari", "Staging", "Firefox", "Chrome", "Done"]) {
+    const r = extractTypeTag(`x [${w}]`);
+    assert.equal(r.type, undefined, `should NOT strip [${w}]`);
+    assert.equal(r.text, `x [${w}]`);
+  }
+});
+
+test("parseMarkdownTodos: a hyphenated trailing comment + a technical [tag] does not corrupt the title", () => {
+  // gemini-code-assist edge: `<!-- todo-note -->` matches the hyphenated id
+  // grammar (so pmId is set), but `[WIP]` is not a Title-Case pm type, so the
+  // type-tag gate must NOT strip it. Title + tag stay intact; itemType stays
+  // unset (a phantom pmId that matches no real item is harmless to --upsert).
+  const todos = parseMarkdownTodos("- [ ] Polish UI [WIP] <!-- todo-note -->\n");
+  assert.equal(todos[0].pmId, "todo-note");
+  assert.equal(todos[0].itemType, undefined);
+  assert.equal(todos[0].text, "Polish UI [WIP]");
+});
+
+test("extractPmIdComment accepts multi-segment ids (custom prefixes) but rejects bare words", () => {
+  assert.equal(extractPmIdComment("x <!-- pm-todos-982k -->").id, "pm-todos-982k");
+  assert.equal(extractPmIdComment("x <!-- bug-3f2a -->").id, "bug-3f2a");
+  // A single bare word (no hyphen) is not an id grammar — left untouched.
+  const r = extractPmIdComment("x <!-- note -->");
+  assert.equal(r.id, undefined);
+  assert.equal(r.text, "x <!-- note -->");
+});
+
+// ---------------------------------------------------------------------------
 // Upsert keying + index
 // ---------------------------------------------------------------------------
 
@@ -518,6 +667,51 @@ test("todoSignatureKey is case/whitespace-insensitive and section-aware", () => 
   assert.notEqual(todoSignatureKey("task", "Backlog"), todoSignatureKey("task", "Done"));
   assert.equal(todoSignatureKey("task", "In Progress"), todoSignatureKey("task", "in-progress"));
   assert.equal(todoSignatureKey("   "), undefined); // empty title → no key
+});
+
+test("resolveUpsertTitleType: a real type tag is applied (stored title differs from the line)", () => {
+  // Open item `Implement login` (type Feature) exported+ticked → `Implement login [Feature]`.
+  const r = resolveUpsertTitleType("Implement login", "Feature", "Implement login");
+  assert.equal(r.title, "Implement login");
+  assert.equal(r.type, "Feature");
+});
+
+test("resolveUpsertTitleType: a title that merely ends in a type bracket is preserved (no retype)", () => {
+  // Closed `Complete [Task]` exported WITHOUT a tag → parsed text "Complete" + type "Task".
+  const r = resolveUpsertTitleType("Complete", "Task", "Complete [Task]");
+  assert.equal(r.title, "Complete [Task]");
+  assert.equal(r.type, undefined);
+});
+
+test("resolveUpsertTitleType: whitespace in the stored title is normalised for the match and restored verbatim", () => {
+  // CodeRabbit: the parser collapses runs of whitespace in the parsed text, so
+  // the comparison must normalise the stored title — but the raw title (with its
+  // original double space) is what gets restored.
+  const r = resolveUpsertTitleType("Complete", "Task", "Complete   [Task]");
+  assert.equal(r.title, "Complete   [Task]"); // raw spacing preserved
+  assert.equal(r.type, undefined);
+});
+
+test("resolveUpsertTitleType: no type, or no existing title, passes through unchanged", () => {
+  assert.deepEqual(resolveUpsertTitleType("Plain title", undefined, "Plain title"), {
+    title: "Plain title",
+    type: undefined,
+  });
+  assert.deepEqual(resolveUpsertTitleType("New thing", "Bug", undefined), {
+    title: "New thing",
+    type: "Bug",
+  });
+});
+
+test("buildExistingTodoIndex records the stored title (for type-tag disambiguation)", () => {
+  // gemini-code-assist (high): the upsert UPDATE path uses the matched item's
+  // stored title to tell a real round-trip type tag from a title that merely
+  // ends in a type-name bracket (e.g. a closed `Complete [Task]`). The index
+  // must therefore carry the title.
+  const { byId } = buildExistingTodoIndex([
+    { id: "pm-1", title: "Complete [Task]", status: "closed" },
+  ]);
+  assert.equal(byId.get("pm-1")!.title, "Complete [Task]");
 });
 
 test("buildExistingTodoIndex keys by id and by title signature (oldest wins on sig)", () => {

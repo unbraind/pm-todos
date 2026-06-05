@@ -55,6 +55,14 @@ interface TodoItem {
    * item instead of creating a duplicate. Undefined when no comment is present.
    */
   pmId?: string;
+  /**
+   * Item type parsed out of the trailing ` [Type]` annotation the exporter emits
+   * on open items (e.g. `- [ ] Title [Feature] <!-- pm-id -->`). Only captured
+   * on lines that also carry a `<!-- pm-id -->` provenance comment, so a
+   * round-trip restores the original type instead of resetting it to the import
+   * default. Undefined for hand-written lines or when no type tag is present.
+   */
+  itemType?: string;
 }
 
 interface PmItem {
@@ -231,23 +239,107 @@ function extractPriority(text: string): { text: string; priority?: number } {
   return { text: cleaned.replace(/\s+/g, " ").trim(), priority };
 }
 
-// A trailing `<!-- pm-id -->` provenance comment, exactly as the exporter
-// emits it (`- [ ] Title <!-- pm-abc123 -->`). We capture the id and strip the
-// comment from the visible title so a round-trip (export → edit → import) does
-// not fold the comment into the item title.
-const PM_ID_COMMENT_RE = /\s*<!--\s*([^\s<>][^<>]*?)\s*-->\s*$/;
+/**
+ * Strip a trailing `regex` match from `text` (the regex MUST anchor to `$` and
+ * capture the payload in group 1) and return the cleaned text plus the trimmed
+ * capture. When the regex does not match, `value` is undefined and `text` is
+ * returned unchanged. Shared by `extractPmIdComment` and `extractTypeTag`.
+ */
+function extractTrailing(text: string, regex: RegExp): { text: string; value?: string } {
+  const m = regex.exec(text);
+  if (!m) return { text };
+  const value = m[1]?.trim();
+  return { text: text.slice(0, m.index).trim(), value: value || undefined };
+}
+
+// A trailing `<!-- pm-id -->` provenance comment, exactly as the exporter emits
+// it (`- [ ] Title <!-- pm-abc123 -->`). The capture is constrained to pm-cli's
+// item-id grammar — one or more alphanumeric segments joined by hyphens
+// (`pm-uhkv`, `pm-todos-982k`, `bug-3f2a`): the configurable id prefix always
+// contributes at least one hyphen. This deliberately does NOT match a free-form
+// trailing comment such as `<!-- note -->` or `<!-- see figure 1 -->`, so a
+// hand-written line is never mistaken for provenance — which would otherwise
+// set a bogus `pmId` AND, via the type-tag gate below, strip a legitimate
+// trailing `[WIP]` from the title.
+const PM_ID_COMMENT_RE = /\s*<!--\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)\s*-->\s*$/;
 
 /**
  * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
- * cleaned text plus the captured id. When there is no comment, `id` is
- * undefined and `text` is returned unchanged. Only the LAST trailing comment is
- * consumed (the exporter always emits exactly one, at end of line).
+ * cleaned text plus the captured id. When there is no provenance comment, `id`
+ * is undefined and `text` is returned unchanged (a non-id trailing comment is
+ * left in the title verbatim). Only the LAST trailing comment is consumed (the
+ * exporter always emits exactly one, at end of line).
  */
 export function extractPmIdComment(text: string): { text: string; id?: string } {
-  const m = PM_ID_COMMENT_RE.exec(text);
-  if (!m) return { text };
-  const id = m[1].trim();
-  return { text: text.slice(0, m.index).trim(), id: id || undefined };
+  const { text: cleaned, value } = extractTrailing(text, PM_ID_COMMENT_RE);
+  return { text: cleaned, id: value };
+}
+
+// pm's built-in item types (`pm schema list`). The exporter normalizes aliases
+// before emitting (e.g. `bug` → `Issue`), and pm rejects unregistered types at
+// create time, so a trailing tag is only a real type tag when it is EXACTLY one
+// of these. Matching the closed set — rather than a generic Title-Case shape —
+// means a title that naturally ends in another capitalized bracket
+// (`Support [Safari]`, `Deploy to [Staging]`, `Fix [Firefox]`) is never
+// mistaken for a type tag and corrupted.
+const PM_ITEM_TYPES = [
+  "Chore", "Decision", "Epic", "Event", "Feature", "Issue",
+  "Meeting", "Milestone", "Plan", "Reminder", "Task",
+] as const;
+
+// The exporter appends each open item's type as a trailing ` [Type]` annotation
+// (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). Only
+// the LAST such group is consumed, so an item titled `Deploy to [Staging]` keeps
+// that bracket and sheds only the real type tag the exporter appended after it.
+const TYPE_TAG_RE = new RegExp(`\\s*\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
+
+/**
+ * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and
+ * return the cleaned text plus the captured type. The tag must be EXACTLY one
+ * of pm's built-in types (`PM_ITEM_TYPES`); otherwise `type` is undefined and
+ * `text` is returned unchanged.
+ *
+ * The caller only applies this to lines that carry a `<!-- pm-id -->` provenance
+ * comment, so hand-written titles ending in `[foo]` are never disturbed — this
+ * keeps the default (non-round-trip) parse path byte-stable. Matching the exact
+ * type set means a title ending in a non-type bracket (`Support [Safari]`) is
+ * left intact regardless of the item's open/closed checkbox state.
+ */
+export function extractTypeTag(text: string): { text: string; type?: string } {
+  const { text: cleaned, value } = extractTrailing(text, TYPE_TAG_RE);
+  return { text: cleaned, type: value };
+}
+
+/**
+ * Decide the title and type to apply when upserting onto an EXISTING item.
+ *
+ * `parsedText`/`parsedType` come from the imported line (the type tag, if any,
+ * already split off). The exporter omits the type tag on closed items, so a
+ * closed item titled `Complete [Task]` parses to text `Complete` + type `Task`
+ * — but its real title ends in `[Task]`. When re-attaching the parsed tag
+ * reproduces the matched item's stored title, the bracket was title content,
+ * not a round-trip type tag: restore the RAW stored title and drop the spurious
+ * type. A genuine open-export-then-ticked line (`Implement login [Feature]`,
+ * stored title `Implement login`) does not reproduce the stored title, so its
+ * type tag is preserved.
+ *
+ * Whitespace is normalised for the comparison only (the parser collapses runs
+ * of whitespace in `parsedText`), while the original `existingTitle` is restored
+ * verbatim so its exact spacing survives.
+ */
+export function resolveUpsertTitleType(
+  parsedText: string,
+  parsedType: string | undefined,
+  existingTitle: string | undefined,
+): { title: string; type?: string } {
+  if (
+    parsedType &&
+    existingTitle &&
+    existingTitle.replace(/\s+/g, " ").trim() === `${parsedText} [${parsedType}]`
+  ) {
+    return { title: existingTitle, type: undefined };
+  }
+  return { title: parsedText, type: parsedType };
 }
 
 /**
@@ -288,19 +380,34 @@ export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
     const match = TODO_RE.exec(line);
     if (match) {
       const raw = match[3].trim();
+      const checked = match[2] !== " ";
       // Strip a trailing `<!-- pm-id -->` provenance comment first so it never
       // becomes part of the title or interferes with priority-marker parsing.
       const { text: withoutId, id: pmId } = extractPmIdComment(raw);
-      const { text, priority } = extractPriority(withoutId);
+      // Then, on any line carrying provenance (a pm-id comment), strip the
+      // exporter's trailing ` [Type]` annotation and capture it so a round-trip
+      // restores the type instead of folding the tag into the title. We do NOT
+      // gate on the checkbox: a user who exports open items and then ticks one
+      // off (`- [ ] Task [Feature]` → `- [x] Task [Feature]`) before re-importing
+      // must still have `[Feature]` recognised as the type tag, not folded into
+      // the title. Recognition is by the exact built-in type vocabulary
+      // (`PM_ITEM_TYPES`), so a title ending in a non-type bracket
+      // (`Support [Safari]`) is never touched; hand-written lines (no pm-id)
+      // keep any trailing `[bracket]` verbatim.
+      const { text: withoutType, type: itemType } = pmId
+        ? extractTypeTag(withoutId)
+        : { text: withoutId, type: undefined };
+      const { text, priority } = extractPriority(withoutType);
       todos.push({
         indent: match[1].replace(/\t/g, "    ").length,
-        checked: match[2] !== " ",
+        checked,
         text,
         priority,
         section: currentSection,
         lineNumber: i + 1,
         file,
         pmId,
+        itemType,
       });
     }
   }
@@ -869,6 +976,8 @@ interface NormalizedTodo {
   file?: string;
   /** pm id parsed from a `<!-- pm-id -->` comment (markdown only); upsert key. */
   pmId?: string;
+  /** Item type recovered from the exporter's ` [Type]` tag (markdown round-trip). */
+  itemType?: string;
 }
 
 /**
@@ -910,6 +1019,7 @@ function parseFileToNormalized(
     lineNumber: t.lineNumber,
     file: t.file,
     pmId: t.pmId,
+    itemType: t.itemType,
   }));
 }
 
@@ -933,6 +1043,10 @@ interface TodoImportResult {
 export interface ExistingTodoItem {
   pmId: string;
   status?: string;
+  /** The matched item's stored title — used to disambiguate a trailing type
+   * bracket that is actually title content (`Complete [Task]`) from a real
+   * round-trip type tag. */
+  title?: string;
 }
 
 /**
@@ -973,7 +1087,7 @@ export function buildExistingTodoIndex(items: PmItem[]): {
   const bySig = new Map<string, ExistingTodoItem>();
   for (const item of items) {
     if (!item.id) continue;
-    const entry: ExistingTodoItem = { pmId: item.id, status: item.status };
+    const entry: ExistingTodoItem = { pmId: item.id, status: item.status, title: item.title };
     byId.set(item.id, entry);
     // The exported section heading is the pm status group (Open/Done) or a
     // sprint/type value; a hand-edited file usually keeps the original heading.
@@ -1081,6 +1195,11 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
 
       const status = mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
 
+      // Prefer the per-item type recovered from the round-trip ` [Type]` tag;
+      // fall back to the import-wide `--type` (default "Task") for lines that
+      // carry no provenance tag (hand-written todos).
+      const itemType = todo.itemType ?? opts.itemType;
+
       const existing = resolveExisting(todo);
 
       if (opts.dryRun) {
@@ -1113,13 +1232,27 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
       try {
         if (existing) {
           // UPSERT: update the matched item in place rather than duplicating.
+          // Disambiguate a trailing bracket that is actually TITLE CONTENT from
+          // a real round-trip type tag, using the matched item's stored title.
+          const { title: updTitle, type: updType } = resolveUpsertTitleType(
+            todo.text,
+            todo.itemType,
+            existing.title,
+          );
           const updArgs = [
             "--path", opts.pmRoot,
             "--json",
             "update", existing.pmId,
-            "--title", todo.text,
-            "--type", opts.itemType,
+            "--title", updTitle,
           ];
+          // Only set the type when the line carried a round-trip `[Type]` tag.
+          // A tagless line — a closed item (the exporter omits its tag), a
+          // grouped-export line, or a hand-written entry — must NOT retype a
+          // matched item: we deliberately do NOT apply the import-wide `--type`
+          // here, since an upsert should never silently bulk-retype existing
+          // items that simply lacked a per-item tag. The matched item keeps its
+          // current type untouched.
+          if (updType) updArgs.push("--type", updType);
           // Only set status when it actually changes. Re-sending a terminal
           // status (closed/canceled) makes `pm update` require --force; omitting
           // it keeps re-import idempotent without forcing a spurious re-close.
@@ -1139,7 +1272,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             ...(opts.upsert ? ["--json"] : []),
             "create",
             "--title", todo.text,
-            "--type", opts.itemType,
+            "--type", itemType,
             "--status", status,
             "--description", `Imported from ${todo.file ?? "stdin"} line ${todo.lineNumber}`,
           ];

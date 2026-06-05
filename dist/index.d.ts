@@ -15,6 +15,14 @@ interface TodoItem {
      * item instead of creating a duplicate. Undefined when no comment is present.
      */
     pmId?: string;
+    /**
+     * Item type parsed out of the trailing ` [Type]` annotation the exporter emits
+     * on open items (e.g. `- [ ] Title [Feature] <!-- pm-id -->`). Only captured
+     * on lines that also carry a `<!-- pm-id -->` provenance comment, so a
+     * round-trip restores the original type instead of resetting it to the import
+     * default. Undefined for hand-written lines or when no type tag is present.
+     */
+    itemType?: string;
 }
 interface PmItem {
     id: string;
@@ -54,13 +62,51 @@ interface PmItem {
 export declare function sortItems(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined): PmItem[];
 /**
  * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
- * cleaned text plus the captured id. When there is no comment, `id` is
- * undefined and `text` is returned unchanged. Only the LAST trailing comment is
- * consumed (the exporter always emits exactly one, at end of line).
+ * cleaned text plus the captured id. When there is no provenance comment, `id`
+ * is undefined and `text` is returned unchanged (a non-id trailing comment is
+ * left in the title verbatim). Only the LAST trailing comment is consumed (the
+ * exporter always emits exactly one, at end of line).
  */
 export declare function extractPmIdComment(text: string): {
     text: string;
     id?: string;
+};
+/**
+ * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and
+ * return the cleaned text plus the captured type. The tag must be EXACTLY one
+ * of pm's built-in types (`PM_ITEM_TYPES`); otherwise `type` is undefined and
+ * `text` is returned unchanged.
+ *
+ * The caller only applies this to lines that carry a `<!-- pm-id -->` provenance
+ * comment, so hand-written titles ending in `[foo]` are never disturbed — this
+ * keeps the default (non-round-trip) parse path byte-stable. Matching the exact
+ * type set means a title ending in a non-type bracket (`Support [Safari]`) is
+ * left intact regardless of the item's open/closed checkbox state.
+ */
+export declare function extractTypeTag(text: string): {
+    text: string;
+    type?: string;
+};
+/**
+ * Decide the title and type to apply when upserting onto an EXISTING item.
+ *
+ * `parsedText`/`parsedType` come from the imported line (the type tag, if any,
+ * already split off). The exporter omits the type tag on closed items, so a
+ * closed item titled `Complete [Task]` parses to text `Complete` + type `Task`
+ * — but its real title ends in `[Task]`. When re-attaching the parsed tag
+ * reproduces the matched item's stored title, the bracket was title content,
+ * not a round-trip type tag: restore the RAW stored title and drop the spurious
+ * type. A genuine open-export-then-ticked line (`Implement login [Feature]`,
+ * stored title `Implement login`) does not reproduce the stored title, so its
+ * type tag is preserved.
+ *
+ * Whitespace is normalised for the comparison only (the parser collapses runs
+ * of whitespace in `parsedText`), while the original `existingTitle` is restored
+ * verbatim so its exact spacing survives.
+ */
+export declare function resolveUpsertTitleType(parsedText: string, parsedType: string | undefined, existingTitle: string | undefined): {
+    title: string;
+    type?: string;
 };
 /**
  * Parse a markdown string into TODO items.
@@ -188,6 +234,10 @@ export declare function preflightValidateImportFiles(files: string[], format: "m
 export interface ExistingTodoItem {
     pmId: string;
     status?: string;
+    /** The matched item's stored title — used to disambiguate a trailing type
+     * bracket that is actually title content (`Complete [Task]`) from a real
+     * round-trip type tag. */
+    title?: string;
 }
 /**
  * Build a stable signature key for an incoming TODO from its title (and an
