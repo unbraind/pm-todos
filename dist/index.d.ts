@@ -213,6 +213,10 @@ export declare function preflightValidateImportFiles(files: string[], format: "m
 export interface ExistingTodoItem {
     pmId: string;
     status?: string;
+    /** The matched item's stored title — used to disambiguate a trailing type
+     * bracket that is actually title content (`Complete [Task]`) from a real
+     * round-trip type tag. */
+    title?: string;
 }
 /**
  * Build a stable signature key for an incoming TODO from its title (and an

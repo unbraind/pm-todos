@@ -1011,6 +1011,10 @@ interface TodoImportResult {
 export interface ExistingTodoItem {
   pmId: string;
   status?: string;
+  /** The matched item's stored title — used to disambiguate a trailing type
+   * bracket that is actually title content (`Complete [Task]`) from a real
+   * round-trip type tag. */
+  title?: string;
 }
 
 /**
@@ -1051,7 +1055,7 @@ export function buildExistingTodoIndex(items: PmItem[]): {
   const bySig = new Map<string, ExistingTodoItem>();
   for (const item of items) {
     if (!item.id) continue;
-    const entry: ExistingTodoItem = { pmId: item.id, status: item.status };
+    const entry: ExistingTodoItem = { pmId: item.id, status: item.status, title: item.title };
     byId.set(item.id, entry);
     // The exported section heading is the pm status group (Open/Done) or a
     // sprint/type value; a hand-edited file usually keeps the original heading.
@@ -1196,11 +1200,29 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
       try {
         if (existing) {
           // UPSERT: update the matched item in place rather than duplicating.
+          // Disambiguate a trailing bracket that is actually TITLE CONTENT from
+          // a real round-trip type tag, using the matched item's stored title.
+          // The exporter omits the tag on closed items, so a closed item titled
+          // `Complete [Task]` re-imports as text="Complete", itemType="Task".
+          // If re-attaching that tag reproduces the matched item's real title,
+          // the bracket was part of the title: restore the full title and drop
+          // the spurious type (which would otherwise corrupt the item).
+          let updTitle = todo.text;
+          let updType = todo.itemType;
+          if (
+            updType &&
+            existing.title &&
+            existing.title !== todo.text &&
+            `${todo.text} [${updType}]` === existing.title
+          ) {
+            updTitle = existing.title;
+            updType = undefined;
+          }
           const updArgs = [
             "--path", opts.pmRoot,
             "--json",
             "update", existing.pmId,
-            "--title", todo.text,
+            "--title", updTitle,
           ];
           // Only set the type when the line carried a round-trip `[Type]` tag.
           // A tagless line — a closed item (the exporter omits its tag), a
@@ -1209,7 +1231,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
           // here, since an upsert should never silently bulk-retype existing
           // items that simply lacked a per-item tag. The matched item keeps its
           // current type untouched.
-          if (todo.itemType) updArgs.push("--type", todo.itemType);
+          if (updType) updArgs.push("--type", updType);
           // Only set status when it actually changes. Re-sending a terminal
           // status (closed/canceled) makes `pm update` require --force; omitting
           // it keeps re-import idempotent without forcing a spurious re-close.

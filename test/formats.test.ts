@@ -668,6 +668,17 @@ test("todoSignatureKey is case/whitespace-insensitive and section-aware", () => 
   assert.equal(todoSignatureKey("   "), undefined); // empty title → no key
 });
 
+test("buildExistingTodoIndex records the stored title (for type-tag disambiguation)", () => {
+  // gemini-code-assist (high): the upsert UPDATE path uses the matched item's
+  // stored title to tell a real round-trip type tag from a title that merely
+  // ends in a type-name bracket (e.g. a closed `Complete [Task]`). The index
+  // must therefore carry the title.
+  const { byId } = buildExistingTodoIndex([
+    { id: "pm-1", title: "Complete [Task]", status: "closed" },
+  ]);
+  assert.equal(byId.get("pm-1")!.title, "Complete [Task]");
+});
+
 test("buildExistingTodoIndex keys by id and by title signature (oldest wins on sig)", () => {
   const items = [
     { id: "pm-1", title: "Write docs", status: "open" },
