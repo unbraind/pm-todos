@@ -287,11 +287,10 @@ const PM_ITEM_TYPES = [
   "Meeting", "Milestone", "Plan", "Reminder", "Task",
 ] as const;
 
-// The exporter appends each OPEN item's type as a trailing ` [Type]` annotation
-// (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`);
-// closed items are exported WITHOUT it. Only the LAST such group is consumed,
-// so an open item titled `Deploy to [Staging]` keeps that bracket and sheds
-// only the real type tag the exporter appended after it.
+// The exporter appends each open item's type as a trailing ` [Type]` annotation
+// (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). Only
+// the LAST such group is consumed, so an item titled `Deploy to [Staging]` keeps
+// that bracket and sheds only the real type tag the exporter appended after it.
 const TYPE_TAG_RE = new RegExp(`\\s*\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
 
 /**
@@ -300,10 +299,11 @@ const TYPE_TAG_RE = new RegExp(`\\s*\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
  * of pm's built-in types (`PM_ITEM_TYPES`); otherwise `type` is undefined and
  * `text` is returned unchanged.
  *
- * The caller only applies this to OPEN lines that also carry a `<!-- pm-id -->`
- * provenance comment (the only lines the exporter tags), so hand-written titles
- * and closed items ending in `[foo]` are never disturbed — this keeps the
- * default (non-round-trip) parse path byte-stable.
+ * The caller only applies this to lines that carry a `<!-- pm-id -->` provenance
+ * comment, so hand-written titles ending in `[foo]` are never disturbed — this
+ * keeps the default (non-round-trip) parse path byte-stable. Matching the exact
+ * type set means a title ending in a non-type bracket (`Support [Safari]`) is
+ * left intact regardless of the item's open/closed checkbox state.
  */
 export function extractTypeTag(text: string): { text: string; type?: string } {
   const { text: cleaned, value } = extractTrailing(text, TYPE_TAG_RE);
@@ -352,14 +352,17 @@ export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
       // Strip a trailing `<!-- pm-id -->` provenance comment first so it never
       // becomes part of the title or interferes with priority-marker parsing.
       const { text: withoutId, id: pmId } = extractPmIdComment(raw);
-      // Then strip the exporter's trailing ` [Type]` annotation and capture it
-      // so a round-trip restores the type instead of folding the tag into the
-      // title — but ONLY when the line both (a) carries provenance (a pm-id
-      // comment) and (b) is OPEN (`- [ ]`). The exporter appends the type tag to
-      // open items only, so a CLOSED item whose title naturally ends in a type
-      // name (`- [x] Track [Issue] <!-- pm-1 -->`) is left untouched. Hand-written
-      // lines (no pm-id) likewise keep any trailing `[bracket]` verbatim.
-      const { text: withoutType, type: itemType } = pmId && !checked
+      // Then, on any line carrying provenance (a pm-id comment), strip the
+      // exporter's trailing ` [Type]` annotation and capture it so a round-trip
+      // restores the type instead of folding the tag into the title. We do NOT
+      // gate on the checkbox: a user who exports open items and then ticks one
+      // off (`- [ ] Task [Feature]` → `- [x] Task [Feature]`) before re-importing
+      // must still have `[Feature]` recognised as the type tag, not folded into
+      // the title. Recognition is by the exact built-in type vocabulary
+      // (`PM_ITEM_TYPES`), so a title ending in a non-type bracket
+      // (`Support [Safari]`) is never touched; hand-written lines (no pm-id)
+      // keep any trailing `[bracket]` verbatim.
+      const { text: withoutType, type: itemType } = pmId
         ? extractTypeTag(withoutId)
         : { text: withoutId, type: undefined };
       const { text, priority } = extractPriority(withoutType);

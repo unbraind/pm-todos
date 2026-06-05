@@ -77,10 +77,11 @@ export declare function extractPmIdComment(text: string): {
  * of pm's built-in types (`PM_ITEM_TYPES`); otherwise `type` is undefined and
  * `text` is returned unchanged.
  *
- * The caller only applies this to OPEN lines that also carry a `<!-- pm-id -->`
- * provenance comment (the only lines the exporter tags), so hand-written titles
- * and closed items ending in `[foo]` are never disturbed — this keeps the
- * default (non-round-trip) parse path byte-stable.
+ * The caller only applies this to lines that carry a `<!-- pm-id -->` provenance
+ * comment, so hand-written titles ending in `[foo]` are never disturbed — this
+ * keeps the default (non-round-trip) parse path byte-stable. Matching the exact
+ * type set means a title ending in a non-type bracket (`Support [Safari]`) is
+ * left intact regardless of the item's open/closed checkbox state.
  */
 export declare function extractTypeTag(text: string): {
     text: string;

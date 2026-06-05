@@ -594,22 +594,34 @@ test("a free-form trailing <!-- comment --> is NOT treated as provenance (no bog
   assert.equal(todos[1].text, "Review <!-- see figure 1 -->");
 });
 
-test("parseMarkdownTodos: a CLOSED item whose title ends in a type-name bracket is NOT stripped", () => {
-  // gemini-code-assist (high): closed items are exported WITHOUT a type tag,
-  // so `- [x] Track [Issue] <!-- pm-1 -->` must keep `[Issue]` (it is title
-  // content, not a type tag). The open-only gate guarantees this even though
-  // `Issue` is a real type name.
-  const todos = parseMarkdownTodos("## Done\n\n- [x] Track [Issue] <!-- pm-1 -->\n- [x] Support [Safari] <!-- pm-2 -->\n");
+test("parseMarkdownTodos: a CHECKED item whose title ends in a non-type bracket is NOT stripped", () => {
+  // gemini-code-assist (high): a closed/checked item whose title naturally ends
+  // in a capitalized bracket that is NOT a pm type (`Support [Safari]`,
+  // `Fix [Firefox]`) must keep that bracket. The exact-vocabulary regex
+  // guarantees this regardless of the checkbox state.
+  const todos = parseMarkdownTodos("## Done\n\n- [x] Support [Safari] <!-- pm-1 -->\n- [x] Fix [Firefox] <!-- pm-2 -->\n");
   assert.equal(todos[0].checked, true);
   assert.equal(todos[0].itemType, undefined);
-  assert.equal(todos[0].text, "Track [Issue]");
+  assert.equal(todos[0].text, "Support [Safari]");
   assert.equal(todos[1].itemType, undefined);
-  assert.equal(todos[1].text, "Support [Safari]");
+  assert.equal(todos[1].text, "Fix [Firefox]");
 });
 
-test("parseMarkdownTodos: an OPEN item titled with a [Bracket] keeps it; only the appended type tag is shed", () => {
+test("parseMarkdownTodos: ticking off an exported open item still recognises its type tag (check-off workflow)", () => {
+  // gemini-code-assist (critical): the common round-trip is export → tick a box
+  // in the editor → re-import to close it. The line is still `Task [Feature]`
+  // with the open-export tag, just `[x]` now. `[Feature]` must be parsed as the
+  // type, not folded into the title.
+  const todos = parseMarkdownTodos("- [x] Implement login [Feature] <!-- pm-3 -->\n");
+  assert.equal(todos[0].checked, true);
+  assert.equal(todos[0].text, "Implement login");
+  assert.equal(todos[0].itemType, "Feature");
+  assert.equal(todos[0].pmId, "pm-3");
+});
+
+test("parseMarkdownTodos: an item titled with a [Bracket] keeps it; only the appended type tag is shed", () => {
   // `Deploy to [Staging]` of type Task exports as `… [Staging] [Task] <!-- id -->`.
-  const todos = parseMarkdownTodos("- [ ] Deploy to [Staging] [Task] <!-- pm-3 -->\n");
+  const todos = parseMarkdownTodos("- [ ] Deploy to [Staging] [Task] <!-- pm-4 -->\n");
   assert.equal(todos[0].text, "Deploy to [Staging]");
   assert.equal(todos[0].itemType, "Task");
 });
