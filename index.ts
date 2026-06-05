@@ -276,12 +276,17 @@ export function extractPmIdComment(text: string): { text: string; id?: string } 
 }
 
 // The exporter appends each open item's type as a trailing ` [Type]` annotation
-// (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). A
-// single trailing token in square brackets — letters/digits/`-`/`_`, no spaces —
-// matches the canonical pm type names (`Feature`, `Bug`, `Task`, `Issue`, …).
-// Only the LAST such group is consumed, so a title that itself ends in
-// "[staging]" keeps that bracket and only sheds the appended type tag.
-const TYPE_TAG_RE = /\s*\[([A-Za-z][\w-]*)\]\s*$/;
+// (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). pm's
+// item types are a fixed set of Title-Case words (Feature, Bug→Issue, Task,
+// Issue, Epic, Chore, Decision, Event, Meeting, Milestone, Plan, Reminder —
+// `pm schema list`), and pm rejects unregistered types at create time. We match
+// only that Title/Camel-Case shape — a leading capital and a lowercase final
+// char — so common ALL-CAPS or lowercase technical tags (`[WIP]`, `[CI]`, `[PR]`,
+// `[staging]`, `[prod]`) are NOT mistaken for a type and stripped, even on a
+// hand-written line whose trailing `<!-- … -->` happens to match the id grammar.
+// Only the LAST such group is consumed, so a title ending in a real `[Staging]`
+// would keep an earlier bracket and shed only the appended type tag.
+const TYPE_TAG_RE = /\s*\[([A-Z][A-Za-z]*[a-z])\]\s*$/;
 
 /**
  * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and

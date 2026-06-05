@@ -527,10 +527,22 @@ test("extractTypeTag leaves text without a trailing tag untouched", () => {
 
 test("extractTypeTag only consumes the LAST trailing bracket group", () => {
   // A title that itself ends in "[staging]" keeps that bracket; only the
-  // appended type tag is shed.
+  // appended Title-Case type tag is shed.
   const r = extractTypeTag("Deploy [staging] [Task]");
   assert.equal(r.text, "Deploy [staging]");
   assert.equal(r.type, "Task");
+});
+
+test("extractTypeTag matches Title-Case pm types but NOT all-caps/lowercase technical tags", () => {
+  for (const t of ["Feature", "Issue", "Task", "Epic", "Chore", "Milestone", "Decision"]) {
+    assert.equal(extractTypeTag(`Title [${t}]`).type, t, `should strip [${t}]`);
+  }
+  // ALL-CAPS acronyms and lowercase tags are NOT types → left in the title.
+  for (const tag of ["WIP", "CI", "PR", "staging", "prod", "x"]) {
+    const r = extractTypeTag(`Title [${tag}]`);
+    assert.equal(r.type, undefined, `should NOT strip [${tag}]`);
+    assert.equal(r.text, `Title [${tag}]`);
+  }
 });
 
 test("parseMarkdownTodos round-trips the exporter shape: title clean + type recovered", () => {
@@ -578,6 +590,17 @@ test("a free-form trailing <!-- comment --> is NOT treated as provenance (no bog
   assert.equal(todos[0].text, "Polish UI [WIP] <!-- note -->");
   assert.equal(todos[1].pmId, undefined);
   assert.equal(todos[1].text, "Review <!-- see figure 1 -->");
+});
+
+test("parseMarkdownTodos: a hyphenated trailing comment + a technical [tag] does not corrupt the title", () => {
+  // gemini-code-assist edge: `<!-- todo-note -->` matches the hyphenated id
+  // grammar (so pmId is set), but `[WIP]` is not a Title-Case pm type, so the
+  // type-tag gate must NOT strip it. Title + tag stay intact; itemType stays
+  // unset (a phantom pmId that matches no real item is harmless to --upsert).
+  const todos = parseMarkdownTodos("- [ ] Polish UI [WIP] <!-- todo-note -->\n");
+  assert.equal(todos[0].pmId, "todo-note");
+  assert.equal(todos[0].itemType, undefined);
+  assert.equal(todos[0].text, "Polish UI [WIP]");
 });
 
 test("extractPmIdComment accepts multi-segment ids (custom prefixes) but rejects bare words", () => {
