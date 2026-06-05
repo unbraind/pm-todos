@@ -88,6 +88,27 @@ export declare function extractTypeTag(text: string): {
     type?: string;
 };
 /**
+ * Decide the title and type to apply when upserting onto an EXISTING item.
+ *
+ * `parsedText`/`parsedType` come from the imported line (the type tag, if any,
+ * already split off). The exporter omits the type tag on closed items, so a
+ * closed item titled `Complete [Task]` parses to text `Complete` + type `Task`
+ * — but its real title ends in `[Task]`. When re-attaching the parsed tag
+ * reproduces the matched item's stored title, the bracket was title content,
+ * not a round-trip type tag: restore the RAW stored title and drop the spurious
+ * type. A genuine open-export-then-ticked line (`Implement login [Feature]`,
+ * stored title `Implement login`) does not reproduce the stored title, so its
+ * type tag is preserved.
+ *
+ * Whitespace is normalised for the comparison only (the parser collapses runs
+ * of whitespace in `parsedText`), while the original `existingTitle` is restored
+ * verbatim so its exact spacing survives.
+ */
+export declare function resolveUpsertTitleType(parsedText: string, parsedType: string | undefined, existingTitle: string | undefined): {
+    title: string;
+    type?: string;
+};
+/**
  * Parse a markdown string into TODO items.
  *
  * Supports:

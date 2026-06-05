@@ -22,6 +22,7 @@ import {
   sortItems,
   extractPmIdComment,
   extractTypeTag,
+  resolveUpsertTitleType,
   todoSignatureKey,
   buildExistingTodoIndex,
   extractCreatedTodoId,
@@ -666,6 +667,40 @@ test("todoSignatureKey is case/whitespace-insensitive and section-aware", () => 
   assert.notEqual(todoSignatureKey("task", "Backlog"), todoSignatureKey("task", "Done"));
   assert.equal(todoSignatureKey("task", "In Progress"), todoSignatureKey("task", "in-progress"));
   assert.equal(todoSignatureKey("   "), undefined); // empty title → no key
+});
+
+test("resolveUpsertTitleType: a real type tag is applied (stored title differs from the line)", () => {
+  // Open item `Implement login` (type Feature) exported+ticked → `Implement login [Feature]`.
+  const r = resolveUpsertTitleType("Implement login", "Feature", "Implement login");
+  assert.equal(r.title, "Implement login");
+  assert.equal(r.type, "Feature");
+});
+
+test("resolveUpsertTitleType: a title that merely ends in a type bracket is preserved (no retype)", () => {
+  // Closed `Complete [Task]` exported WITHOUT a tag → parsed text "Complete" + type "Task".
+  const r = resolveUpsertTitleType("Complete", "Task", "Complete [Task]");
+  assert.equal(r.title, "Complete [Task]");
+  assert.equal(r.type, undefined);
+});
+
+test("resolveUpsertTitleType: whitespace in the stored title is normalised for the match and restored verbatim", () => {
+  // CodeRabbit: the parser collapses runs of whitespace in the parsed text, so
+  // the comparison must normalise the stored title — but the raw title (with its
+  // original double space) is what gets restored.
+  const r = resolveUpsertTitleType("Complete", "Task", "Complete   [Task]");
+  assert.equal(r.title, "Complete   [Task]"); // raw spacing preserved
+  assert.equal(r.type, undefined);
+});
+
+test("resolveUpsertTitleType: no type, or no existing title, passes through unchanged", () => {
+  assert.deepEqual(resolveUpsertTitleType("Plain title", undefined, "Plain title"), {
+    title: "Plain title",
+    type: undefined,
+  });
+  assert.deepEqual(resolveUpsertTitleType("New thing", "Bug", undefined), {
+    title: "New thing",
+    type: "Bug",
+  });
 });
 
 test("buildExistingTodoIndex records the stored title (for type-tag disambiguation)", () => {

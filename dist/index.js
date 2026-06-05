@@ -241,6 +241,31 @@ export function extractTypeTag(text) {
     return { text: cleaned, type: value };
 }
 /**
+ * Decide the title and type to apply when upserting onto an EXISTING item.
+ *
+ * `parsedText`/`parsedType` come from the imported line (the type tag, if any,
+ * already split off). The exporter omits the type tag on closed items, so a
+ * closed item titled `Complete [Task]` parses to text `Complete` + type `Task`
+ * — but its real title ends in `[Task]`. When re-attaching the parsed tag
+ * reproduces the matched item's stored title, the bracket was title content,
+ * not a round-trip type tag: restore the RAW stored title and drop the spurious
+ * type. A genuine open-export-then-ticked line (`Implement login [Feature]`,
+ * stored title `Implement login`) does not reproduce the stored title, so its
+ * type tag is preserved.
+ *
+ * Whitespace is normalised for the comparison only (the parser collapses runs
+ * of whitespace in `parsedText`), while the original `existingTitle` is restored
+ * verbatim so its exact spacing survives.
+ */
+export function resolveUpsertTitleType(parsedText, parsedType, existingTitle) {
+    if (parsedType &&
+        existingTitle &&
+        existingTitle.replace(/\s+/g, " ").trim() === `${parsedText} [${parsedType}]`) {
+        return { title: existingTitle, type: undefined };
+    }
+    return { title: parsedText, type: parsedType };
+}
+/**
  * Normalise a section heading into a tag-safe slug (lowercase, dashes).
  */
 function sectionToTag(section) {
@@ -971,20 +996,7 @@ function runTodoImport(opts) {
                     // UPSERT: update the matched item in place rather than duplicating.
                     // Disambiguate a trailing bracket that is actually TITLE CONTENT from
                     // a real round-trip type tag, using the matched item's stored title.
-                    // The exporter omits the tag on closed items, so a closed item titled
-                    // `Complete [Task]` re-imports as text="Complete", itemType="Task".
-                    // If re-attaching that tag reproduces the matched item's real title,
-                    // the bracket was part of the title: restore the full title and drop
-                    // the spurious type (which would otherwise corrupt the item).
-                    let updTitle = todo.text;
-                    let updType = todo.itemType;
-                    if (updType &&
-                        existing.title &&
-                        existing.title !== todo.text &&
-                        `${todo.text} [${updType}]` === existing.title) {
-                        updTitle = existing.title;
-                        updType = undefined;
-                    }
+                    const { title: updTitle, type: updType } = resolveUpsertTitleType(todo.text, todo.itemType, existing.title);
                     const updArgs = [
                         "--path", opts.pmRoot,
                         "--json",
