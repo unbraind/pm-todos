@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Round-trip import corrupts title + drops type \(\[Type\] tag not parsed back\) ([pm-todos-982k](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-982k.toon))
+
 ## 2026.06.04-1 - 2026-06-04
 
 ### Added

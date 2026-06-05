@@ -2,11 +2,15 @@ id: pm-todos-982k
 title: "Round-trip import corrupts title + drops type ([Type] tag not parsed back)"
 description: "The exporter (renderDefaultMarkdown) appends each open item's type as a trailing ' [Type]' annotation, but the importer (parseMarkdownTodos) only strips the '<!-- pm-id -->' provenance comment — never the [Type] tag. With the new --upsert (2026.6.5), re-import now MATCHES by pm-id and UPDATES the existing item, so the round-trip: (1) folds '[Type]' into the title, and (2) resets type to the global default (Task). The corruption COMPOUNDS: each export->import --upsert appends another tag ('Crash on startup' -> '[Issue]' -> '[Issue] [Task]'). Confirmed against published pm-todos@2026.6.5."
 type: Issue
-status: in_progress
+status: closed
 priority: 1
 tags[4]: correctness,import,round-trip,upsert
 created_at: "2026-06-05T10:55:16.005Z"
-updated_at: "2026-06-05T10:55:20.124Z"
+updated_at: "2026-06-05T14:17:29.067Z"
 author: codex
 acceptance_criteria: "export -> import --upsert leaves title and type byte-identical; trailing [Type] tag parsed back into --type only when a pm-id provenance comment is present; hand-written lines ending in [foo] are untouched (default path stable); existing 52 tests still pass + new round-trip-fidelity tests added"
+resolution: "Type tag parsed back into the item type, gated on a real pm-id provenance comment + the exact PM_ITEM_TYPES vocabulary; upsert-update disambiguates title-content brackets via the matched item's stored title (whitespace-normalized); never bulk-retypes tagless lines. Hardened across 6 review rounds."
+expected_result: "export -> import --upsert leaves title, type, and status byte-identical for open, closed, and checked-off items; hand-written/technical brackets ([WIP], [Safari]) untouched"
+actual_result: "Verified end-to-end: lossless across N round-trips for all item states incl. titles ending in type-name brackets; 72 tests green; CI + CodeRabbit + gemini all clean"
+close_reason: "Fixed in PR #6 (merged ae05e50): round-trip the exporter's [Type] tag without corrupting titles"
 body: ""
