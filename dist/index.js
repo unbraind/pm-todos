@@ -208,26 +208,33 @@ export function extractPmIdComment(text) {
     const { text: cleaned, value } = extractTrailing(text, PM_ID_COMMENT_RE);
     return { text: cleaned, id: value };
 }
-// The exporter appends each open item's type as a trailing ` [Type]` annotation
-// (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). pm's
-// item types are a fixed set of Title-Case words (Feature, Bug→Issue, Task,
-// Issue, Epic, Chore, Decision, Event, Meeting, Milestone, Plan, Reminder —
-// `pm schema list`), and pm rejects unregistered types at create time. We match
-// only that Title/Camel-Case shape — a leading capital and a lowercase final
-// char — so common ALL-CAPS or lowercase technical tags (`[WIP]`, `[CI]`, `[PR]`,
-// `[staging]`, `[prod]`) are NOT mistaken for a type and stripped, even on a
-// hand-written line whose trailing `<!-- … -->` happens to match the id grammar.
-// Only the LAST such group is consumed, so a title ending in a real `[Staging]`
-// would keep an earlier bracket and shed only the appended type tag.
-const TYPE_TAG_RE = /\s*\[([A-Z][A-Za-z]*[a-z])\]\s*$/;
+// pm's built-in item types (`pm schema list`). The exporter normalizes aliases
+// before emitting (e.g. `bug` → `Issue`), and pm rejects unregistered types at
+// create time, so a trailing tag is only a real type tag when it is EXACTLY one
+// of these. Matching the closed set — rather than a generic Title-Case shape —
+// means a title that naturally ends in another capitalized bracket
+// (`Support [Safari]`, `Deploy to [Staging]`, `Fix [Firefox]`) is never
+// mistaken for a type tag and corrupted.
+const PM_ITEM_TYPES = [
+    "Chore", "Decision", "Epic", "Event", "Feature", "Issue",
+    "Meeting", "Milestone", "Plan", "Reminder", "Task",
+];
+// The exporter appends each OPEN item's type as a trailing ` [Type]` annotation
+// (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`);
+// closed items are exported WITHOUT it. Only the LAST such group is consumed,
+// so an open item titled `Deploy to [Staging]` keeps that bracket and sheds
+// only the real type tag the exporter appended after it.
+const TYPE_TAG_RE = new RegExp(`\\s*\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
 /**
  * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and
- * return the cleaned text plus the captured type. When there is no trailing
- * type tag, `type` is undefined and `text` is returned unchanged.
+ * return the cleaned text plus the captured type. The tag must be EXACTLY one
+ * of pm's built-in types (`PM_ITEM_TYPES`); otherwise `type` is undefined and
+ * `text` is returned unchanged.
  *
- * The caller only applies this on lines that also carry a `<!-- pm-id -->`
- * provenance comment, so hand-written titles ending in `[foo]` are never
- * disturbed — this keeps the default (non-round-trip) parse path byte-stable.
+ * The caller only applies this to OPEN lines that also carry a `<!-- pm-id -->`
+ * provenance comment (the only lines the exporter tags), so hand-written titles
+ * and closed items ending in `[foo]` are never disturbed — this keeps the
+ * default (non-round-trip) parse path byte-stable.
  */
 export function extractTypeTag(text) {
     const { text: cleaned, value } = extractTrailing(text, TYPE_TAG_RE);
@@ -267,20 +274,24 @@ export function parseMarkdownTodos(md, file) {
         const match = TODO_RE.exec(line);
         if (match) {
             const raw = match[3].trim();
+            const checked = match[2] !== " ";
             // Strip a trailing `<!-- pm-id -->` provenance comment first so it never
             // becomes part of the title or interferes with priority-marker parsing.
             const { text: withoutId, id: pmId } = extractPmIdComment(raw);
-            // Then, ONLY on lines that carry provenance (a pm-id comment), strip the
-            // exporter's trailing ` [Type]` annotation and capture it so a round-trip
-            // restores the original type instead of folding the tag into the title.
-            // Hand-written lines (no pm-id) keep any trailing `[bracket]` verbatim.
-            const { text: withoutType, type: itemType } = pmId
+            // Then strip the exporter's trailing ` [Type]` annotation and capture it
+            // so a round-trip restores the type instead of folding the tag into the
+            // title — but ONLY when the line both (a) carries provenance (a pm-id
+            // comment) and (b) is OPEN (`- [ ]`). The exporter appends the type tag to
+            // open items only, so a CLOSED item whose title naturally ends in a type
+            // name (`- [x] Track [Issue] <!-- pm-1 -->`) is left untouched. Hand-written
+            // lines (no pm-id) likewise keep any trailing `[bracket]` verbatim.
+            const { text: withoutType, type: itemType } = pmId && !checked
                 ? extractTypeTag(withoutId)
                 : { text: withoutId, type: undefined };
             const { text, priority } = extractPriority(withoutType);
             todos.push({
                 indent: match[1].replace(/\t/g, "    ").length,
-                checked: match[2] !== " ",
+                checked,
                 text,
                 priority,
                 section: currentSection,
@@ -960,8 +971,13 @@ function runTodoImport(opts) {
                         "--json",
                         "update", existing.pmId,
                         "--title", todo.text,
-                        "--type", itemType,
                     ];
+                    // Only set the type when the line actually carried a round-trip type
+                    // tag (`todo.itemType`). A closed item — or any line without a type
+                    // tag — must NOT reset the existing item's type to the import default,
+                    // so we omit --type and leave it untouched.
+                    if (todo.itemType)
+                        updArgs.push("--type", todo.itemType);
                     // Only set status when it actually changes. Re-sending a terminal
                     // status (closed/canceled) makes `pm update` require --force; omitting
                     // it keeps re-import idempotent without forcing a spurious re-close.

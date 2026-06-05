@@ -556,10 +556,12 @@ test("parseMarkdownTodos round-trips the exporter shape: title clean + type reco
 });
 
 test("parseMarkdownTodos recovers type AND priority AND id together", () => {
-  const todos = parseMarkdownTodos("- [ ] Ship it (p1) [Bug] <!-- pm-z -->\n");
+  // The exporter emits canonical types (the `bug` alias is normalized to
+  // `Issue`), so the round-trip tag is `[Issue]`, not `[Bug]`.
+  const todos = parseMarkdownTodos("- [ ] Ship it (p1) [Issue] <!-- pm-z -->\n");
   assert.equal(todos[0].text, "Ship it");
   assert.equal(todos[0].priority, 1);
-  assert.equal(todos[0].itemType, "Bug");
+  assert.equal(todos[0].itemType, "Issue");
   assert.equal(todos[0].pmId, "pm-z");
 });
 
@@ -590,6 +592,36 @@ test("a free-form trailing <!-- comment --> is NOT treated as provenance (no bog
   assert.equal(todos[0].text, "Polish UI [WIP] <!-- note -->");
   assert.equal(todos[1].pmId, undefined);
   assert.equal(todos[1].text, "Review <!-- see figure 1 -->");
+});
+
+test("parseMarkdownTodos: a CLOSED item whose title ends in a type-name bracket is NOT stripped", () => {
+  // gemini-code-assist (high): closed items are exported WITHOUT a type tag,
+  // so `- [x] Track [Issue] <!-- pm-1 -->` must keep `[Issue]` (it is title
+  // content, not a type tag). The open-only gate guarantees this even though
+  // `Issue` is a real type name.
+  const todos = parseMarkdownTodos("## Done\n\n- [x] Track [Issue] <!-- pm-1 -->\n- [x] Support [Safari] <!-- pm-2 -->\n");
+  assert.equal(todos[0].checked, true);
+  assert.equal(todos[0].itemType, undefined);
+  assert.equal(todos[0].text, "Track [Issue]");
+  assert.equal(todos[1].itemType, undefined);
+  assert.equal(todos[1].text, "Support [Safari]");
+});
+
+test("parseMarkdownTodos: an OPEN item titled with a [Bracket] keeps it; only the appended type tag is shed", () => {
+  // `Deploy to [Staging]` of type Task exports as `… [Staging] [Task] <!-- id -->`.
+  const todos = parseMarkdownTodos("- [ ] Deploy to [Staging] [Task] <!-- pm-3 -->\n");
+  assert.equal(todos[0].text, "Deploy to [Staging]");
+  assert.equal(todos[0].itemType, "Task");
+});
+
+test("extractTypeTag matches only the fixed pm type set, not arbitrary Title-Case words", () => {
+  assert.equal(extractTypeTag("x [Feature]").type, "Feature");
+  // Title-Case words that are NOT pm types are left in place.
+  for (const w of ["Safari", "Staging", "Firefox", "Chrome", "Done"]) {
+    const r = extractTypeTag(`x [${w}]`);
+    assert.equal(r.type, undefined, `should NOT strip [${w}]`);
+    assert.equal(r.text, `x [${w}]`);
+  }
 });
 
 test("parseMarkdownTodos: a hyphenated trailing comment + a technical [tag] does not corrupt the title", () => {

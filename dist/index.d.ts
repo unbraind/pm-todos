@@ -73,12 +73,14 @@ export declare function extractPmIdComment(text: string): {
 };
 /**
  * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and
- * return the cleaned text plus the captured type. When there is no trailing
- * type tag, `type` is undefined and `text` is returned unchanged.
+ * return the cleaned text plus the captured type. The tag must be EXACTLY one
+ * of pm's built-in types (`PM_ITEM_TYPES`); otherwise `type` is undefined and
+ * `text` is returned unchanged.
  *
- * The caller only applies this on lines that also carry a `<!-- pm-id -->`
- * provenance comment, so hand-written titles ending in `[foo]` are never
- * disturbed — this keeps the default (non-round-trip) parse path byte-stable.
+ * The caller only applies this to OPEN lines that also carry a `<!-- pm-id -->`
+ * provenance comment (the only lines the exporter tags), so hand-written titles
+ * and closed items ending in `[foo]` are never disturbed — this keeps the
+ * default (non-round-trip) parse path byte-stable.
  */
 export declare function extractTypeTag(text: string): {
     text: string;
