@@ -1202,10 +1202,13 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             "update", existing.pmId,
             "--title", todo.text,
           ];
-          // Only set the type when the line actually carried a round-trip type
-          // tag (`todo.itemType`). A closed item — or any line without a type
-          // tag — must NOT reset the existing item's type to the import default,
-          // so we omit --type and leave it untouched.
+          // Only set the type when the line carried a round-trip `[Type]` tag.
+          // A tagless line — a closed item (the exporter omits its tag), a
+          // grouped-export line, or a hand-written entry — must NOT retype a
+          // matched item: we deliberately do NOT apply the import-wide `--type`
+          // here, since an upsert should never silently bulk-retype existing
+          // items that simply lacked a per-item tag. The matched item keeps its
+          // current type untouched.
           if (todo.itemType) updArgs.push("--type", todo.itemType);
           // Only set status when it actually changes. Re-sending a terminal
           // status (closed/canceled) makes `pm update` require --force; omitting
