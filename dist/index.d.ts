@@ -15,6 +15,14 @@ interface TodoItem {
      * item instead of creating a duplicate. Undefined when no comment is present.
      */
     pmId?: string;
+    /**
+     * Item type parsed out of the trailing ` [Type]` annotation the exporter emits
+     * on open items (e.g. `- [ ] Title [Feature] <!-- pm-id -->`). Only captured
+     * on lines that also carry a `<!-- pm-id -->` provenance comment, so a
+     * round-trip restores the original type instead of resetting it to the import
+     * default. Undefined for hand-written lines or when no type tag is present.
+     */
+    itemType?: string;
 }
 interface PmItem {
     id: string;
@@ -61,6 +69,19 @@ export declare function sortItems(items: PmItem[], sort: "priority" | "deadline"
 export declare function extractPmIdComment(text: string): {
     text: string;
     id?: string;
+};
+/**
+ * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and
+ * return the cleaned text plus the captured type. When there is no trailing
+ * type tag, `type` is undefined and `text` is returned unchanged.
+ *
+ * The caller only applies this on lines that also carry a `<!-- pm-id -->`
+ * provenance comment, so hand-written titles ending in `[foo]` are never
+ * disturbed — this keeps the default (non-round-trip) parse path byte-stable.
+ */
+export declare function extractTypeTag(text: string): {
+    text: string;
+    type?: string;
 };
 /**
  * Parse a markdown string into TODO items.

@@ -192,6 +192,28 @@ export function extractPmIdComment(text) {
     const id = m[1].trim();
     return { text: text.slice(0, m.index).trim(), id: id || undefined };
 }
+// The exporter appends each open item's type as a trailing ` [Type]` annotation
+// (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). A
+// single trailing token in square brackets — letters/digits/`-`/`_`, no spaces —
+// matches the canonical pm type names (`Feature`, `Bug`, `Task`, `Issue`, …).
+// Only the LAST such group is consumed, so a title that itself ends in
+// "[staging]" keeps that bracket and only sheds the appended type tag.
+const TYPE_TAG_RE = /\s*\[([A-Za-z][\w-]*)\]\s*$/;
+/**
+ * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and
+ * return the cleaned text plus the captured type. When there is no trailing
+ * type tag, `type` is undefined and `text` is returned unchanged.
+ *
+ * The caller only applies this on lines that also carry a `<!-- pm-id -->`
+ * provenance comment, so hand-written titles ending in `[foo]` are never
+ * disturbed — this keeps the default (non-round-trip) parse path byte-stable.
+ */
+export function extractTypeTag(text) {
+    const m = TYPE_TAG_RE.exec(text);
+    if (!m)
+        return { text };
+    return { text: text.slice(0, m.index).trim(), type: m[1] };
+}
 /**
  * Normalise a section heading into a tag-safe slug (lowercase, dashes).
  */
@@ -229,7 +251,14 @@ export function parseMarkdownTodos(md, file) {
             // Strip a trailing `<!-- pm-id -->` provenance comment first so it never
             // becomes part of the title or interferes with priority-marker parsing.
             const { text: withoutId, id: pmId } = extractPmIdComment(raw);
-            const { text, priority } = extractPriority(withoutId);
+            // Then, ONLY on lines that carry provenance (a pm-id comment), strip the
+            // exporter's trailing ` [Type]` annotation and capture it so a round-trip
+            // restores the original type instead of folding the tag into the title.
+            // Hand-written lines (no pm-id) keep any trailing `[bracket]` verbatim.
+            const { text: withoutType, type: itemType } = pmId
+                ? extractTypeTag(withoutId)
+                : { text: withoutId, type: undefined };
+            const { text, priority } = extractPriority(withoutType);
             todos.push({
                 indent: match[1].replace(/\t/g, "    ").length,
                 checked: match[2] !== " ",
@@ -239,6 +268,7 @@ export function parseMarkdownTodos(md, file) {
                 lineNumber: i + 1,
                 file,
                 pmId,
+                itemType,
             });
         }
     }
@@ -732,6 +762,7 @@ function parseFileToNormalized(md, file, format) {
         lineNumber: t.lineNumber,
         file: t.file,
         pmId: t.pmId,
+        itemType: t.itemType,
     }));
 }
 /**
@@ -871,6 +902,10 @@ function runTodoImport(opts) {
                     ? String(todo.priority)
                     : undefined;
             const status = mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
+            // Prefer the per-item type recovered from the round-trip ` [Type]` tag;
+            // fall back to the import-wide `--type` (default "Task") for lines that
+            // carry no provenance tag (hand-written todos).
+            const itemType = todo.itemType ?? opts.itemType;
             const existing = resolveExisting(todo);
             if (opts.dryRun) {
                 const action = existing ? "update" : "create";
@@ -906,7 +941,7 @@ function runTodoImport(opts) {
                         "--json",
                         "update", existing.pmId,
                         "--title", todo.text,
-                        "--type", opts.itemType,
+                        "--type", itemType,
                     ];
                     // Only set status when it actually changes. Re-sending a terminal
                     // status (closed/canceled) makes `pm update` require --force; omitting
@@ -931,7 +966,7 @@ function runTodoImport(opts) {
                         ...(opts.upsert ? ["--json"] : []),
                         "create",
                         "--title", todo.text,
-                        "--type", opts.itemType,
+                        "--type", itemType,
                         "--status", status,
                         "--description", `Imported from ${todo.file ?? "stdin"} line ${todo.lineNumber}`,
                     ];

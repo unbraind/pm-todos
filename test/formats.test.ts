@@ -21,6 +21,7 @@ import {
   todoTxtItemToPm,
   sortItems,
   extractPmIdComment,
+  extractTypeTag,
   todoSignatureKey,
   buildExistingTodoIndex,
   extractCreatedTodoId,
@@ -506,6 +507,65 @@ test("parseMarkdownTodos leaves pmId undefined for a hand-written line", () => {
   const todos = parseMarkdownTodos("- [ ] hand written task\n");
   assert.equal(todos[0].text, "hand written task");
   assert.equal(todos[0].pmId, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Type-tag round-trip (export emits ` [Type]`; import must parse it back)
+// ---------------------------------------------------------------------------
+
+test("extractTypeTag captures a trailing [Type] tag and strips it from the title", () => {
+  const r = extractTypeTag("Build dashboard [Feature]");
+  assert.equal(r.text, "Build dashboard");
+  assert.equal(r.type, "Feature");
+});
+
+test("extractTypeTag leaves text without a trailing tag untouched", () => {
+  const r = extractTypeTag("Just a plain task");
+  assert.equal(r.text, "Just a plain task");
+  assert.equal(r.type, undefined);
+});
+
+test("extractTypeTag only consumes the LAST trailing bracket group", () => {
+  // A title that itself ends in "[staging]" keeps that bracket; only the
+  // appended type tag is shed.
+  const r = extractTypeTag("Deploy [staging] [Task]");
+  assert.equal(r.text, "Deploy [staging]");
+  assert.equal(r.type, "Task");
+});
+
+test("parseMarkdownTodos round-trips the exporter shape: title clean + type recovered", () => {
+  // Exactly what renderDefaultMarkdown emits for an open item.
+  const md = "## Open\n\n- [ ] Build dashboard [Feature] <!-- pm-a -->\n";
+  const todos = parseMarkdownTodos(md);
+  assert.equal(todos.length, 1);
+  assert.equal(todos[0].text, "Build dashboard"); // tag NOT folded into the title
+  assert.equal(todos[0].itemType, "Feature"); // type recovered for --type
+  assert.equal(todos[0].pmId, "pm-a");
+});
+
+test("parseMarkdownTodos recovers type AND priority AND id together", () => {
+  const todos = parseMarkdownTodos("- [ ] Ship it (p1) [Bug] <!-- pm-z -->\n");
+  assert.equal(todos[0].text, "Ship it");
+  assert.equal(todos[0].priority, 1);
+  assert.equal(todos[0].itemType, "Bug");
+  assert.equal(todos[0].pmId, "pm-z");
+});
+
+test("parseMarkdownTodos does NOT strip a [bracket] from a hand-written line (no pm-id)", () => {
+  // Without a provenance comment the trailing bracket is real title content and
+  // must be preserved — keeps the default (non-round-trip) path byte-stable.
+  const todos = parseMarkdownTodos("- [ ] Refactor [legacy] module\n- [ ] Title ends in [WIP]\n");
+  assert.equal(todos[0].text, "Refactor [legacy] module");
+  assert.equal(todos[0].itemType, undefined);
+  assert.equal(todos[1].text, "Title ends in [WIP]");
+  assert.equal(todos[1].itemType, undefined);
+});
+
+test("parseMarkdownTodos preserves a real trailing bracket in the title even WITH a pm-id (only type tag shed)", () => {
+  const todos = parseMarkdownTodos("- [ ] Deploy [staging] [Task] <!-- pm-q -->\n");
+  assert.equal(todos[0].text, "Deploy [staging]");
+  assert.equal(todos[0].itemType, "Task");
+  assert.equal(todos[0].pmId, "pm-q");
 });
 
 // ---------------------------------------------------------------------------
