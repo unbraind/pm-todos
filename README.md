@@ -59,6 +59,7 @@ pm todos import TODO.md --section Backlog
 pm todos import TODO.md --closed-as canceled
 pm todos import TODO.md --status in_progress
 pm todos import todo.txt --format todotxt
+pm todos import TODO.md --upsert
 ```
 
 **Flags**
@@ -66,6 +67,7 @@ pm todos import todo.txt --format todotxt
 | Flag | Type | Description |
 |---|---|---|
 | `--dry-run` | boolean | Preview without writing |
+| `--upsert` | boolean | Update existing items instead of creating duplicates (idempotent re-import) |
 | `--format <fmt>` | string | Source format: `markdown` (default) or `todotxt` |
 | `--type <type>` | string | Item type (default: Task) |
 | `--priority <n>` | number | Priority (0–4); overrides markers inferred from the text |
@@ -82,6 +84,43 @@ pm todos import todo.txt --format todotxt
 - **Nested sub-tasks**: indentation is preserved (sub-items are imported as their own items; indent is shown in `--dry-run`).
 - **Section headers**: the nearest preceding `## Heading` is slugged (e.g. `## In Progress` → `in-progress`) and added as a tag, unless `--no-section-tags` is given.
 - **Priority markers**: `(p0)`…`(p4)` set an explicit priority; trailing/leading `!`, `!!`, `!!!` map to priority `2`, `1`, `0`. Markers are stripped from the item title. An explicit `--priority` flag always wins.
+- **Embedded ids**: a trailing `<!-- pm-id -->` provenance comment (the one the
+  exporter writes) is parsed off the line — it never becomes part of the title
+  and is used to key `--upsert` re-imports back onto the original item.
+
+#### Idempotent re-import (`--upsert`)
+
+By **default** every checkbox is **created** as a new pm item, so re-importing the
+same file *duplicates* its items (import a 5-item file twice → 10 items). This is
+unchanged.
+
+With **`--upsert`**, an import **updates matching items in place instead of
+creating duplicates**, so the same file can be re-imported repeatedly without
+growth. Each incoming line is matched to an existing pm item in this order:
+
+1. **Embedded id** — the `<!-- pm-id -->` comment the exporter emits. This makes
+   the full **export → edit → import `--upsert`** loop land edits back on the
+   *same* items.
+2. **Title signature** — a stable, case-/whitespace-insensitive match on the item
+   title, for hand-written files that were never exported (no embedded id). The
+   oldest matching item wins.
+
+On a match the item is **updated** (title, type, priority, tags, deadline; status
+only when it actually changed, to avoid a spurious re-close of an already-terminal
+item). On no match it is **created** as usual. Items created earlier in the same
+run are themselves matchable, so a file containing the same task twice converges
+on one item.
+
+```bash
+pm todos import TODO.md            # creates (re-run duplicates)
+pm todos import TODO.md --upsert   # updates in place (re-run is a no-op delta)
+pm todos export --output TODO.md   # … then edit TODO.md …
+pm todos import TODO.md --upsert   # edits land back on the same items
+```
+
+The result object reports `{ imported, updated, skipped }` under `--upsert`
+(plain `{ imported, skipped }` otherwise). `--dry-run` previews the create/update
+decision per item without writing.
 
 #### todo.txt format (`--format todotxt`)
 
