@@ -568,6 +568,27 @@ test("parseMarkdownTodos preserves a real trailing bracket in the title even WIT
   assert.equal(todos[0].pmId, "pm-q");
 });
 
+test("a free-form trailing <!-- comment --> is NOT treated as provenance (no bogus pmId, no type-tag stripping)", () => {
+  // Regression guard: a hand-written note must not set a bogus pmId, which would
+  // (a) let --upsert match a phantom id and (b) trip the type-tag gate and strip
+  // a legitimate trailing `[WIP]`. The non-id comment + tag stay in the title.
+  const todos = parseMarkdownTodos("- [ ] Polish UI [WIP] <!-- note -->\n- [ ] Review <!-- see figure 1 -->\n");
+  assert.equal(todos[0].pmId, undefined);
+  assert.equal(todos[0].itemType, undefined);
+  assert.equal(todos[0].text, "Polish UI [WIP] <!-- note -->");
+  assert.equal(todos[1].pmId, undefined);
+  assert.equal(todos[1].text, "Review <!-- see figure 1 -->");
+});
+
+test("extractPmIdComment accepts multi-segment ids (custom prefixes) but rejects bare words", () => {
+  assert.equal(extractPmIdComment("x <!-- pm-todos-982k -->").id, "pm-todos-982k");
+  assert.equal(extractPmIdComment("x <!-- bug-3f2a -->").id, "bug-3f2a");
+  // A single bare word (no hyphen) is not an id grammar — left untouched.
+  const r = extractPmIdComment("x <!-- note -->");
+  assert.equal(r.id, undefined);
+  assert.equal(r.text, "x <!-- note -->");
+});
+
 // ---------------------------------------------------------------------------
 // Upsert keying + index
 // ---------------------------------------------------------------------------

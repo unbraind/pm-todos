@@ -62,9 +62,10 @@ interface PmItem {
 export declare function sortItems(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined): PmItem[];
 /**
  * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
- * cleaned text plus the captured id. When there is no comment, `id` is
- * undefined and `text` is returned unchanged. Only the LAST trailing comment is
- * consumed (the exporter always emits exactly one, at end of line).
+ * cleaned text plus the captured id. When there is no provenance comment, `id`
+ * is undefined and `text` is returned unchanged (a non-id trailing comment is
+ * left in the title verbatim). Only the LAST trailing comment is consumed (the
+ * exporter always emits exactly one, at end of line).
  */
 export declare function extractPmIdComment(text: string): {
     text: string;

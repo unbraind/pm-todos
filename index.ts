@@ -239,23 +239,40 @@ function extractPriority(text: string): { text: string; priority?: number } {
   return { text: cleaned.replace(/\s+/g, " ").trim(), priority };
 }
 
-// A trailing `<!-- pm-id -->` provenance comment, exactly as the exporter
-// emits it (`- [ ] Title <!-- pm-abc123 -->`). We capture the id and strip the
-// comment from the visible title so a round-trip (export → edit → import) does
-// not fold the comment into the item title.
-const PM_ID_COMMENT_RE = /\s*<!--\s*([^\s<>][^<>]*?)\s*-->\s*$/;
+/**
+ * Strip a trailing `regex` match from `text` (the regex MUST anchor to `$` and
+ * capture the payload in group 1) and return the cleaned text plus the trimmed
+ * capture. When the regex does not match, `value` is undefined and `text` is
+ * returned unchanged. Shared by `extractPmIdComment` and `extractTypeTag`.
+ */
+function extractTrailing(text: string, regex: RegExp): { text: string; value?: string } {
+  const m = regex.exec(text);
+  if (!m) return { text };
+  const value = m[1]?.trim();
+  return { text: text.slice(0, m.index).trim(), value: value || undefined };
+}
+
+// A trailing `<!-- pm-id -->` provenance comment, exactly as the exporter emits
+// it (`- [ ] Title <!-- pm-abc123 -->`). The capture is constrained to pm-cli's
+// item-id grammar — one or more alphanumeric segments joined by hyphens
+// (`pm-uhkv`, `pm-todos-982k`, `bug-3f2a`): the configurable id prefix always
+// contributes at least one hyphen. This deliberately does NOT match a free-form
+// trailing comment such as `<!-- note -->` or `<!-- see figure 1 -->`, so a
+// hand-written line is never mistaken for provenance — which would otherwise
+// set a bogus `pmId` AND, via the type-tag gate below, strip a legitimate
+// trailing `[WIP]` from the title.
+const PM_ID_COMMENT_RE = /\s*<!--\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)\s*-->\s*$/;
 
 /**
  * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
- * cleaned text plus the captured id. When there is no comment, `id` is
- * undefined and `text` is returned unchanged. Only the LAST trailing comment is
- * consumed (the exporter always emits exactly one, at end of line).
+ * cleaned text plus the captured id. When there is no provenance comment, `id`
+ * is undefined and `text` is returned unchanged (a non-id trailing comment is
+ * left in the title verbatim). Only the LAST trailing comment is consumed (the
+ * exporter always emits exactly one, at end of line).
  */
 export function extractPmIdComment(text: string): { text: string; id?: string } {
-  const m = PM_ID_COMMENT_RE.exec(text);
-  if (!m) return { text };
-  const id = m[1].trim();
-  return { text: text.slice(0, m.index).trim(), id: id || undefined };
+  const { text: cleaned, value } = extractTrailing(text, PM_ID_COMMENT_RE);
+  return { text: cleaned, id: value };
 }
 
 // The exporter appends each open item's type as a trailing ` [Type]` annotation
@@ -276,9 +293,8 @@ const TYPE_TAG_RE = /\s*\[([A-Za-z][\w-]*)\]\s*$/;
  * disturbed — this keeps the default (non-round-trip) parse path byte-stable.
  */
 export function extractTypeTag(text: string): { text: string; type?: string } {
-  const m = TYPE_TAG_RE.exec(text);
-  if (!m) return { text };
-  return { text: text.slice(0, m.index).trim(), type: m[1] };
+  const { text: cleaned, value } = extractTrailing(text, TYPE_TAG_RE);
+  return { text: cleaned, type: value };
 }
 
 /**
