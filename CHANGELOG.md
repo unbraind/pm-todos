@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Round-trip markdown TODO priority and due metadata ([pm-todos-68cf](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-68cf.toon))
+
 ### Other
 
 - Align package dependencies to pm CLI/SDK 2026.6.6 ([pm-todos-edol](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-edol.toon))

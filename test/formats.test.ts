@@ -27,6 +27,7 @@ import {
   buildExistingTodoIndex,
   extractCreatedTodoId,
   parseMarkdownTodos,
+  extractMarkdownDue,
 } from "../dist/index.js";
 
 // ---------------------------------------------------------------------------
@@ -208,6 +209,31 @@ test("renderDefaultMarkdown matches the historical layout exactly", () => {
   assert.equal(out, expected);
 });
 
+test("markdown metadata is opt-in and round-trips priority/deadline tokens", () => {
+  const items = [
+    { id: "pm-a", title: "Open task", status: "open", type: "Task", priority: 1, deadline: "2026-07-01T00:00:00.000Z" },
+  ];
+  const plain = renderDefaultMarkdown(items, "2026-06-02T00:00:00.000Z");
+  assert.equal(plain.includes("(p1)"), false);
+  assert.equal(plain.includes("due:2026-07-01"), false);
+
+  const out = renderDefaultMarkdown(items, "2026-06-02T00:00:00.000Z", true);
+  assert.match(out, /Open task \(p1\) due:2026-07-01 \[Task\] <!-- pm-a -->/);
+  const parsed = parseMarkdownTodos(out);
+  assert.equal(parsed[0].text, "Open task");
+  assert.equal(parsed[0].priority, 1);
+  assert.equal(parsed[0].deadline, "2026-07-01");
+  assert.equal(parsed[0].itemType, "Task");
+});
+
+test("extractMarkdownDue strips only parseable due tokens", () => {
+  assert.deepEqual(extractMarkdownDue("Ship it due:2026-08-09 now"), {
+    text: "Ship it now",
+    deadline: "2026-08-09",
+  });
+  assert.deepEqual(extractMarkdownDue("Ship it due:soon"), { text: "Ship it due:soon" });
+});
+
 test("renderGroupedMarkdown sections by the requested field", () => {
   const out = renderGroupedMarkdown(sampleItems, "sprint", "2026-06-02T00:00:00.000Z");
   assert.match(out, /## S1/);
@@ -243,6 +269,11 @@ test("validateTodoFile flags an out-of-range (pN) markdown priority marker", () 
   const errors = issues.filter((i) => i.severity === "error");
   assert.equal(errors.length, 1);
   assert.match(errors[0].message, /out of range/);
+});
+
+test("validateTodoFile flags malformed markdown due metadata", () => {
+  const { issues } = validateTodoFile("- [ ] ship due:2026-13-99", "markdown");
+  assert.ok(issues.some((i) => i.severity === "error" && /Invalid due date/.test(i.message)));
 });
 
 test("validateTodoFile warns when no tasks exist in markdown", () => {

@@ -174,6 +174,18 @@ function extractPriority(text) {
     }
     return { text: cleaned.replace(/\s+/g, " ").trim(), priority };
 }
+export function extractMarkdownDue(text) {
+    const dueRe = /(^|\s)due:(\d{4}-\d{2}-\d{2})(?=\s|$)/;
+    const match = dueRe.exec(text);
+    if (!match)
+        return { text };
+    const before = text.slice(0, match.index) + match[1];
+    const after = text.slice(match.index + match[0].length);
+    return {
+        text: `${before}${after}`.replace(/\s+/g, " ").trim(),
+        deadline: match[2],
+    };
+}
 /**
  * Strip a trailing `regex` match from `text` (the regex MUST anchor to `$` and
  * capture the payload in group 1) and return the cleaned text plus the trimmed
@@ -317,11 +329,13 @@ export function parseMarkdownTodos(md, file) {
                 ? extractTypeTag(withoutId)
                 : { text: withoutId, type: undefined };
             const { text, priority } = extractPriority(withoutType);
+            const { text: withoutDue, deadline } = extractMarkdownDue(text);
             todos.push({
                 indent: match[1].replace(/\t/g, "    ").length,
                 checked,
-                text,
+                text: withoutDue,
                 priority,
+                deadline,
                 section: currentSection,
                 lineNumber: i + 1,
                 file,
@@ -347,6 +361,19 @@ function mapPmStatusToChecked(status) {
     return status === "closed" || status === "canceled";
 }
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function markdownMetadataSuffix(item) {
+    const parts = [];
+    if (item.priority !== undefined && item.priority !== null) {
+        const n = Math.max(0, Math.min(4, Math.trunc(item.priority)));
+        parts.push(`(p${n})`);
+    }
+    if (item.deadline) {
+        const date = item.deadline.slice(0, 10);
+        if (DATE_RE.test(date))
+            parts.push(`due:${date}`);
+    }
+    return parts.length > 0 ? ` ${parts.join(" ")}` : "";
+}
 /**
  * True when `s` is a real ISO calendar date `YYYY-MM-DD` (right shape AND a
  * valid month/day, e.g. rejects `2026-13-99`). Used by validation; the looser
@@ -581,14 +608,14 @@ export function groupItems(items, groupBy) {
  * sections. Closed/canceled items become `- [x]`, everything else `- [ ]`.
  * A trailing `<!-- id -->` comment preserves the pm id for round-trips.
  */
-export function renderTaskList(items, groupBy) {
+export function renderTaskList(items, groupBy, metadata = false) {
     const groups = groupItems(items, groupBy);
     const lines = [];
     for (const group of groups) {
         lines.push(`## ${group.heading}`, "");
         for (const item of group.items) {
             const check = mapPmStatusToChecked(item.status) ? "x" : " ";
-            lines.push(`- [${check}] ${item.title} <!-- ${item.id} -->`);
+            lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item) : ""} <!-- ${item.id} -->`);
         }
         lines.push("");
     }
@@ -635,8 +662,13 @@ export function validateTodoFile(content, format) {
             sawAnyTask = true;
             taskCount++;
             const { text } = extractPriority(match[3].trim());
-            if (text === "") {
+            const { text: cleanedText } = extractMarkdownDue(text);
+            if (cleanedText === "") {
                 issues.push({ line: i + 1, severity: "warning", message: "Checkbox has no text", text: raw.trim() });
+            }
+            const badDue = /(^|\s)due:(\S+)/.exec(match[3]);
+            if (badDue && !isValidIsoDate(badDue[2])) {
+                issues.push({ line: i + 1, severity: "error", message: `Invalid due date '${badDue[2]}' (expected YYYY-MM-DD)`, text: raw.trim() });
             }
             // The parser only honours `(p0)`..`(p4)`; a `(pN)` with N>4 is therefore
             // silently treated as literal text. Surface it as an error so the typo
@@ -815,6 +847,7 @@ function parseFileToNormalized(md, file, format) {
         text: t.text,
         priority: t.priority,
         tags: [],
+        deadline: t.deadline,
         section: t.section,
         indent: t.indent,
         lineNumber: t.lineNumber,
@@ -841,7 +874,7 @@ export function todoSignatureKey(title, section) {
     if (!t)
         return undefined;
     const s = section ? sectionToTag(section) : "";
-    return `${s} ${t}`;
+    return `${s}\u001f${t}`;
 }
 /**
  * Build the two lookup indexes an `--upsert` import needs from the current
@@ -1095,7 +1128,7 @@ function fetchPmItems(opts) {
  * and the `[type]` annotation on open items) so existing behaviour is stable.
  * This is the path used when no `--group-by` (or `--group-by status`) is set.
  */
-export function renderDefaultMarkdown(items, nowIso) {
+export function renderDefaultMarkdown(items, nowIso, metadata = false) {
     const lines = [
         "# TODO",
         "",
@@ -1108,15 +1141,16 @@ export function renderDefaultMarkdown(items, nowIso) {
         lines.push("## Open", "");
         for (const item of openItems) {
             const check = mapPmStatusToChecked(item.status) ? "x" : " ";
+            const meta = metadata ? markdownMetadataSuffix(item) : "";
             const typeTag = item.type ? ` [${item.type}]` : "";
-            lines.push(`- [${check}] ${item.title}${typeTag} <!-- ${item.id} -->`);
+            lines.push(`- [${check}] ${item.title}${meta}${typeTag} <!-- ${item.id} -->`);
         }
         lines.push("");
     }
     if (closedItems.length > 0) {
         lines.push("## Done", "");
         for (const item of closedItems) {
-            lines.push(`- [x] ${item.title} <!-- ${item.id} -->`);
+            lines.push(`- [x] ${item.title}${metadata ? markdownMetadataSuffix(item) : ""} <!-- ${item.id} -->`);
         }
         lines.push("");
     }
@@ -1127,7 +1161,7 @@ export function renderDefaultMarkdown(items, nowIso) {
  * `--group-by status`). Each group is a `## <heading>` section of checkboxes
  * carrying the pm id comment for round-trips.
  */
-export function renderGroupedMarkdown(items, groupBy, nowIso) {
+export function renderGroupedMarkdown(items, groupBy, nowIso, metadata = false) {
     const lines = [
         "# TODO",
         "",
@@ -1138,7 +1172,7 @@ export function renderGroupedMarkdown(items, groupBy, nowIso) {
         lines.push(`## ${group.heading}`, "");
         for (const item of group.items) {
             const check = mapPmStatusToChecked(item.status) ? "x" : " ";
-            lines.push(`- [${check}] ${item.title} <!-- ${item.id} -->`);
+            lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item) : ""} <!-- ${item.id} -->`);
         }
         lines.push("");
     }
@@ -1158,13 +1192,13 @@ function buildTodoMarkdown(opts) {
         return { markdown: serializeTodoTxt(items), count: items.length };
     }
     if (format === "tasklist") {
-        return { markdown: renderTaskList(items, groupBy ?? "status"), count: items.length };
+        return { markdown: renderTaskList(items, groupBy ?? "status", opts.metadata), count: items.length };
     }
     // markdown
     if (groupBy && groupBy !== "status") {
-        return { markdown: renderGroupedMarkdown(items, groupBy, new Date().toISOString()), count: items.length };
+        return { markdown: renderGroupedMarkdown(items, groupBy, new Date().toISOString(), opts.metadata), count: items.length };
     }
-    return { markdown: renderDefaultMarkdown(items, new Date().toISOString()), count: items.length };
+    return { markdown: renderDefaultMarkdown(items, new Date().toISOString(), opts.metadata), count: items.length };
 }
 // ---------------------------------------------------------------------------
 // Extension
@@ -1285,6 +1319,7 @@ export default defineExtension({
                 "pm todos export --group-by type",
                 "pm todos export --sort priority",
                 "pm todos export --sort deadline --status open",
+                "pm todos export --metadata --output TODO.md",
             ],
             flags: [
                 { long: "--output", value_name: "file", description: "Write output to file (default: stdout)" },
@@ -1293,12 +1328,14 @@ export default defineExtension({
                 { long: "--sort", value_name: "key", description: "Sort items by priority | deadline | title (preserves pm order if unset)" },
                 { long: "--status", value_name: "status", description: "Filter by status" },
                 { long: "--type", value_name: "type", description: "Filter by item type" },
+                { long: "--metadata", description: "Include parseable `(pN)` and `due:YYYY-MM-DD` tokens in markdown/tasklist output" },
             ],
             async run(ctx) {
                 const outputPath = ctx.options["output"];
                 const format = readExportFormat(ctx.options);
                 const groupBy = readGroupBy(ctx.options);
                 const sort = readSort(ctx.options);
+                const metadata = readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata");
                 console.error("Fetching pm items…");
                 const { markdown, count } = buildTodoMarkdown({
                     statusFilter: ctx.options["status"],
@@ -1307,6 +1344,7 @@ export default defineExtension({
                     format,
                     groupBy,
                     sort,
+                    metadata,
                 });
                 if (count === 0) {
                     console.error("No items found.");
@@ -1470,6 +1508,7 @@ export default defineExtension({
                 format: readExportFormat(ctx.options),
                 groupBy: readGroupBy(ctx.options),
                 sort: readSort(ctx.options),
+                metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
             });
             if (count === 0) {
                 console.error("todos: no items found.");
