@@ -7,6 +7,8 @@ interface TodoItem {
     section?: string;
     /** Priority inferred from `(p1)` / `!` markers (0 = highest). */
     priority?: number;
+    /** Markdown metadata token `due:YYYY-MM-DD`, mapped to pm deadline. */
+    deadline?: string;
     /** Source file the item was parsed from (absolute path). */
     file?: string;
     /**
@@ -60,6 +62,10 @@ interface PmItem {
  * Pure (does not mutate the input). Undefined `sort` returns the input as-is.
  */
 export declare function sortItems(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined): PmItem[];
+export declare function extractMarkdownDue(text: string): {
+    text: string;
+    deadline?: string;
+};
 /**
  * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
  * cleaned text plus the captured id. When there is no provenance comment, `id`
@@ -202,7 +208,7 @@ export declare function groupItems(items: PmItem[], groupBy: string): ItemGroup[
  * sections. Closed/canceled items become `- [x]`, everything else `- [ ]`.
  * A trailing `<!-- id -->` comment preserves the pm id for round-trips.
  */
-export declare function renderTaskList(items: PmItem[], groupBy: string): string;
+export declare function renderTaskList(items: PmItem[], groupBy: string, metadata?: boolean): string;
 interface ValidationIssue {
     line: number;
     severity: "error" | "warning";
@@ -275,13 +281,13 @@ export declare function extractCreatedTodoId(stdout: string): string | undefined
  * and the `[type]` annotation on open items) so existing behaviour is stable.
  * This is the path used when no `--group-by` (or `--group-by status`) is set.
  */
-export declare function renderDefaultMarkdown(items: PmItem[], nowIso: string): string;
+export declare function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata?: boolean): string;
 /**
  * Render grouped markdown for `--group-by sprint|type` (or an explicit
  * `--group-by status`). Each group is a `## <heading>` section of checkboxes
  * carrying the pm id comment for round-trips.
  */
-export declare function renderGroupedMarkdown(items: PmItem[], groupBy: string, nowIso: string): string;
+export declare function renderGroupedMarkdown(items: PmItem[], groupBy: string, nowIso: string, metadata?: boolean): string;
 declare const _default: {
     name: string;
     version: string;

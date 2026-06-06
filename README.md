@@ -4,7 +4,7 @@ Markdown TODO round-trip for [pm-cli](https://github.com/unbraind/pm-cli).
 
 Import markdown checkboxes (`- [ ]` and `- [x]`) as pm items and export pm items back to markdown TODO lists.
 
-The parser understands **nested/indented sub-tasks**, **section headers** (`## …` mapped to tags), **priority markers** (`(p1)` and `!`/`!!`/`!!!`), and can import **multiple files at once** via a `--glob` pattern.
+The parser understands **nested/indented sub-tasks**, **section headers** (`## …` mapped to tags), **priority markers** (`(p1)` and `!`/`!!`/`!!!`), markdown `due:YYYY-MM-DD` metadata, and can import **multiple files at once** via a `--glob` pattern.
 
 In addition to markdown, pm-todos round-trips the de-facto [**todo.txt**](https://github.com/todotxt/todo.txt) format and exports **GitHub-flavored task lists**, can **group** exports into sections by status/sprint/type, and can **validate** a TODO file without importing it.
 
@@ -84,6 +84,7 @@ pm todos import TODO.md --upsert
 - **Nested sub-tasks**: indentation is preserved (sub-items are imported as their own items; indent is shown in `--dry-run`).
 - **Section headers**: the nearest preceding `## Heading` is slugged (e.g. `## In Progress` → `in-progress`) and added as a tag, unless `--no-section-tags` is given.
 - **Priority markers**: `(p0)`…`(p4)` set an explicit priority; trailing/leading `!`, `!!`, `!!!` map to priority `2`, `1`, `0`. Markers are stripped from the item title. An explicit `--priority` flag always wins.
+- **Due dates**: `due:YYYY-MM-DD` is stripped from the markdown title and mapped to the item deadline. Invalid markdown `due:` dates are structural validation errors.
 - **Embedded ids**: a trailing `<!-- pm-id -->` provenance comment (the one the
   exporter writes) is parsed off the line — it never becomes part of the title
   and is used to key `--upsert` re-imports back onto the original item.
@@ -146,6 +147,7 @@ pm todos export --format tasklist --group-by sprint
 pm todos export --group-by type
 pm todos export --sort priority
 pm todos export --sort deadline --status open
+pm todos export --metadata --output TODO.md
 ```
 
 **Flags**
@@ -158,12 +160,18 @@ pm todos export --sort deadline --status open
 | `--sort <key>` | string | Sort items by `priority` (0 highest first), `deadline` (ascending), or `title` (alphabetical). Unset preserves pm's native order |
 | `--status <status>` | string | Filter by status |
 | `--type <type>` | string | Filter by item type |
+| `--metadata` | boolean | Include parseable `(pN)` and `due:YYYY-MM-DD` tokens in markdown/tasklist output |
 
 The default `markdown` export (no `--group-by`, or `--group-by status`) is unchanged: a
 `# TODO` document with `## Open` / `## Done` sections. `--group-by sprint`/`type` emits a
 `## <value>` section per group. The `todotxt` exporter maps priority→letter, tags→`+project`,
 and deadline→`due:`. The `tasklist` exporter emits `- [ ]` / `- [x]` items grouped under
 `## <heading>` sections, each carrying a `<!-- pm-id -->` comment for round-trips.
+
+`--metadata` is opt-in so the historical markdown output stays byte-stable. When
+enabled, markdown/tasklist exports include `(pN)` and `due:YYYY-MM-DD` tokens that
+the importer already parses, allowing priority and deadline to survive a
+markdown export → edit → `pm todos import --upsert` cycle.
 
 ### `pm todos validate <file>`
 
@@ -212,7 +220,7 @@ export` routes above and can also be driven programmatically:
 }
 ```
 
-The `todos` exporter accepts `output`, `status`, `type`, `format`, `group-by` and
+The `todos` exporter accepts `output`, `status`, `type`, `format`, `group-by`, `metadata`, and
 `sort` options and emits the same output produced by `pm todos export` (default
 markdown, or `todotxt` / `tasklist`). The `todos` importer additionally accepts
 `format` (`markdown` | `todotxt`) and `status` (status for open items, complementing
