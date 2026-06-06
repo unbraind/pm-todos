@@ -8,6 +8,7 @@
 
 ### Other
 
+- Harden release readiness checks ([pm-todos-200x](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-200x.toon))
 - Align package dependencies to pm CLI/SDK 2026.6.6 ([pm-todos-edol](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-edol.toon))
 
 ## 2026.06.05-1 - 2026-06-05
