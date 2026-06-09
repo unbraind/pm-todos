@@ -13,6 +13,7 @@ test("extension has required shape", () => {
 
 test("extension registers commands plus the native todos importer and exporter", () => {
   const registered: string[] = [];
+  const commands: string[] = [];
   const importers: string[] = [];
   const exporters: string[] = [];
   const noop = () => {};
@@ -20,7 +21,10 @@ test("extension registers commands plus the native todos importer and exporter",
   // capability the extension uses (commands, importer, exporter). A partial
   // mock would throw TypeError when activate() calls a missing method.
   const api = {
-    registerCommand: () => { registered.push("command"); },
+    registerCommand: (command: { name?: string }) => {
+      registered.push("command");
+      if (command?.name) commands.push(command.name);
+    },
     registerParser: noop, registerPreflight: noop, registerService: noop,
     registerFlags: noop, registerItemFields: noop, registerItemTypes: noop,
     registerMigration: noop, registerRenderer: noop,
@@ -31,6 +35,7 @@ test("extension registers commands plus the native todos importer and exporter",
   };
   extension.activate(api as any);
   assert.ok(registered.length > 0, `extension should register at least one capability, got: ${JSON.stringify(registered)}`);
+  assert.ok(commands.includes("todos context"), `should register 'todos context', got: ${JSON.stringify(commands)}`);
   assert.ok(importers.includes("todos"), `should register the native 'todos' importer, got: ${JSON.stringify(importers)}`);
   assert.ok(exporters.includes("todos"), `should register the native 'todos' exporter, got: ${JSON.stringify(exporters)}`);
 });
