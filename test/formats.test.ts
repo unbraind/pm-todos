@@ -32,6 +32,8 @@ import {
   extractCreatedTodoId,
   parseMarkdownTodos,
   extractMarkdownDue,
+  sortItemsForContext,
+  buildTodoContextSnapshot,
 } from "../dist/index.js";
 
 // ---------------------------------------------------------------------------
@@ -527,6 +529,76 @@ test("sortItems with no key returns input unchanged (and does not mutate)", () =
   const copy = sortItems(input, "title");
   assert.notEqual(copy, input);
   assert.deepEqual(input.map((i) => i.id), ["pm-1", "pm-2", "pm-3"]);
+});
+
+// ---------------------------------------------------------------------------
+// Agent context snapshot
+// ---------------------------------------------------------------------------
+
+test("sortItemsForContext prioritizes active work before closed items", () => {
+  const items = [
+    { id: "pm-1", title: "Plan docs", status: "open", priority: 2, deadline: "2026-06-20" },
+    { id: "pm-2", title: "Fix login flow", status: "in_progress", priority: 1, deadline: "2026-06-12" },
+    { id: "pm-3", title: "Unblock release", status: "blocked", priority: 0, deadline: "2026-06-11" },
+    { id: "pm-4", title: "Archive old notes", status: "closed", priority: 0, deadline: "2026-06-10" },
+  ];
+  const out = sortItemsForContext(items);
+  assert.deepEqual(out.map((i) => i.id), ["pm-2", "pm-3", "pm-1", "pm-4"]);
+});
+
+test("buildTodoContextSnapshot returns compact counts and bounded focus rows", () => {
+  const items = [
+    { id: "pm-a", title: "Implement sync", status: "in_progress", type: "Feature", priority: 1, deadline: "2026-06-10" },
+    { id: "pm-b", title: "Write docs", status: "open", type: "Task", priority: 2, deadline: "2026-06-15" },
+    { id: "pm-c", title: "Investigate outage", status: "blocked", type: "Issue", priority: 0, deadline: "2026-06-09" },
+    { id: "pm-d", title: "Close milestone", status: "closed", type: "Task" },
+  ];
+  const snapshot = buildTodoContextSnapshot(items, {
+    limit: 2,
+    nowIso: "2026-06-10T09:00:00.000Z",
+  });
+  assert.equal(snapshot.totalMatched, 4);
+  assert.equal(snapshot.focusCount, 2);
+  assert.deepEqual(snapshot.focus.map((i) => i.id), ["pm-a", "pm-c"]);
+  assert.deepEqual(snapshot.counts.byStatus, {
+    in_progress: 1,
+    blocked: 1,
+    open: 1,
+    closed: 1,
+  });
+  assert.deepEqual(snapshot.counts.byType, {
+    Task: 2,
+    Feature: 1,
+    Issue: 1,
+  });
+  assert.equal(snapshot.counts.highPriority, 2);
+  assert.equal(snapshot.counts.overdue, 1);
+  assert.equal(snapshot.counts.dueWithin7Days, 2);
+  assert.equal(snapshot.counts.withoutDeadline, 1);
+  assert.equal(snapshot.filters.sort, "triage");
+});
+
+test("buildTodoContextSnapshot includes tags only when requested", () => {
+  const items = [
+    { id: "pm-a", title: "Alpha task", status: "open", tags: ["alpha"] },
+    { id: "pm-b", title: "Beta task", status: "open", tags: ["beta"] },
+  ];
+  const compact = buildTodoContextSnapshot(items, {
+    limit: 1,
+    sort: "title",
+    nowIso: "2026-06-10T09:00:00.000Z",
+  });
+  assert.equal(compact.focus[0].id, "pm-a");
+  assert.equal(Object.prototype.hasOwnProperty.call(compact.focus[0], "tags"), false);
+
+  const withTags = buildTodoContextSnapshot(items, {
+    limit: 1,
+    sort: "title",
+    includeTags: true,
+    nowIso: "2026-06-10T09:00:00.000Z",
+  });
+  assert.deepEqual(withTags.focus[0].tags, ["alpha"]);
+  assert.equal(withTags.filters.sort, "title");
 });
 
 // ---------------------------------------------------------------------------

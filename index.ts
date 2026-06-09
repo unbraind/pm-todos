@@ -207,6 +207,27 @@ function readSort(options: Record<string, unknown>): "priority" | "deadline" | "
 }
 
 /**
+ * Read a bounded integer option (strict base-10 digits only). Throws a USAGE
+ * error on invalid values so bad agent/user input fails loudly.
+ */
+function readBoundedIntOption(
+  options: Record<string, unknown>,
+  config: { key: string; label: string; min: number; max: number; defaultValue: number },
+): number {
+  const raw = readStringOption(options, config.key);
+  if (raw === undefined) return config.defaultValue;
+  const normalized = raw.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new CommandError(`Invalid ${config.label} '${raw}' (expected an integer ${config.min}-${config.max})`, EXIT_CODE.USAGE);
+  }
+  const n = Number.parseInt(normalized, 10);
+  if (n < config.min || n > config.max) {
+    throw new CommandError(`Invalid ${config.label} '${raw}' (expected ${config.min}-${config.max})`, EXIT_CODE.USAGE);
+  }
+  return n;
+}
+
+/**
  * Return a new, stably-sorted copy of `items` by the requested key:
  *   - priority: ascending (0 = highest first); missing priority sorts last
  *   - deadline: ascending ISO date; missing deadline sorts last
@@ -232,6 +253,202 @@ export function sortItems(items: PmItem[], sort: "priority" | "deadline" | "titl
     copy.sort((a, b) => (a.title ?? "").toLowerCase().localeCompare((b.title ?? "").toLowerCase()));
   }
   return copy;
+}
+
+interface TodoContextBuildOptions {
+  /** Maximum number of focus items to include in the snapshot. */
+  limit: number;
+  /** Optional explicit focus ordering; default uses triage-friendly ordering. */
+  sort?: "priority" | "deadline" | "title";
+  /** Include tags on each focus row (off by default to save tokens). */
+  includeTags?: boolean;
+  /** Optional fixed clock for tests. */
+  nowIso?: string;
+  /** Optional filter metadata echoed in the result payload. */
+  statusFilter?: string;
+  /** Optional filter metadata echoed in the result payload. */
+  typeFilter?: string;
+}
+
+export interface TodoContextFocusItem {
+  id: string;
+  title: string;
+  status: string;
+  type?: string;
+  priority?: number;
+  deadline?: string;
+  assignee?: string;
+  sprint?: string;
+  tags?: string[];
+}
+
+export interface TodoContextSnapshot {
+  generatedAt: string;
+  filters: {
+    status?: string;
+    type?: string;
+    sort: "triage" | "priority" | "deadline" | "title";
+    limit: number;
+  };
+  totalMatched: number;
+  focusCount: number;
+  counts: {
+    byStatus: Record<string, number>;
+    byType: Record<string, number>;
+    highPriority: number;
+    overdue: number;
+    dueWithin7Days: number;
+    withoutDeadline: number;
+  };
+  focus: TodoContextFocusItem[];
+}
+
+const CONTEXT_STATUS_ORDER: Record<string, number> = {
+  in_progress: 0,
+  blocked: 1,
+  open: 2,
+  draft: 3,
+  closed: 4,
+  canceled: 5,
+};
+
+function normalizeDeadlineDate(deadline?: string): string | undefined {
+  if (!deadline) return undefined;
+  const m = /(\d{4}-\d{2}-\d{2})/.exec(deadline);
+  return m?.[1];
+}
+
+function compareText(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { sensitivity: "base" });
+}
+
+function toSortedCountRecord(
+  countMap: Map<string, number>,
+  compareKeys?: (a: string, b: string) => number,
+): Record<string, number> {
+  const entries = [...countMap.entries()];
+  entries.sort((a, b) => {
+    if (a[1] !== b[1]) return b[1] - a[1];
+    if (compareKeys) return compareKeys(a[0], b[0]);
+    return compareText(a[0], b[0]);
+  });
+  return Object.fromEntries(entries);
+}
+
+/**
+ * Default focus ordering for `pm todos context`: active work first, then
+ * urgency (priority/deadline), then recent updates.
+ */
+export function sortItemsForContext(items: PmItem[]): PmItem[] {
+  const copy = [...items];
+  copy.sort((a, b) => {
+    const statusRankA = CONTEXT_STATUS_ORDER[a.status] ?? 99;
+    const statusRankB = CONTEXT_STATUS_ORDER[b.status] ?? 99;
+    if (statusRankA !== statusRankB) return statusRankA - statusRankB;
+
+    const priorityA = a.priority ?? Number.POSITIVE_INFINITY;
+    const priorityB = b.priority ?? Number.POSITIVE_INFINITY;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+
+    const dueA = normalizeDeadlineDate(a.deadline) ?? "9999-12-31";
+    const dueB = normalizeDeadlineDate(b.deadline) ?? "9999-12-31";
+    if (dueA !== dueB) return dueA.localeCompare(dueB);
+
+    const updatedA = a.updated_at ?? "";
+    const updatedB = b.updated_at ?? "";
+    if (updatedA !== updatedB) return updatedB.localeCompare(updatedA);
+
+    return compareText(a.title ?? "", b.title ?? "");
+  });
+  return copy;
+}
+
+/**
+ * Build a compact, high-signal context payload for agents:
+ * aggregate counts + a bounded focus list.
+ */
+export function buildTodoContextSnapshot(items: PmItem[], options: TodoContextBuildOptions): TodoContextSnapshot {
+  const generatedAt = options.nowIso ?? new Date().toISOString();
+  const today = generatedAt.slice(0, 10);
+  const todayEpoch = Date.parse(`${today}T00:00:00.000Z`);
+  const soonEpoch = todayEpoch + 7 * 24 * 60 * 60 * 1000;
+
+  let highPriority = 0;
+  let overdue = 0;
+  let dueWithin7Days = 0;
+  let withoutDeadline = 0;
+  const byStatusMap = new Map<string, number>();
+  const byTypeMap = new Map<string, number>();
+
+  for (const item of items) {
+    const status = (item.status ?? "").trim() || "(unknown)";
+    const type = (item.type ?? "").trim() || "(none)";
+    byStatusMap.set(status, (byStatusMap.get(status) ?? 0) + 1);
+    byTypeMap.set(type, (byTypeMap.get(type) ?? 0) + 1);
+
+    if ((item.priority ?? Number.POSITIVE_INFINITY) <= 1) {
+      highPriority++;
+    }
+
+    const due = normalizeDeadlineDate(item.deadline);
+    if (!due) {
+      withoutDeadline++;
+      continue;
+    }
+
+    const dueEpoch = Date.parse(`${due}T00:00:00.000Z`);
+    if (Number.isNaN(dueEpoch)) {
+      withoutDeadline++;
+      continue;
+    }
+    if (dueEpoch < todayEpoch) {
+      overdue++;
+    } else if (dueEpoch <= soonEpoch) {
+      dueWithin7Days++;
+    }
+  }
+
+  const ordered = options.sort ? sortItems(items, options.sort) : sortItemsForContext(items);
+  const focus = ordered.slice(0, options.limit).map((item) => {
+    const row: TodoContextFocusItem = {
+      id: item.id,
+      title: item.title,
+      status: item.status,
+      type: item.type,
+      priority: item.priority,
+      deadline: normalizeDeadlineDate(item.deadline),
+      assignee: item.assignee,
+      sprint: item.sprint,
+    };
+    if (options.includeTags && item.tags && item.tags.length > 0) {
+      row.tags = [...item.tags];
+    }
+    return row;
+  });
+
+  return {
+    generatedAt,
+    filters: {
+      status: options.statusFilter,
+      type: options.typeFilter,
+      sort: options.sort ?? "triage",
+      limit: options.limit,
+    },
+    totalMatched: items.length,
+    focusCount: focus.length,
+    counts: {
+      byStatus: toSortedCountRecord(
+        byStatusMap,
+        (a, b) => (CONTEXT_STATUS_ORDER[a] ?? 99) - (CONTEXT_STATUS_ORDER[b] ?? 99) || compareText(a, b),
+      ),
+      byType: toSortedCountRecord(byTypeMap),
+      highPriority,
+      overdue,
+      dueWithin7Days,
+      withoutDeadline,
+    },
+    focus,
+  };
 }
 
 /**
@@ -1773,6 +1990,59 @@ export default defineExtension({
         }
         const report = { file: resolve(filePath), format, taskCount, errors: errors.length, warnings: warnings.length };
         return asJson ? { ...report, issues } : report;
+      },
+    });
+
+    // -----------------------------------------------------------------------
+    // Command: pm todos context
+    // -----------------------------------------------------------------------
+    api.registerCommand({
+      name: "todos context",
+      description:
+        "Return a compact TODO workspace context snapshot (counts + focused " +
+        "items) optimized for agent prompts and low-token handoffs.",
+      intent: "summarize actionable TODO context for agents without exporting full files",
+      examples: [
+        "pm todos context",
+        "pm todos context --status open --sort priority",
+        "pm todos context --type Task --limit 10",
+        "pm todos context --include-tags",
+      ],
+      flags: [
+        { long: "--status", value_name: "status", description: "Filter items by status before summarizing" },
+        { long: "--type", value_name: "type", description: "Filter items by type before summarizing" },
+        { long: "--sort", value_name: "key", description: "Focus order: priority | deadline | title (default: triage)" },
+        { long: "--limit", value_name: "n", description: "Max focus rows in output (1-200, default: 20)" },
+        { long: "--include-tags", description: "Include tags on focus rows (off by default for token efficiency)" },
+      ],
+      async run(ctx: any) {
+        const statusFilter = readStringOption(ctx.options, "status");
+        const typeFilter = readStringOption(ctx.options, "type");
+        const sort = readSort(ctx.options);
+        const limit = readBoundedIntOption(ctx.options, {
+          key: "limit",
+          label: "--limit",
+          min: 1,
+          max: 200,
+          defaultValue: 20,
+        });
+        const includeTags = readBoolOption(ctx.options, "include-tags", "includeTags");
+
+        const items = fetchPmItems({
+          statusFilter,
+          typeFilter,
+          pmRoot: ctx.pm_root,
+          sort,
+        });
+        const snapshot = buildTodoContextSnapshot(items, {
+          limit,
+          sort,
+          includeTags,
+          statusFilter,
+          typeFilter,
+        });
+        console.error(`Context snapshot: ${snapshot.totalMatched} matched item(s), ${snapshot.focusCount} focus row(s).`);
+        return snapshot;
       },
     });
 

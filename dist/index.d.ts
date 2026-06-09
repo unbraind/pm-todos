@@ -75,6 +75,61 @@ type TodoImportFormat = "markdown" | "todotxt" | "todojson";
  * Pure (does not mutate the input). Undefined `sort` returns the input as-is.
  */
 export declare function sortItems(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined): PmItem[];
+interface TodoContextBuildOptions {
+    /** Maximum number of focus items to include in the snapshot. */
+    limit: number;
+    /** Optional explicit focus ordering; default uses triage-friendly ordering. */
+    sort?: "priority" | "deadline" | "title";
+    /** Include tags on each focus row (off by default to save tokens). */
+    includeTags?: boolean;
+    /** Optional fixed clock for tests. */
+    nowIso?: string;
+    /** Optional filter metadata echoed in the result payload. */
+    statusFilter?: string;
+    /** Optional filter metadata echoed in the result payload. */
+    typeFilter?: string;
+}
+export interface TodoContextFocusItem {
+    id: string;
+    title: string;
+    status: string;
+    type?: string;
+    priority?: number;
+    deadline?: string;
+    assignee?: string;
+    sprint?: string;
+    tags?: string[];
+}
+export interface TodoContextSnapshot {
+    generatedAt: string;
+    filters: {
+        status?: string;
+        type?: string;
+        sort: "triage" | "priority" | "deadline" | "title";
+        limit: number;
+    };
+    totalMatched: number;
+    focusCount: number;
+    counts: {
+        byStatus: Record<string, number>;
+        byType: Record<string, number>;
+        highPriority: number;
+        overdue: number;
+        dueWithin7Days: number;
+        withoutDeadline: number;
+    };
+    focus: TodoContextFocusItem[];
+}
+/**
+ * Default focus ordering for `pm todos context`: active work first, then
+ * urgency (priority/deadline), then recent updates.
+ */
+export declare function sortItemsForContext(items: PmItem[]): PmItem[];
+/**
+ * Build a compact, high-signal context payload for agents:
+ * aggregate counts + a bounded focus list.
+ */
+export declare function buildTodoContextSnapshot(items: PmItem[], options: TodoContextBuildOptions): TodoContextSnapshot;
 export declare function extractMarkdownDue(text: string): {
     text: string;
     deadline?: string;

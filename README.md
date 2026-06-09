@@ -199,6 +199,33 @@ enabled, markdown/tasklist exports include `(pN)` and `due:YYYY-MM-DD` tokens th
 the importer already parses, allowing priority and deadline to survive a
 markdown export → edit → `pm todos import --upsert` cycle.
 
+### `pm todos context`
+
+Return a compact workspace snapshot designed for agent handoffs: status/type counts,
+urgency counters, and a bounded focus list (instead of a full markdown export).
+
+```bash
+pm todos context
+pm todos context --status open --sort priority
+pm todos context --type Task --limit 10
+pm todos context --include-tags
+```
+
+**Flags**
+
+| Flag | Type | Description |
+|---|---|---|
+| `--status <status>` | string | Filter by status before summarizing |
+| `--type <type>` | string | Filter by item type before summarizing |
+| `--sort <key>` | string | Focus order: `priority`, `deadline`, or `title` (default uses triage ordering) |
+| `--limit <n>` | number | Max focus rows to include (1–200, default: 20) |
+| `--include-tags` | boolean | Include tags on focus rows (off by default for token efficiency) |
+
+By default, `context` orders focus items by active-work priority (`in_progress`,
+`blocked`, `open`, `draft`, then terminal states), then by priority and deadline.
+This gives agents high-signal context in fewer tokens while keeping import/export
+behavior unchanged.
+
 ### `pm todos validate <file>`
 
 Parse a TODO file and report problems **without importing**. Exits non-zero when structural
