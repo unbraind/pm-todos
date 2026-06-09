@@ -54,6 +54,18 @@ interface PmItem {
      */
     kv?: Record<string, string>;
 }
+interface PiTodo {
+    id: number;
+    text: string;
+    done: boolean;
+}
+interface PiTodoDetails {
+    action: "list" | "add" | "toggle" | "clear";
+    todos: PiTodo[];
+    nextId: number;
+    error?: string;
+}
+type TodoImportFormat = "markdown" | "todotxt" | "todojson";
 /**
  * Return a new, stably-sorted copy of `items` by the requested key:
  *   - priority: ascending (0 = highest first); missing priority sorts last
@@ -191,6 +203,13 @@ export declare function todoTxtItemToPm(item: TodoTxtItem, id?: string): PmItem;
  * Serialize pm items to a todo.txt document (one line per item, trailing NL).
  */
 export declare function serializeTodoTxt(items: PmItem[]): string;
+/**
+ * Parse the todo extension's tool-result details payload. The canonical shape
+ * mirrors upstream `todo.ts`: `{ action, todos, nextId }`. For convenience, a
+ * raw `Todo[]` array is also accepted.
+ */
+export declare function parsePiTodoDetails(content: string): PiTodoDetails;
+export declare function serializePiTodoDetails(items: PmItem[]): string;
 /** A markdown group: a heading and the items beneath it. */
 interface ItemGroup {
     heading: string;
@@ -222,7 +241,7 @@ interface ValidationIssue {
  * `format` selects the grammar; `markdown` validates checkbox lines, `todotxt`
  * validates todo.txt lines.
  */
-export declare function validateTodoFile(content: string, format: "markdown" | "todotxt"): {
+export declare function validateTodoFile(content: string, format: TodoImportFormat): {
     issues: ValidationIssue[];
     taskCount: number;
 };
@@ -231,7 +250,7 @@ export declare function validateTodoFile(content: string, format: "markdown" | "
  * pm store. Throws a CommandError on the first file containing structural
  * errors (or an unreadable file). Returns silently when all files are clean.
  */
-export declare function preflightValidateImportFiles(files: string[], format: "markdown" | "todotxt"): void;
+export declare function preflightValidateImportFiles(files: string[], format: TodoImportFormat): void;
 /**
  * An existing pm item the upsert path may target. `status` is carried so the
  * update can omit `--status` when unchanged: re-sending a terminal status

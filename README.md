@@ -6,7 +6,7 @@ Import markdown checkboxes (`- [ ]` and `- [x]`) as pm items and export pm items
 
 The parser understands **nested/indented sub-tasks**, **section headers** (`## …` mapped to tags), **priority markers** (`(p1)` and `!`/`!!`/`!!!`), markdown `due:YYYY-MM-DD` metadata, and can import **multiple files at once** via a `--glob` pattern.
 
-In addition to markdown, pm-todos round-trips the de-facto [**todo.txt**](https://github.com/todotxt/todo.txt) format and exports **GitHub-flavored task lists**, can **group** exports into sections by status/sprint/type, and can **validate** a TODO file without importing it.
+In addition to markdown, pm-todos round-trips the de-facto [**todo.txt**](https://github.com/todotxt/todo.txt) format, exports **GitHub-flavored task lists**, and imports/exports the `TodoDetails` JSON state used by the pi coding-agent `todo` tool. It can **group** exports into sections by status/sprint/type and **validate** a TODO file without importing it.
 
 ---
 
@@ -59,6 +59,7 @@ pm todos import TODO.md --section Backlog
 pm todos import TODO.md --closed-as canceled
 pm todos import TODO.md --status in_progress
 pm todos import todo.txt --format todotxt
+pm todos import todo-state.json --format todojson
 pm todos import TODO.md --upsert
 ```
 
@@ -68,7 +69,7 @@ pm todos import TODO.md --upsert
 |---|---|---|
 | `--dry-run` | boolean | Preview without writing |
 | `--upsert` | boolean | Update existing items instead of creating duplicates (idempotent re-import) |
-| `--format <fmt>` | string | Source format: `markdown` (default) or `todotxt` |
+| `--format <fmt>` | string | Source format: `markdown` (default), `todotxt`, or `todojson` |
 | `--type <type>` | string | Item type (default: Task) |
 | `--priority <n>` | number | Priority (0–4); overrides markers inferred from the text |
 | `--tags <tags>` | string | Comma-separated tags applied to every item |
@@ -133,6 +134,23 @@ With `--format todotxt`, lines are parsed as [todo.txt](https://github.com/todot
 - `due:YYYY-MM-DD` → the item deadline. Other `key:value` pairs are ignored on pm import (pm has no field for them), but are **preserved through a todo.txt round-trip** at the format layer.
 - **Creation and completion dates** (`x <completion> <creation> …` for done items, `(A) <creation> …` for open items) are parsed and **re-emitted on todo.txt export**, so a todo.txt → todo.txt round-trip is lossless on dates and `key:value` metadata.
 
+#### pi coding-agent todo state (`--format todojson`)
+
+With `--format todojson`, pm-todos reads and writes the `TodoDetails` payload from the pi coding-agent `todo` extension:
+
+```json
+{
+  "action": "list",
+  "todos": [
+    { "id": 1, "text": "Import context", "done": false },
+    { "id": 2, "text": "Export context", "done": true }
+  ],
+  "nextId": 3
+}
+```
+
+Each todo becomes a pm item with `text` mapped to the title and `done` mapped to `closed` or `open`. Because the upstream todo model has no pm id field, `todojson` imports automatically use upsert matching by title so importing the same state repeatedly does not create duplicate pm items.
+
 ### `pm todos export`
 
 Export pm items as a markdown TODO list, a todo.txt file, or a GitHub-flavored task list.
@@ -143,6 +161,7 @@ pm todos export --output TODO.md
 pm todos export --status open --output backlog.md
 pm todos export --type Task
 pm todos export --format todotxt --output todo.txt
+pm todos export --format todojson --output todo-state.json
 pm todos export --format tasklist --group-by sprint
 pm todos export --group-by type
 pm todos export --sort priority
@@ -155,7 +174,7 @@ pm todos export --metadata --output TODO.md
 | Flag | Type | Description |
 |---|---|---|
 | `--output <file>` | string | Write to file instead of stdout |
-| `--format <fmt>` | string | Output format: `markdown` (default), `todotxt`, or `tasklist` (GitHub task list) |
+| `--format <fmt>` | string | Output format: `markdown` (default), `todotxt`, `tasklist` (GitHub task list), or `todojson` |
 | `--group-by <field>` | string | Section markdown/tasklist output by `status` (default), `sprint`, or `type` |
 | `--sort <key>` | string | Sort items by `priority` (0 highest first), `deadline` (ascending), or `title` (alphabetical). Unset preserves pm's native order |
 | `--status <status>` | string | Filter by status |
@@ -165,7 +184,8 @@ pm todos export --metadata --output TODO.md
 The default `markdown` export (no `--group-by`, or `--group-by status`) is unchanged: a
 `# TODO` document with `## Open` / `## Done` sections. `--group-by sprint`/`type` emits a
 `## <value>` section per group. The `todotxt` exporter maps priority→letter, tags→`+project`,
-and deadline→`due:`. The `tasklist` exporter emits `- [ ]` / `- [x]` items grouped under
+and deadline→`due:`. The `todojson` exporter emits a pi coding-agent `TodoDetails` object
+with sequential numeric todo ids, `text`, `done`, and `nextId`. The `tasklist` exporter emits `- [ ]` / `- [x]` items grouped under
 `## <heading>` sections, each carrying a `<!-- pm-id -->` comment for round-trips.
 
 `--metadata` is opt-in so the historical markdown output stays byte-stable. When
@@ -181,6 +201,7 @@ errors (malformed `due:` dates, out-of-range priorities) are found, so it is saf
 ```bash
 pm todos validate TODO.md
 pm todos validate todo.txt --format todotxt
+pm todos validate todo-state.json --format todojson
 pm todos validate TODO.md --json
 ```
 
@@ -188,7 +209,7 @@ pm todos validate TODO.md --json
 
 | Flag | Type | Description |
 |---|---|---|
-| `--format <fmt>` | string | File format: `markdown` (default) or `todotxt` |
+| `--format <fmt>` | string | File format: `markdown` (default), `todotxt`, or `todojson` |
 | `--json` | boolean | Return a JSON report (with the full `issues` array) on stdout |
 
 Errors (e.g. an invalid `due:` date, a `(p9)` marker out of the `0–4` range) cause a non-zero
@@ -222,8 +243,8 @@ export` routes above and can also be driven programmatically:
 
 The `todos` exporter accepts `output`, `status`, `type`, `format`, `group-by`, `metadata`, and
 `sort` options and emits the same output produced by `pm todos export` (default
-markdown, or `todotxt` / `tasklist`). The `todos` importer additionally accepts
-`format` (`markdown` | `todotxt`) and `status` (status for open items, complementing
+markdown, or `todotxt` / `tasklist` / `todojson`). The `todos` importer additionally accepts
+`format` (`markdown` | `todotxt` | `todojson`) and `status` (status for open items, complementing
 `closed-as`).
 
 ### Legacy importer: `todos-import`

@@ -12,6 +12,8 @@ import {
   parseTodoTxt,
   serializeTodoTxtLine,
   serializeTodoTxt,
+  parsePiTodoDetails,
+  serializePiTodoDetails,
   renderTaskList,
   groupItems,
   validateTodoFile,
@@ -135,6 +137,64 @@ test("serializeTodoTxt round-trips through parseTodoTxt (lossless on mapped fiel
 
 test("serializeTodoTxt returns empty string for no items", () => {
   assert.equal(serializeTodoTxt([]), "");
+});
+
+// ---------------------------------------------------------------------------
+// pi coding-agent todo extension JSON state
+// ---------------------------------------------------------------------------
+
+test("parsePiTodoDetails parses upstream todo tool result details", () => {
+  const details = parsePiTodoDetails(JSON.stringify({
+    action: "list",
+    todos: [
+      { id: 1, text: "Import context", done: false },
+      { id: 2, text: "Export context", done: true },
+    ],
+    nextId: 3,
+  }));
+  assert.equal(details.action, "list");
+  assert.equal(details.nextId, 3);
+  assert.deepEqual(details.todos, [
+    { id: 1, text: "Import context", done: false },
+    { id: 2, text: "Export context", done: true },
+  ]);
+});
+
+test("parsePiTodoDetails accepts a raw Todo array and computes nextId", () => {
+  const details = parsePiTodoDetails(JSON.stringify([
+    { id: 4, text: "Standalone todo", done: false },
+  ]));
+  assert.equal(details.action, "list");
+  assert.equal(details.nextId, 5);
+  assert.deepEqual(details.todos, [{ id: 4, text: "Standalone todo", done: false }]);
+});
+
+test("serializePiTodoDetails emits TodoDetails compatible with upstream todo.ts", () => {
+  const out = serializePiTodoDetails([
+    { id: "pm-1", title: "Open task", status: "open" },
+    { id: "pm-2", title: "Done task", status: "closed" },
+  ]);
+  const parsed = JSON.parse(out);
+  assert.deepEqual(parsed, {
+    action: "list",
+    todos: [
+      { id: 1, text: "Open task", done: false },
+      { id: 2, text: "Done task", done: true },
+    ],
+    nextId: 3,
+  });
+});
+
+test("validateTodoFile rejects duplicate todojson ids", () => {
+  const { issues, taskCount } = validateTodoFile(JSON.stringify({
+    todos: [
+      { id: 1, text: "One", done: false },
+      { id: 1, text: "Duplicate", done: true },
+    ],
+    nextId: 2,
+  }), "todojson");
+  assert.equal(taskCount, 2);
+  assert.ok(issues.some((issue) => issue.severity === "error" && /Duplicate todo id/.test(issue.message)));
 });
 
 // ---------------------------------------------------------------------------

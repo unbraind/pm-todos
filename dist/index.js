@@ -75,7 +75,10 @@ function readImportFormat(options) {
         return "markdown";
     if (v === "todotxt" || v === "todo.txt")
         return "todotxt";
-    throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt)`, EXIT_CODE.USAGE);
+    if (v === "todojson" || v === "todo-json" || v === "todo" || v === "pi-todo" || v === "pi-todos") {
+        return "todojson";
+    }
+    throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt|todojson)`, EXIT_CODE.USAGE);
 }
 /**
  * Read and validate the export `--format` option (markdown | todotxt | tasklist).
@@ -91,7 +94,10 @@ function readExportFormat(options) {
         return "todotxt";
     if (v === "tasklist" || v === "task-list" || v === "gfm")
         return "tasklist";
-    throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt|tasklist)`, EXIT_CODE.USAGE);
+    if (v === "todojson" || v === "todo-json" || v === "todo" || v === "pi-todo" || v === "pi-todos") {
+        return "todojson";
+    }
+    throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt|tasklist|todojson)`, EXIT_CODE.USAGE);
 }
 /**
  * Read and validate the `--group-by` option (status | sprint | type).
@@ -566,6 +572,76 @@ export function serializeTodoTxt(items) {
         return "";
     return items.map(serializeTodoTxtLine).join("\n") + "\n";
 }
+// ---------------------------------------------------------------------------
+// pi coding-agent todo extension JSON state
+// ---------------------------------------------------------------------------
+function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function parsePiTodo(value, index) {
+    if (!isRecord(value)) {
+        throw new CommandError(`todojson item at index ${index} is not an object`, EXIT_CODE.USAGE);
+    }
+    if (!Number.isInteger(value.id)) {
+        throw new CommandError(`todojson item at index ${index} has invalid id (expected integer)`, EXIT_CODE.USAGE);
+    }
+    if (typeof value.text !== "string" || value.text.trim() === "") {
+        throw new CommandError(`todojson item at index ${index} has invalid text (expected non-empty string)`, EXIT_CODE.USAGE);
+    }
+    if (typeof value.done !== "boolean") {
+        throw new CommandError(`todojson item at index ${index} has invalid done (expected boolean)`, EXIT_CODE.USAGE);
+    }
+    const id = value.id;
+    const text = value.text;
+    const done = value.done;
+    if (typeof id !== "number" || typeof text !== "string" || typeof done !== "boolean") {
+        throw new CommandError(`todojson item at index ${index} has invalid field types`, EXIT_CODE.USAGE);
+    }
+    return { id, text, done };
+}
+/**
+ * Parse the todo extension's tool-result details payload. The canonical shape
+ * mirrors upstream `todo.ts`: `{ action, todos, nextId }`. For convenience, a
+ * raw `Todo[]` array is also accepted.
+ */
+export function parsePiTodoDetails(content) {
+    let parsed;
+    try {
+        parsed = JSON.parse(content);
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new CommandError(`Invalid todojson: ${msg}`, EXIT_CODE.USAGE);
+    }
+    const todosRaw = Array.isArray(parsed) ? parsed : isRecord(parsed) ? parsed.todos : undefined;
+    if (!Array.isArray(todosRaw)) {
+        throw new CommandError("Invalid todojson: expected a TodoDetails object with a todos array", EXIT_CODE.USAGE);
+    }
+    const todos = todosRaw.map(parsePiTodo);
+    const maxId = todos.reduce((max, todo) => Math.max(max, todo.id), 0);
+    const nextIdRaw = isRecord(parsed) ? parsed.nextId : undefined;
+    const nextId = typeof nextIdRaw === "number" && Number.isInteger(nextIdRaw) && nextIdRaw > maxId
+        ? nextIdRaw
+        : maxId + 1;
+    const actionRaw = isRecord(parsed) ? parsed.action : undefined;
+    const action = actionRaw === "list" || actionRaw === "add" || actionRaw === "toggle" || actionRaw === "clear"
+        ? actionRaw
+        : "list";
+    return { action, todos, nextId };
+}
+export function serializePiTodoDetails(items) {
+    const todos = items.map((item, index) => ({
+        id: index + 1,
+        text: item.title,
+        done: mapPmStatusToChecked(item.status),
+    }));
+    const details = {
+        action: "list",
+        todos,
+        nextId: todos.length + 1,
+    };
+    return JSON.stringify(details, null, 2) + "\n";
+}
 /**
  * Group pm items for sectioned export. `status` (default) splits into Open
  * (open/in_progress/blocked/draft) and Done (closed/canceled), matching the
@@ -632,6 +708,24 @@ export function validateTodoFile(content, format) {
     const issues = [];
     let taskCount = 0;
     const lines = content.split("\n");
+    if (format === "todojson") {
+        try {
+            const details = parsePiTodoDetails(content);
+            const seen = new Set();
+            for (const todo of details.todos) {
+                taskCount++;
+                if (seen.has(todo.id)) {
+                    issues.push({ line: 0, severity: "error", message: `Duplicate todo id '${todo.id}'`, text: String(todo.id) });
+                }
+                seen.add(todo.id);
+            }
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            issues.push({ line: 0, severity: "error", message: msg, text: "" });
+        }
+        return { issues, taskCount };
+    }
     if (format === "todotxt") {
         for (let i = 0; i < lines.length; i++) {
             const raw = lines[i];
@@ -821,6 +915,16 @@ function resolveGlob(pattern, cwd) {
  * todo.txt, `+project`/`@context` become tags and `due:` becomes the deadline.
  */
 function parseFileToNormalized(md, file, format) {
+    if (format === "todojson") {
+        return parsePiTodoDetails(md).todos.map((item) => ({
+            checked: item.done,
+            text: item.text,
+            tags: ["todo"],
+            indent: 0,
+            lineNumber: item.id,
+            file,
+        }));
+    }
     if (format === "todotxt") {
         const lines = md.split("\n");
         const out = [];
@@ -1191,6 +1295,9 @@ function buildTodoMarkdown(opts) {
     if (format === "todotxt") {
         return { markdown: serializeTodoTxt(items), count: items.length };
     }
+    if (format === "todojson") {
+        return { markdown: serializePiTodoDetails(items), count: items.length };
+    }
     if (format === "tasklist") {
         return { markdown: renderTaskList(items, groupBy ?? "status", opts.metadata), count: items.length };
     }
@@ -1205,161 +1312,8 @@ function buildTodoMarkdown(opts) {
 // ---------------------------------------------------------------------------
 export default defineExtension({
     name: "pm-todos",
-    version: "2026.6.8",
+    version: "2026.6.9",
     activate(api) {
-        // -----------------------------------------------------------------------
-        // Command: pm todos import <file>
-        // -----------------------------------------------------------------------
-        api.registerCommand({
-            name: "todos import",
-            description: "Import markdown TODO items (- [ ] and - [x]) as pm items. " +
-                "Each checkbox becomes a pm Task; checked items are closed. " +
-                "Supports nested sub-tasks, multiple files via --glob, section headers " +
-                "(## …) mapped to tags, and priority markers ((p1), !).",
-            intent: "import markdown checkboxes as pm items",
-            examples: [
-                "pm todos import TODO.md",
-                "pm todos import notes.md --dry-run",
-                "pm todos import backlog.md --type Task --priority 2",
-                "pm todos import --glob 'docs/**/*.md'",
-                "pm todos import TODO.md --section Backlog",
-                "pm todos import TODO.md --closed-as canceled",
-                "pm todos import TODO.md --status in_progress",
-                "pm todos import todo.txt --format todotxt",
-                "pm todos import TODO.md --upsert",
-            ],
-            flags: [
-                { long: "--dry-run", description: "Preview without writing" },
-                { long: "--upsert", description: "Update existing items (matched by embedded <!-- pm-id --> comment, else title+section) instead of creating duplicates" },
-                { long: "--format", value_name: "fmt", description: "Source format: markdown (default) | todotxt" },
-                { long: "--type", value_name: "type", description: "Item type for imported items (default: Task)" },
-                { long: "--priority", value_name: "n", description: "Priority for imported items (0-4); overrides inferred markers" },
-                { long: "--tags", value_name: "tags", description: "Comma-separated tags to apply to all items" },
-                { long: "--glob", value_name: "pattern", description: "Import every markdown file matching this glob (e.g. 'docs/**/*.md')" },
-                { long: "--section", value_name: "name", description: "Import only items under this ## section heading" },
-                { long: "--closed-as", value_name: "status", description: "Status to assign checked items (default: closed)" },
-                { long: "--status", value_name: "status", description: "Status to assign open (unchecked) items (default: open)" },
-                { long: "--no-section-tags", description: "Do not derive tags from section headings" },
-            ],
-            async run(ctx) {
-                const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
-                const upsert = readBoolOption(ctx.options, "upsert");
-                const format = readImportFormat(ctx.options);
-                const itemType = ctx.options["type"] || "Task";
-                const priority = ctx.options["priority"];
-                const tagsOpt = ctx.options["tags"];
-                const glob = readStringOption(ctx.options, "glob");
-                const section = readStringOption(ctx.options, "section");
-                const closedAs = readStringOption(ctx.options, "closed-as", "closedAs") ?? "closed";
-                const openAs = readStringOption(ctx.options, "status");
-                // `--no-section-tags` arrives as sectionTags=false; default on.
-                const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
-                let files;
-                if (glob) {
-                    files = resolveGlob(glob, process.cwd());
-                    if (files.length === 0) {
-                        throw new CommandError(`No files matched glob: ${glob}`, EXIT_CODE.NOT_FOUND);
-                    }
-                    console.error(`Matched ${files.length} file(s) for glob '${glob}'.`);
-                }
-                else {
-                    const filePath = ctx.args[0];
-                    if (!filePath) {
-                        throw new CommandError("Usage: pm todos import <file> [--glob <pattern>] [--section <name>] [--closed-as <status>] [--dry-run]", EXIT_CODE.USAGE);
-                    }
-                    files = [resolve(filePath)];
-                }
-                const extraTags = (tagsOpt ?? "").split(",").map((t) => t.trim()).filter(Boolean);
-                // Fail-fast syntax gate: validate ALL input files before any pm-store
-                // write so malformed input aborts cleanly with no partial import.
-                preflightValidateImportFiles(files, format);
-                const { imported, skipped, updated, previews } = runTodoImport({
-                    files,
-                    itemType,
-                    closedAs,
-                    openAs,
-                    priority,
-                    extraTags,
-                    section,
-                    sectionTags,
-                    dryRun,
-                    pmRoot: ctx.pm_root,
-                    format,
-                    upsert,
-                });
-                if (imported === 0 && skipped === 0 && (updated ?? 0) === 0) {
-                    console.error("No TODO items found.");
-                    return { imported: 0, skipped: 0 };
-                }
-                if (dryRun) {
-                    const updPart = upsert ? `, update ${updated ?? 0}` : "";
-                    console.error(`[dry-run] Would import ${imported}${updPart} TODO item(s), skip ${skipped}.`);
-                    return { dryRun: true, wouldImport: imported, wouldUpdate: updated ?? 0, wouldSkip: skipped, previews };
-                }
-                const updPart = upsert ? `, updated ${updated ?? 0}` : "";
-                console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
-                return upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
-            },
-        });
-        // -----------------------------------------------------------------------
-        // Command: pm todos export
-        // -----------------------------------------------------------------------
-        api.registerCommand({
-            name: "todos export",
-            description: "Export pm items as a markdown TODO list, todo.txt, or GitHub task list. " +
-                "Open items become - [ ], closed/canceled items become - [x].",
-            intent: "export pm items to markdown TODO format",
-            examples: [
-                "pm todos export",
-                "pm todos export --output TODO.md",
-                "pm todos export --status open --output backlog.md",
-                "pm todos export --type Task",
-                "pm todos export --format todotxt --output todo.txt",
-                "pm todos export --format tasklist --group-by sprint",
-                "pm todos export --group-by type",
-                "pm todos export --sort priority",
-                "pm todos export --sort deadline --status open",
-                "pm todos export --metadata --output TODO.md",
-            ],
-            flags: [
-                { long: "--output", value_name: "file", description: "Write output to file (default: stdout)" },
-                { long: "--format", value_name: "fmt", description: "Output format: markdown (default) | todotxt | tasklist" },
-                { long: "--group-by", value_name: "field", description: "Section markdown/tasklist by status (default) | sprint | type" },
-                { long: "--sort", value_name: "key", description: "Sort items by priority | deadline | title (preserves pm order if unset)" },
-                { long: "--status", value_name: "status", description: "Filter by status" },
-                { long: "--type", value_name: "type", description: "Filter by item type" },
-                { long: "--metadata", description: "Include parseable `(pN)` and `due:YYYY-MM-DD` tokens in markdown/tasklist output" },
-            ],
-            async run(ctx) {
-                const outputPath = ctx.options["output"];
-                const format = readExportFormat(ctx.options);
-                const groupBy = readGroupBy(ctx.options);
-                const sort = readSort(ctx.options);
-                const metadata = readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata");
-                console.error("Fetching pm items…");
-                const { markdown, count } = buildTodoMarkdown({
-                    statusFilter: ctx.options["status"],
-                    typeFilter: ctx.options["type"],
-                    pmRoot: ctx.pm_root,
-                    format,
-                    groupBy,
-                    sort,
-                    metadata,
-                });
-                if (count === 0) {
-                    console.error("No items found.");
-                    return { exported: 0 };
-                }
-                if (outputPath) {
-                    const absolutePath = resolve(outputPath);
-                    writeFileSync(absolutePath, markdown, "utf-8");
-                    console.error(`Exported ${count} item(s) to: ${absolutePath}`);
-                    return { exported: count, file: absolutePath };
-                }
-                console.error(`Exported ${count} item(s).`);
-                return { exported: count, markdown };
-            },
-        });
         // -----------------------------------------------------------------------
         // Command: pm todos validate <file>
         // -----------------------------------------------------------------------
@@ -1372,10 +1326,11 @@ export default defineExtension({
             examples: [
                 "pm todos validate TODO.md",
                 "pm todos validate todo.txt --format todotxt",
+                "pm todos validate todo-state.json --format todojson",
                 "pm todos validate TODO.md --json",
             ],
             flags: [
-                { long: "--format", value_name: "fmt", description: "File format: markdown (default) | todotxt" },
+                { long: "--format", value_name: "fmt", description: "File format: markdown (default) | todotxt | todojson" },
                 { long: "--json", description: "Emit a JSON report" },
             ],
             async run(ctx) {
@@ -1383,7 +1338,7 @@ export default defineExtension({
                 const asJson = readBoolOption(ctx.options, "json");
                 const filePath = ctx.args[0];
                 if (!filePath) {
-                    throw new CommandError("Usage: pm todos validate <file> [--format markdown|todotxt] [--json]", EXIT_CODE.USAGE);
+                    throw new CommandError("Usage: pm todos validate <file> [--format markdown|todotxt|todojson] [--json]", EXIT_CODE.USAGE);
                 }
                 let content;
                 try {
@@ -1431,7 +1386,6 @@ export default defineExtension({
         // existing CLI usage would silently break.
         api.registerImporter("todos", async (ctx) => {
             const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
-            const upsert = readBoolOption(ctx.options, "upsert");
             const glob = readStringOption(ctx.options, "glob");
             const fileArg = (ctx.args && ctx.args[0]);
             const fileOpt = readStringOption(ctx.options, "file");
@@ -1461,6 +1415,7 @@ export default defineExtension({
                 .split(",").map((t) => t.trim()).filter(Boolean);
             const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
             const format = readImportFormat(ctx.options);
+            const upsert = readBoolOption(ctx.options, "upsert") || format === "todojson";
             // Fail-fast syntax gate: this importer is the real `pm todos import` path
             // (the action contract shadows the like-named command). Validate every
             // file before any pm-store write so malformed input aborts immediately
@@ -1520,7 +1475,6 @@ export default defineExtension({
                 console.error(`todos: wrote ${count} item(s) to ${absolutePath}`);
                 return { exported: count, file: absolutePath };
             }
-            console.log(markdown);
             return { exported: count, markdown };
         });
         // -----------------------------------------------------------------------
