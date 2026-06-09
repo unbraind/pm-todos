@@ -624,16 +624,82 @@ export function parsePiTodoDetails(content) {
         : "list";
     return { action, todos, nextId };
 }
+const TODOJSON_ID_MARKER_RE = /\btodo-id:(\d+)\b/;
+const TODOJSON_IMPORTED_DESCRIPTION_RE = /^Imported from .+ line \d+(?: \(todo-id:\d+\))?$/;
+/**
+ * Extract a persisted todojson source id (`todo-id:<n>`) from an item's
+ * description, if present.
+ */
+export function extractTodojsonSourceId(description) {
+    if (!description)
+        return undefined;
+    const match = TODOJSON_ID_MARKER_RE.exec(description);
+    if (!match)
+        return undefined;
+    const parsed = Number.parseInt(match[1], 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+/**
+ * Build the import provenance description used by todojson imports. Includes a
+ * persisted `todo-id:<n>` marker so later exports can keep todo ids stable.
+ */
+export function buildTodojsonImportDescription(file, lineNumber, todoId) {
+    const base = `Imported from ${file ?? "stdin"} line ${lineNumber}`;
+    return todoId !== undefined ? `${base} (todo-id:${todoId})` : base;
+}
+/**
+ * Decide whether an upserted todojson line should refresh an existing item's
+ * description with the canonical import-provenance marker.
+ */
+function shouldRefreshTodojsonDescription(existingDescription, todoId) {
+    if (!existingDescription)
+        return true;
+    const existingId = extractTodojsonSourceId(existingDescription);
+    if (existingId !== undefined)
+        return existingId !== todoId;
+    return TODOJSON_IMPORTED_DESCRIPTION_RE.test(existingDescription);
+}
+function parseTimestamp(value) {
+    if (!value)
+        return Number.POSITIVE_INFINITY;
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
 export function serializePiTodoDetails(items) {
-    const todos = items.map((item, index) => ({
-        id: index + 1,
-        text: item.title,
-        done: mapPmStatusToChecked(item.status),
+    const rows = items.map((item) => ({ item }));
+    const usedIds = new Set();
+    // First pass: preserve persisted todo ids when present and non-conflicting.
+    for (const row of rows) {
+        const persisted = extractTodojsonSourceId(row.item.description);
+        if (persisted !== undefined && !usedIds.has(persisted)) {
+            row.todoId = persisted;
+            usedIds.add(persisted);
+        }
+    }
+    // Second pass: assign deterministic new ids to items lacking persisted ids.
+    const unassigned = rows
+        .filter((row) => row.todoId === undefined)
+        .sort((a, b) => parseTimestamp(a.item.created_at) - parseTimestamp(b.item.created_at)
+        || parseTimestamp(a.item.updated_at) - parseTimestamp(b.item.updated_at)
+        || (a.item.id ?? "").localeCompare(b.item.id ?? "")
+        || (a.item.title ?? "").localeCompare(b.item.title ?? ""));
+    let nextId = usedIds.size > 0 ? Math.max(...usedIds) + 1 : 1;
+    for (const row of unassigned) {
+        row.todoId = nextId;
+        usedIds.add(nextId);
+        nextId += 1;
+    }
+    const todos = rows
+        .sort((a, b) => (a.todoId ?? 0) - (b.todoId ?? 0))
+        .map((row) => ({
+        id: row.todoId ?? 0,
+        text: row.item.title,
+        done: mapPmStatusToChecked(row.item.status),
     }));
     const details = {
         action: "list",
         todos,
-        nextId: todos.length + 1,
+        nextId,
     };
     return JSON.stringify(details, null, 2) + "\n";
 }
@@ -917,6 +983,7 @@ function parseFileToNormalized(md, file, format) {
             tags: ["todo"],
             indent: 0,
             lineNumber: item.id,
+            todoId: item.id,
             file,
         }));
     }
@@ -991,7 +1058,12 @@ export function buildExistingTodoIndex(items) {
     for (const item of items) {
         if (!item.id)
             continue;
-        const entry = { pmId: item.id, status: item.status, title: item.title };
+        const entry = {
+            pmId: item.id,
+            status: item.status,
+            title: item.title,
+            description: item.description,
+        };
         byId.set(item.id, entry);
         // The exported section heading is the pm status group (Open/Done) or a
         // sprint/type value; a hand-edited file usually keeps the original heading.
@@ -1102,6 +1174,7 @@ function runTodoImport(opts) {
                 previews.push({
                     action,
                     existingId: existing?.pmId,
+                    todoId: todo.todoId,
                     checked: todo.checked,
                     title: todo.text,
                     status,
@@ -1155,13 +1228,26 @@ function runTodoImport(opts) {
                         updArgs.push("--tags", tags.join(",")); // --tags replaces
                     if (todo.deadline)
                         updArgs.push("--deadline", todo.deadline);
+                    const todojsonTodoId = opts.format === "todojson" ? todo.todoId : undefined;
+                    const todojsonDescription = todojsonTodoId !== undefined
+                        ? buildTodojsonImportDescription(todo.file, todo.lineNumber, todojsonTodoId)
+                        : undefined;
+                    if (todojsonTodoId !== undefined && shouldRefreshTodojsonDescription(existing.description, todojsonTodoId)) {
+                        updArgs.push("--description", todojsonDescription);
+                    }
                     const result = spawnSync("pm", updArgs, { encoding: "utf-8" });
                     if (result.status !== 0) {
                         throw new Error(result.stderr || "pm update failed");
                     }
+                    existing.status = status;
+                    existing.title = updTitle;
+                    if (todojsonDescription)
+                        existing.description = todojsonDescription;
                     updated++;
                 }
                 else {
+                    const isTodojson = opts.format === "todojson" && todo.todoId !== undefined;
+                    const importDescription = buildTodojsonImportDescription(todo.file, todo.lineNumber, isTodojson ? todo.todoId : undefined);
                     const spawnArgs = [
                         "--path", opts.pmRoot,
                         ...(opts.upsert ? ["--json"] : []),
@@ -1169,7 +1255,7 @@ function runTodoImport(opts) {
                         "--title", todo.text,
                         "--type", itemType,
                         "--status", status,
-                        "--description", `Imported from ${todo.file ?? "stdin"} line ${todo.lineNumber}`,
+                        "--description", importDescription,
                     ];
                     if (priority !== undefined && priority !== "")
                         spawnArgs.push("--priority", priority);
@@ -1188,7 +1274,12 @@ function runTodoImport(opts) {
                     if (opts.upsert) {
                         const createdId = extractCreatedTodoId(result.stdout);
                         if (createdId) {
-                            const entry = { pmId: createdId, status };
+                            const entry = {
+                                pmId: createdId,
+                                status,
+                                title: todo.text,
+                                description: importDescription,
+                            };
                             index.byId.set(createdId, entry);
                             const sig = todoSignatureKey(todo.text);
                             if (sig && !index.bySig.has(sig))

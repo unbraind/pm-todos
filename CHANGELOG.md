@@ -4,6 +4,7 @@
 
 ### Added
 
+- Idempotent --upsert import \(no duplicates on re-import\) ([pm-todos-7l60](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-7l60.toon))
 - Add native todo-state import/export support ([pm-todos-auvq](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-auvq.toon))
 
 ## 2026.06.07 - 2026-06-07

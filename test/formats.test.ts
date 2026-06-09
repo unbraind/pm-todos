@@ -14,6 +14,8 @@ import {
   serializeTodoTxt,
   parsePiTodoDetails,
   serializePiTodoDetails,
+  extractTodojsonSourceId,
+  buildTodojsonImportDescription,
   renderTaskList,
   groupItems,
   validateTodoFile,
@@ -183,6 +185,80 @@ test("serializePiTodoDetails emits TodoDetails compatible with upstream todo.ts"
     ],
     nextId: 3,
   });
+});
+
+test("extractTodojsonSourceId reads persisted todo-id markers from descriptions", () => {
+  assert.equal(extractTodojsonSourceId("Imported from todo-state.json line 2 (todo-id:17)"), 17);
+  assert.equal(extractTodojsonSourceId("Imported from todo-state.json line 2"), undefined);
+  assert.equal(extractTodojsonSourceId(undefined), undefined);
+});
+
+test("buildTodojsonImportDescription includes a stable todo-id marker when available", () => {
+  assert.equal(
+    buildTodojsonImportDescription("/tmp/todo-state.json", 3, 42),
+    "Imported from /tmp/todo-state.json line 3 (todo-id:42)",
+  );
+  assert.equal(
+    buildTodojsonImportDescription("/tmp/todo-state.json", 3),
+    "Imported from /tmp/todo-state.json line 3",
+  );
+});
+
+test("serializePiTodoDetails preserves persisted todo ids and assigns new ids after max", () => {
+  const out = serializePiTodoDetails([
+    {
+      id: "pm-a",
+      title: "Baseline context",
+      status: "open",
+      description: "Imported from todo-state.json line 1 (todo-id:7)",
+      created_at: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      id: "pm-b",
+      title: "Close stale item",
+      status: "closed",
+      description: "Imported from todo-state.json line 2 (todo-id:3)",
+      created_at: "2026-06-02T00:00:00.000Z",
+    },
+    {
+      id: "pm-c",
+      title: "Release checklist",
+      status: "open",
+      created_at: "2026-06-03T00:00:00.000Z",
+    },
+  ]);
+  const parsed = JSON.parse(out);
+  assert.deepEqual(parsed.todos, [
+    { id: 3, text: "Close stale item", done: true },
+    { id: 7, text: "Baseline context", done: false },
+    { id: 8, text: "Release checklist", done: false },
+  ]);
+  assert.equal(parsed.nextId, 9);
+});
+
+test("serializePiTodoDetails resolves duplicate persisted ids by keeping first and reassigning later rows", () => {
+  const out = serializePiTodoDetails([
+    {
+      id: "pm-a",
+      title: "First owner",
+      status: "open",
+      description: "Imported from todo-state.json line 1 (todo-id:2)",
+      created_at: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      id: "pm-b",
+      title: "Duplicate owner",
+      status: "open",
+      description: "Imported from todo-state.json line 2 (todo-id:2)",
+      created_at: "2026-06-02T00:00:00.000Z",
+    },
+  ]);
+  const parsed = JSON.parse(out);
+  assert.deepEqual(parsed.todos, [
+    { id: 2, text: "First owner", done: false },
+    { id: 3, text: "Duplicate owner", done: false },
+  ]);
+  assert.equal(parsed.nextId, 4);
 });
 
 test("validateTodoFile rejects duplicate todojson ids", () => {

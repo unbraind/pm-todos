@@ -2,11 +2,27 @@ id: pm-todos-7l60
 title: Idempotent --upsert import (no duplicates on re-import)
 description: "Add an opt-in --upsert flag to 'pm todos import' that updates existing pm items instead of creating duplicates on re-import. Matches each incoming markdown checkbox to an existing item by (1) the embedded <!-- pm-id --> provenance comment the exporter emits, then (2) a stable title signature for hand-written files. Also parses the <!-- pm-id --> comment out of the title on every import so export->edit->import-with-upsert round-trips land edits on the same items. Default (no flag) behavior is unchanged: items are always created."
 type: Feature
-status: open
+status: closed
 priority: 2
 tags: []
 created_at: "2026-06-05T04:44:50.008Z"
-updated_at: "2026-06-05T04:44:50.008Z"
+updated_at: "2026-06-09T21:40:03.210Z"
 author: codex
 acceptance_criteria: "Default import still duplicates on re-run; --upsert keeps the item count stable and updates in place; export->import --upsert preserves ids and creates no duplicates; status not re-sent when unchanged; non-recursive bounded spawning; unit tests + functional test pass; changelog:check exits 0."
+resolution: "Persist todojson source ids in import provenance (todo-id marker), reuse them on export, and allocate new ids only above current max to keep re-import/export cycles stable."
+expected_result: todojson import/re-import/export stays idempotent with stable todo ids for existing tasks and deterministic nextId progression.
+actual_result: "npm test and npm run release:check passed; manual workspace e2e confirmed ids 1/2/3 retained with nextId 4 after re-import and added todo."
+notes[2]{created_at,author,text}:
+  "2026-06-09T21:36:11.072Z",codex-5-3,"Phase 5 execution: verify and harden pi todo-state (todojson) sync end-to-end for import/re-import/export stability."
+  "2026-06-09T21:39:54.842Z",codex-5-3,"Manual todojson e2e in /tmp/pmtodos-e2e-stable-UIO3qM: import->re-import->export preserved ids (1,2,3) and nextId=4 after status toggles and one added todo."
+files[3]{path,scope,note}:
+  index.ts,project,Persist todojson todo-id markers on import and reuse on export
+  README.md,project,Document stable todojson id behavior
+  test/formats.test.ts,project,Add coverage for todojson id persistence and conflict handling
+tests[2]{command,path,scope,timeout_seconds,pm_context_mode,env_set,env_clear,shared_host_safe,assert_stdout_contains,assert_stdout_regex,assert_stderr_contains,assert_stderr_regex,assert_stdout_min_lines,assert_json_field_equals,assert_json_field_gte,note}:
+  "PM_PATH=/home/steve/container/pm-todos/.agents/pm PM_GLOBAL_PATH=/home/steve/.pm-cli npm run release:check",null,project,null,null,null,null,null,null,null,null,null,null,null,null,null
+  PM_PATH=/home/steve/container/pm-todos/.agents/pm PM_GLOBAL_PATH=/home/steve/.pm-cli npm test,null,project,null,null,null,null,null,null,null,null,null,null,null,null,null
+docs[1]{path,scope,note}:
+  README.md,project,Documented todojson stable id sync semantics
+close_reason: Implemented stable todojson id persistence and verified end-to-end sync.
 body: ""

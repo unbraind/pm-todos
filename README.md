@@ -151,6 +151,12 @@ With `--format todojson`, pm-todos reads and writes the `TodoDetails` payload fr
 
 Each todo becomes a pm item with `text` mapped to the title and `done` mapped to `closed` or `open`. Because the upstream todo model has no pm id field, `todojson` imports automatically use upsert matching by title so importing the same state repeatedly does not create duplicate pm items.
 
+To keep downstream toggle semantics stable, todojson imports persist each incoming
+numeric todo id in the generated item description as `todo-id:<n>`. On export,
+pm-todos reuses those persisted ids (and only allocates new ids above the
+current max when needed), so repeated import/export cycles keep existing ids
+stable instead of re-numbering the full list.
+
 ### `pm todos export`
 
 Export pm items as a markdown TODO list, a todo.txt file, or a GitHub-flavored task list.
