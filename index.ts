@@ -721,20 +721,15 @@ function parsePiTodo(value: unknown, index: number): PiTodo {
   if (!isRecord(value)) {
     throw new CommandError(`todojson item at index ${index} is not an object`, EXIT_CODE.USAGE);
   }
-  if (!Number.isInteger(value.id)) {
+  const { id, text, done } = value;
+  if (typeof id !== "number" || !Number.isInteger(id)) {
     throw new CommandError(`todojson item at index ${index} has invalid id (expected integer)`, EXIT_CODE.USAGE);
   }
-  if (typeof value.text !== "string" || value.text.trim() === "") {
+  if (typeof text !== "string" || text.trim() === "") {
     throw new CommandError(`todojson item at index ${index} has invalid text (expected non-empty string)`, EXIT_CODE.USAGE);
   }
-  if (typeof value.done !== "boolean") {
+  if (typeof done !== "boolean") {
     throw new CommandError(`todojson item at index ${index} has invalid done (expected boolean)`, EXIT_CODE.USAGE);
-  }
-  const id = value.id;
-  const text = value.text;
-  const done = value.done;
-  if (typeof id !== "number" || typeof text !== "string" || typeof done !== "boolean") {
-    throw new CommandError(`todojson item at index ${index} has invalid field types`, EXIT_CODE.USAGE);
   }
   return { id, text, done };
 }
