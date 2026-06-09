@@ -1,7 +1,7 @@
 {
   "name": "pm-todos",
-  "version": "2026.6.8",
-  "description": "Markdown TODO round-trip extension for pm-cli",
+  "version": "2026.6.9",
+  "description": "TODO round-trip extension for pm-cli: markdown, todo.txt, GitHub task lists, and pi coding-agent todo JSON",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/unbraind/pm-todos.git"
@@ -34,12 +34,12 @@
     "release:check": "npm run typecheck && npm run build && npm test && npm run audit:prod && npm run pack:dry-run && npm run changelog:check"
   },
   "peerDependencies": {
-    "@unbrained/pm-cli": ">=2026.6.7"
+    "@unbrained/pm-cli": ">=2026.6.9"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
-    "@unbrained/pm-cli": "^2026.6.7",
-    "pm-changelog": "^2026.6.7",
+    "@unbrained/pm-cli": "^2026.6.9",
+    "pm-changelog": "^2026.6.8",
     "typescript": "^6.0.3"
   },
   "keywords": [
@@ -50,7 +50,9 @@
     "pm-extension",
     "pm-package",
     "todo",
-    "todos"
+    "todos",
+    "todojson",
+    "pi-coding-agent"
   ],
   "license": "MIT",
   "engines": {

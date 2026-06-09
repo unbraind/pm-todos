@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.6.9 - 2026-06-09
+
+### Added
+
+- Add native todo-state import/export support ([pm-todos-auvq](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-auvq.toon))
+
 ## 2026.06.07 - 2026-06-07
 
 ### Added
