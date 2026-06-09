@@ -29,6 +29,7 @@ interface TodoItem {
 interface PmItem {
     id: string;
     title: string;
+    description?: string;
     status: string;
     type?: string;
     priority?: number;
@@ -209,6 +210,16 @@ export declare function serializeTodoTxt(items: PmItem[]): string;
  * raw `Todo[]` array is also accepted.
  */
 export declare function parsePiTodoDetails(content: string): PiTodoDetails;
+/**
+ * Extract a persisted todojson source id (`todo-id:<n>`) from an item's
+ * description, if present.
+ */
+export declare function extractTodojsonSourceId(description: string | undefined): number | undefined;
+/**
+ * Build the import provenance description used by todojson imports. Includes a
+ * persisted `todo-id:<n>` marker so later exports can keep todo ids stable.
+ */
+export declare function buildTodojsonImportDescription(file: string | undefined, lineNumber: number, todoId?: number): string;
 export declare function serializePiTodoDetails(items: PmItem[]): string;
 /** A markdown group: a heading and the items beneath it. */
 interface ItemGroup {
@@ -263,6 +274,8 @@ export interface ExistingTodoItem {
      * bracket that is actually title content (`Complete [Task]`) from a real
      * round-trip type tag. */
     title?: string;
+    /** Description is used to maintain todojson id persistence markers. */
+    description?: string;
 }
 /**
  * Build a stable signature key for an incoming TODO from its title (and an
