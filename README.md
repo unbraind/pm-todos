@@ -6,7 +6,7 @@ Import markdown checkboxes (`- [ ]` and `- [x]`) as pm items and export pm items
 
 The parser understands **nested/indented sub-tasks**, **section headers** (`## …` mapped to tags), **priority markers** (`(p1)` and `!`/`!!`/`!!!`), markdown `due:YYYY-MM-DD` metadata, and can import **multiple files at once** via a `--glob` pattern.
 
-In addition to markdown, pm-todos round-trips the de-facto [**todo.txt**](https://github.com/todotxt/todo.txt) format, exports **GitHub-flavored task lists**, and imports/exports the `TodoDetails` JSON state used by the pi coding-agent `todo` tool. It can **group** exports into sections by status/sprint/type and **validate** a TODO file without importing it.
+In addition to markdown, pm-todos round-trips the de-facto [**todo.txt**](https://github.com/todotxt/todo.txt) format, exports **GitHub-flavored task lists**, **JSON Lines** (`jsonl`) and a flat **checkbox** markdown variant, imports/exports the `TodoDetails` JSON state used by the pi coding-agent `todo` tool, and **bidirectionally syncs** a file with the pm store. It can **group** exports into sections by status/sprint/type, **filter** by status/type, remap priorities (`number`/`letter`), and **validate** a TODO file without importing it.
 
 ---
 
@@ -60,6 +60,8 @@ pm todos import TODO.md --closed-as canceled
 pm todos import TODO.md --status in_progress
 pm todos import todo.txt --format todotxt
 pm todos import todo-state.json --format todojson
+pm todos import backlog.jsonl --format jsonl --upsert
+pm todos import checklist.md --format checkbox
 pm todos import TODO.md --upsert
 ```
 
@@ -69,7 +71,7 @@ pm todos import TODO.md --upsert
 |---|---|---|
 | `--dry-run` | boolean | Preview without writing |
 | `--upsert` | boolean | Update existing items instead of creating duplicates (idempotent re-import) |
-| `--format <fmt>` | string | Source format: `markdown` (default), `todotxt`, or `todojson` |
+| `--format <fmt>` | string | Source format: `markdown` (default), `todotxt`, `todojson`, `jsonl`, or `checkbox` |
 | `--type <type>` | string | Item type (default: Task) |
 | `--priority <n>` | number | Priority (0–4); overrides markers inferred from the text |
 | `--tags <tags>` | string | Comma-separated tags applied to every item |
@@ -77,6 +79,7 @@ pm todos import TODO.md --upsert
 | `--section <name>` | string | Import only items found under this `##` section heading |
 | `--closed-as <status>` | string | Status assigned to checked (`- [x]`) items (default: `closed`) |
 | `--status <status>` | string | Status assigned to open (unchecked, `- [ ]`) items (default: `open`) |
+| `--filter <expr>` | string | Filter parsed items by status/type before writing (e.g. `status=open,type=Task`) |
 | `--no-section-tags` | boolean | Do not derive tags from section headings |
 
 **Parsing rules**
@@ -157,9 +160,30 @@ pm-todos reuses those persisted ids (and only allocates new ids above the
 current max when needed), so repeated import/export cycles keep existing ids
 stable instead of re-numbering the full list.
 
+#### JSON Lines (`--format jsonl`)
+
+With `--format jsonl`, pm-todos reads and writes one compact JSON object per line, each
+carrying the full pm item payload (id, title, status, type, priority, tags, deadline, …). A
+`serialize → parse` cycle is lossless on every captured field, and the carried pm `id` is the
+`--upsert` match key, so importing the same file repeatedly never duplicates items.
+
+```jsonl
+{"id":"pm-1","title":"Write docs","status":"open","priority":1,"tags":["docs"],"deadline":"2026-09-01"}
+{"id":"pm-2","title":"Done thing","status":"closed"}
+```
+
+#### Flat checkbox markdown (`--format checkbox`)
+
+`--format checkbox` is a markdown variant: a flat list of `- [ ]` / `- [x]` lines (one per item),
+each carrying a `<!-- pm-id -->` provenance comment, **without** the `# TODO` header or the
+`## Open` / `## Done` (or `--group-by`) sectioning of the default markdown export. The import
+grammar is identical to the default `markdown` parser, so the import/export direction is a clean
+round-trip. It is convenient for embedding in existing markdown docs that already provide their
+own structure.
+
 ### `pm todos export`
 
-Export pm items as a markdown TODO list, a todo.txt file, or a GitHub-flavored task list.
+Export pm items as a markdown TODO list, a todo.txt file, a GitHub-flavored task list, JSON Lines, or a flat checkbox list.
 
 ```bash
 pm todos export
@@ -168,11 +192,15 @@ pm todos export --status open --output backlog.md
 pm todos export --type Task
 pm todos export --format todotxt --output todo.txt
 pm todos export --format todojson --output todo-state.json
+pm todos export --format jsonl --output backlog.jsonl
+pm todos export --format checkbox --output checklist.md
 pm todos export --format tasklist --group-by sprint
 pm todos export --group-by type
 pm todos export --sort priority
 pm todos export --sort deadline --status open
 pm todos export --metadata --output TODO.md
+pm todos export --metadata --priority-map letter --output TODO.md
+pm todos export --filter status=open,type=Task --output TODO.md
 ```
 
 **Flags**
@@ -180,24 +208,58 @@ pm todos export --metadata --output TODO.md
 | Flag | Type | Description |
 |---|---|---|
 | `--output <file>` | string | Write to file instead of stdout |
-| `--format <fmt>` | string | Output format: `markdown` (default), `todotxt`, `tasklist` (GitHub task list), or `todojson` |
+| `--format <fmt>` | string | Output format: `markdown` (default), `todotxt`, `tasklist` (GitHub task list), `todojson`, `jsonl`, or `checkbox` |
 | `--group-by <field>` | string | Section markdown/tasklist output by `status` (default), `sprint`, or `type` |
 | `--sort <key>` | string | Sort items by `priority` (0 highest first), `deadline` (ascending), or `title` (alphabetical). Unset preserves pm's native order |
 | `--status <status>` | string | Filter by status |
 | `--type <type>` | string | Filter by item type |
-| `--metadata` | boolean | Include parseable `(pN)` and `due:YYYY-MM-DD` tokens in markdown/tasklist output |
+| `--filter <expr>` | string | Filter items by status/type (e.g. `status=open` or `status=open,type=Task`); complements `--status`/`--type` |
+| `--metadata` | boolean | Include parseable priority and `due:YYYY-MM-DD` tokens in markdown/tasklist output |
+| `--priority-map <scheme>` | string | Priority token scheme for markdown/tasklist `--metadata`: `number` (default, `(p0)`..`(p4)`) or `letter` (`(A)`..`(E)`) |
 
 The default `markdown` export (no `--group-by`, or `--group-by status`) is unchanged: a
 `# TODO` document with `## Open` / `## Done` sections. `--group-by sprint`/`type` emits a
 `## <value>` section per group. The `todotxt` exporter maps priority→letter, tags→`+project`,
 and deadline→`due:`. The `todojson` exporter emits a pi coding-agent `TodoDetails` object
 with sequential numeric todo ids, `text`, `done`, and `nextId`. The `tasklist` exporter emits `- [ ]` / `- [x]` items grouped under
-`## <heading>` sections, each carrying a `<!-- pm-id -->` comment for round-trips.
+`## <heading>` sections, each carrying a `<!-- pm-id -->` comment for round-trips. The `jsonl`
+exporter writes one compact JSON object per line carrying the full pm item payload (lossless
+round-trip). The `checkbox` exporter writes a flat `- [ ]` / `- [x]` list with no header or
+sections.
 
 `--metadata` is opt-in so the historical markdown output stays byte-stable. When
-enabled, markdown/tasklist exports include `(pN)` and `due:YYYY-MM-DD` tokens that
+enabled, markdown/tasklist exports include priority and `due:YYYY-MM-DD` tokens that
 the importer already parses, allowing priority and deadline to survive a
-markdown export → edit → `pm todos import --upsert` cycle.
+markdown export → edit → `pm todos import --upsert` cycle. `--priority-map letter` switches
+the priority token to the todo.txt-style `(A)`..`(E)` letter scheme (default is `(p0)`..`(p4)`).
+
+`--filter` is a comma-separated `key=value` (or `key:value`) predicate limited to the
+`status` and `type` keys. An explicit `--status` / `--type` flag takes precedence over a
+conflicting `--filter` key. The same predicate is also honoured by `pm todos import` and
+`pm todos sync`, where it filters which parsed items are written.
+
+### `pm todos sync <file>`
+
+Bidirectionally reconcile a TODO file with the pm store. `todos sync` imports file changes
+into pm (always upserting, so re-syncing never duplicates) and then writes a fresh export of
+the reconciled pm state back to the **same** file, so pm-side changes (ids, statuses,
+priorities, deadlines) flow back to the file. The file and the pm store converge to the same
+state.
+
+```bash
+pm todos sync TODO.md
+pm todos sync todo.txt --format todotxt
+pm todos sync todo-state.json --format todojson
+pm todos sync backlog.jsonl --format jsonl --filter status=open
+pm todos sync TODO.md --format checkbox --metadata --priority-map letter
+pm todos sync TODO.md --dry-run
+```
+
+`todos sync` supports every round-trippable format (`markdown`, `todotxt`, `todojson`,
+`jsonl`, `checkbox`); `tasklist` is export-only and rejected. It accepts the same
+`--format`, `--type`, `--closed-as`, `--status`, `--priority`, `--tags`, `--section`,
+`--section-tags`, `--group-by`, `--metadata`, `--priority-map`, `--filter`, and `--dry-run`
+flags as import/export. Under `--dry-run` nothing is written to the pm store or the file.
 
 ### `pm todos context`
 
@@ -235,6 +297,8 @@ errors (malformed `due:` dates, out-of-range priorities) are found, so it is saf
 pm todos validate TODO.md
 pm todos validate todo.txt --format todotxt
 pm todos validate todo-state.json --format todojson
+pm todos validate backlog.jsonl --format jsonl
+pm todos validate checklist.md --format checkbox
 pm todos validate TODO.md --json
 ```
 
@@ -242,7 +306,7 @@ pm todos validate TODO.md --json
 
 | Flag | Type | Description |
 |---|---|---|
-| `--format <fmt>` | string | File format: `markdown` (default), `todotxt`, or `todojson` |
+| `--format <fmt>` | string | File format: `markdown` (default), `todotxt`, `todojson`, `jsonl`, or `checkbox` |
 | `--json` | boolean | Return a JSON report (with the full `issues` array) on stdout |
 
 Errors (e.g. an invalid `due:` date, a `(p9)` marker out of the `0–4` range) cause a non-zero

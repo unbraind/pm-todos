@@ -36,6 +36,7 @@ test("extension registers commands plus the native todos importer and exporter",
   extension.activate(api as any);
   assert.ok(registered.length > 0, `extension should register at least one capability, got: ${JSON.stringify(registered)}`);
   assert.ok(commands.includes("todos context"), `should register 'todos context', got: ${JSON.stringify(commands)}`);
+  assert.ok(commands.includes("todos sync"), `should register 'todos sync', got: ${JSON.stringify(commands)}`);
   assert.ok(importers.includes("todos"), `should register the native 'todos' importer, got: ${JSON.stringify(importers)}`);
   assert.ok(exporters.includes("todos"), `should register the native 'todos' exporter, got: ${JSON.stringify(exporters)}`);
 });
