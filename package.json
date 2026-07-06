@@ -1,6 +1,6 @@
 {
   "name": "pm-todos",
-  "version": "2026.6.14",
+  "version": "2026.7.6",
   "description": "TODO round-trip extension for pm-cli: markdown, todo.txt, GitHub task lists, and pi coding-agent todo JSON",
   "repository": {
     "type": "git",
