@@ -11,6 +11,7 @@ import {
   parseFilterExpression,
   parseMarkdownTodos,
   validateTodoFile,
+  applyExportOrder,
 } from "../dist/index.js";
 
 // ---------------------------------------------------------------------------
@@ -243,4 +244,45 @@ test("validateTodoFile treats checkbox as the markdown grammar", () => {
   const { issues, taskCount } = validateTodoFile(content, "checkbox");
   assert.equal(taskCount, 1);
   assert.ok(issues.some((i) => i.severity === "warning" && /did not parse/.test(i.message)));
+});
+
+// ---------------------------------------------------------------------------
+// --reverse: applyExportOrder composes with --sort / preserves native order
+// ---------------------------------------------------------------------------
+
+const orderSample = [
+  { id: "pm-1", title: "Banana", status: "open", priority: 2, deadline: "2026-05-01" },
+  { id: "pm-2", title: "apple", status: "open", priority: 0, deadline: "2026-07-01" },
+  { id: "pm-3", title: "Cherry", status: "open", deadline: "2026-06-01" }, // no priority
+];
+
+test("applyExportOrder without sort/reverse returns the input order unchanged (no copy)", () => {
+  const out = applyExportOrder(orderSample, undefined, undefined);
+  assert.equal(out, orderSample, "no sort/reverse returns the same array reference");
+  assert.deepEqual(out.map((i) => i.id), ["pm-1", "pm-2", "pm-3"]);
+});
+
+test("applyExportOrder --reverse flips the native order to oldest-first", () => {
+  const out = applyExportOrder(orderSample, undefined, true);
+  assert.deepEqual(out.map((i) => i.id), ["pm-3", "pm-2", "pm-1"], "native order reversed");
+  assert.notEqual(out, orderSample, "reverse returns a copy, not a mutation");
+  // original is untouched
+  assert.deepEqual(orderSample.map((i) => i.id), ["pm-1", "pm-2", "pm-3"]);
+});
+
+test("applyExportOrder --sort priority then --reverse yields lowest-priority first", () => {
+  // sorted by priority asc: pm-2(0), pm-1(2), pm-3(none) → reversed: pm-3, pm-1, pm-2
+  const out = applyExportOrder(orderSample, "priority", true);
+  assert.deepEqual(out.map((i) => i.id), ["pm-3", "pm-1", "pm-2"]);
+});
+
+test("applyExportOrder --sort title then --reverse is descending alphabetical", () => {
+  // title asc: apple, Banana, Cherry → reversed: Cherry, Banana, apple
+  const out = applyExportOrder(orderSample, "title", true);
+  assert.deepEqual(out.map((i) => i.title), ["Cherry", "Banana", "apple"]);
+});
+
+test("applyExportOrder --sort without reverse is ascending (composes correctly)", () => {
+  const out = applyExportOrder(orderSample, "priority", false);
+  assert.deepEqual(out.map((i) => i.id), ["pm-2", "pm-1", "pm-3"]);
 });

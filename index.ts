@@ -2069,6 +2069,28 @@ interface TodoExportOptions {
   metadata?: boolean;
   /** Priority-rendering scheme for markdown/tasklist metadata tokens. */
   priorityMap?: PriorityMapScheme;
+  /** Reverse the final item order so output is oldest-first (or, with --sort,
+   * the descending order of the sort key). Applied AFTER --sort so it composes. */
+  reverse?: boolean;
+}
+
+/**
+ * Apply the export `--sort` and `--reverse` ordering to a list of pm items.
+ * Pure: returns a new array, never mutates the input. `--sort` orders ascending
+ * (priority 0 first, earliest deadline first, alphabetical title); `--reverse`
+ * then flips the order so output is oldest-first (or, with a `--sort` key, the
+ * descending order of that key). The two flags compose: `--sort priority
+ * --reverse` yields lowest-priority first. With neither set the input order is
+ * preserved (pm's native `list-all` ordering, typically newest-first).
+ */
+export function applyExportOrder(
+  items: PmItem[],
+  sort: "priority" | "deadline" | "title" | undefined,
+  reverse: boolean | undefined,
+): PmItem[] {
+  let out = sort ? sortItems(items, sort) : items;
+  if (reverse) out = [...out].reverse();
+  return out;
 }
 
 /** Fetch + filter pm items via `pm list-all --json`. */
@@ -2084,8 +2106,7 @@ function fetchPmItems(opts: TodoExportOptions): PmItem[] {
   let items: PmItem[] = JSON.parse(result.stdout).items ?? [];
   if (opts.statusFilter) items = items.filter((i) => i.status === opts.statusFilter);
   if (opts.typeFilter) items = items.filter((i) => i.type === opts.typeFilter);
-  if (opts.sort) items = sortItems(items, opts.sort);
-  return items;
+  return applyExportOrder(items, opts.sort, opts.reverse);
 }
 
 /**
@@ -2355,6 +2376,8 @@ export default defineExtension({
         { long: "--metadata", description: "Include (pN)/(A)..(E) and due:YYYY-MM-DD tokens in markdown/tasklist re-export" },
         { long: "--priority-map", value_name: "scheme", description: "Priority token scheme for markdown/tasklist re-export: number (default) | letter" },
         { long: "--filter", value_name: "expr", description: "Filter items by status/type on the re-export (e.g. status=open,type=Task)" },
+        { long: "--sort", value_name: "key", description: "Sort the re-export by priority | deadline | title" },
+        { long: "--reverse", description: "Reverse the re-export order so output is oldest-first (composes with --sort)" },
         { long: "--dry-run", description: "Report what would change without writing to pm or the file" },
         { long: "--json", description: "Return a JSON result object" },
       ],
@@ -2429,6 +2452,7 @@ export default defineExtension({
           sort: readSort(ctx.options),
           metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
           priorityMap: readPriorityMap(ctx.options),
+          reverse: readBoolOption(ctx.options, "reverse"),
         });
 
         const result = {
@@ -2567,6 +2591,7 @@ export default defineExtension({
         sort: readSort(ctx.options),
         metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
         priorityMap: readPriorityMap(ctx.options),
+        reverse: readBoolOption(ctx.options, "reverse"),
       });
 
       if (count === 0) {

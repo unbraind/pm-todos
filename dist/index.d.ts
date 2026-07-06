@@ -402,6 +402,16 @@ export declare function buildExistingTodoIndex(items: PmItem[]): {
 /** Pull the created item id out of `pm --json create` output (shape varies). */
 export declare function extractCreatedTodoId(stdout: string): string | undefined;
 /**
+ * Apply the export `--sort` and `--reverse` ordering to a list of pm items.
+ * Pure: returns a new array, never mutates the input. `--sort` orders ascending
+ * (priority 0 first, earliest deadline first, alphabetical title); `--reverse`
+ * then flips the order so output is oldest-first (or, with a `--sort` key, the
+ * descending order of that key). The two flags compose: `--sort priority
+ * --reverse` yields lowest-priority first. With neither set the input order is
+ * preserved (pm's native `list-all` ordering, typically newest-first).
+ */
+export declare function applyExportOrder(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined, reverse: boolean | undefined): PmItem[];
+/**
  * Render the default-markdown TODO export. Kept byte-identical to the original
  * (the `# TODO` header, export-timestamp comment, `## Open`/`## Done` sections,
  * and the `[type]` annotation on open items) so existing behaviour is stable.
