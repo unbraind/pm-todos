@@ -1,0 +1,13 @@
+id: pm-todos-gcjm
+title: Ecosystem release readiness pass 2026-07-06
+description: "July 6, 2026 fleet readiness pass for the pm package ecosystem."
+type: Task
+status: in_progress
+priority: 1
+tags[4]: agent-audit,context-management,ecosystem,release-readiness
+created_at: "2026-07-06T15:33:34.964Z"
+updated_at: "2026-07-06T15:33:34.964Z"
+assignee: codex
+author: codex
+acceptance_criteria: Package uses current pm CLI/SDK and pm-changelog; release/check scripts pass; pm items capture decisions; no tracked secrets/private data are introduced; GitHub PR/release state is reviewed.
+body: "Track the July 6, 2026 fleet pass: align package metadata with latest pm CLI/SDK and pm-changelog, verify daily release automation, run build/test/audit/package checks with real workspace data where practical, inspect GitHub state, and record privacy/history findings without changing pm-cli itself."
