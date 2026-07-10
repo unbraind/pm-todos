@@ -1850,7 +1850,7 @@ function buildTodoMarkdown(opts) {
 // ---------------------------------------------------------------------------
 export default defineExtension({
     name: "pm-todos",
-    version: "2026.7.6-1",
+    version: "2026.7.10",
     activate(api) {
         // -----------------------------------------------------------------------
         // Command: pm todos validate <file>

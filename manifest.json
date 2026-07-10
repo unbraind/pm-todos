@@ -1,6 +1,6 @@
 {
   "name": "pm-todos",
-  "version": "2026.7.6-1",
+  "version": "2026.7.10",
   "description": "TODO round-trip. Import/export/sync markdown checkboxes, todo.txt, jsonl, checkbox, and pi coding-agent todo JSON as pm items.",
   "author": "@unbraind",
   "entry": "./dist/index.js",
