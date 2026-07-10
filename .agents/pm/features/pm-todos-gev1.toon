@@ -6,16 +6,22 @@ status: in_progress
 priority: 1
 tags[3]: ecosystem,ecosystem-pass-2026-06-10,production
 created_at: "2026-06-09T22:38:18.538Z"
-updated_at: "2026-06-09T23:27:22.352Z"
+updated_at: "2026-07-10T10:58:03.028Z"
 assignee: codex-5-3-sweep
 author: codex-5-3-sweep
+comments[1]{created_at,author,text}:
+  "2026-07-10T10:58:03.028Z",codex,"PR #21 finishing verification (2026-07-10): fixed Greptile/Cubic/Gemini findings by preserving exact JSONL multi-state statuses through import/upsert; applying sync --filter consistently to import and export; separating import --status/--type semantics from export filtering; writing empty re-exports for convergence; sanitizing JSONL kv values; correcting --no-section-tags and --reverse docs; simplifying sync returns; and registering the full SDK importer command contract so positional files/new flags actually reach the handler. Functional checks in fresh /tmp/fx-pm-todos-clean: local install activated, timeout 20 pm --help exit 0; JSONL sync --filter status=blocked imported 1 and wrote 1 blocked row while excluding a closed row; sync --status draft wrote all 4 store rows (not an accidental export filter); zero-match sync wrote 0 rows and truncated file to 0 bytes; malformed JSONL exited 1 with structured CommandError-style diagnostics and no stack. Explicit markdown --metadata --priority-map letter --reverse export -> import --upsert -> export normalized diff exit 0; [Task] tag count stayed 1 -> 1. This test first exposed letter priority duplication ((B) -> (B) (B)); fixed parser and added regression test. Default output matched origin/main after timestamp normalization (diff exit 0). Tests 117/117 pass; changelog:full and changelog:check pass. Hound generated dist ES5 warnings are invalid because package targets modern ESM/Node >=22."
 files[3]{path,scope,note}:
   index.ts,project,add todos context snapshot command
   test/formats.test.ts,project,cover context snapshot sorting and payload
   test/smoke.test.ts,project,ensure command registration
-tests[2]{command,path,scope,timeout_seconds,pm_context_mode,env_set,env_clear,shared_host_safe,assert_stdout_contains,assert_stdout_regex,assert_stderr_contains,assert_stderr_regex,assert_stdout_min_lines,assert_json_field_equals,assert_json_field_gte,note}:
-  "npm run release:check",null,project,3600,null,null,null,null,null,null,null,null,null,null,null,null
-  PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global npm test,null,project,null,null,null,null,null,null,null,null,null,null,null,null,full build and test suite
+tests[2]:
+  - command: "npm run release:check"
+    scope: project
+    timeout_seconds: 3600
+  - command: PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global npm test
+    scope: project
+    note: full build and test suite
 docs[1]{path,scope,note}:
   README.md,project,document todos context command and flags
 body: ""

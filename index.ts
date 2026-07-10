@@ -538,6 +538,7 @@ export function buildTodoContextSnapshot(items: PmItem[], options: TodoContextBu
  *
  * Recognised markers (case-insensitive), anywhere in the text:
  *   - `(p0)`..`(p4)`  → that numeric priority
+ *   - `(A)`..`(E)`    → priorities 0..4 (the `--priority-map letter` form)
  *   - trailing/leading `!`, `!!`, `!!!` → 0, 1, 2 (more bangs = higher)
  *
  * Returns the cleaned text plus the inferred priority (undefined if none).
@@ -550,6 +551,12 @@ function extractPriority(text: string): { text: string; priority?: number } {
   if (pMatch) {
     priority = parseInt(pMatch[1], 10);
     cleaned = cleaned.replace(pMatch[0], "");
+  }
+
+  const letterMatch = /\(([A-E])\)/.exec(cleaned);
+  if (letterMatch && priority === undefined) {
+    priority = letterMatch[1].charCodeAt(0) - 65;
+    cleaned = cleaned.replace(letterMatch[0], "");
   }
 
   // Bang markers: only count a contiguous run of `!` that is its own token
@@ -1241,7 +1248,13 @@ export function parseJsonl(content: string): PmItem[] {
     if (typeof parsed.updated_at === "string") item.updated_at = parsed.updated_at;
     if (typeof parsed.creationDate === "string") item.creationDate = parsed.creationDate;
     if (typeof parsed.completionDate === "string") item.completionDate = parsed.completionDate;
-    if (isRecord(parsed.kv)) item.kv = { ...(parsed.kv as Record<string, string>) };
+    if (isRecord(parsed.kv)) {
+      const kv: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed.kv)) {
+        if (value !== null && value !== undefined) kv[key] = String(value);
+      }
+      if (Object.keys(kv).length > 0) item.kv = kv;
+    }
     out.push(item);
   }
   return out;
@@ -1629,6 +1642,8 @@ interface TodoImportOptions {
  */
 interface NormalizedTodo {
   checked: boolean;
+  /** Exact pm status carried by lossless formats; takes precedence over checked mapping. */
+  status?: string;
   text: string;
   priority?: number;
   tags: string[];
@@ -1671,6 +1686,7 @@ function parseFileToNormalized(
     // id (when present), making a jsonl round-trip idempotent under --upsert.
     return parseJsonl(md).map((item, i) => ({
       checked: mapPmStatusToChecked(item.status),
+      status: item.status,
       text: item.title,
       priority: item.priority,
       tags: item.tags ?? [],
@@ -1883,7 +1899,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
     // or the import-wide --type default — the same values that get written.
     if (opts.statusFilter || opts.typeFilter) {
       todos = todos.filter((t) => {
-        const status = mapStatusToPm(t.checked, opts.closedAs, opts.openAs ?? "open");
+        const status = t.status ?? mapStatusToPm(t.checked, opts.closedAs, opts.openAs ?? "open");
         if (opts.statusFilter && status !== opts.statusFilter) return false;
         if (opts.typeFilter) {
           const resolvedType = t.itemType ?? opts.itemType;
@@ -1912,7 +1928,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             ? String(todo.priority)
             : undefined;
 
-      const status = mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
+      const status = todo.status ?? mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
 
       // Prefer the per-item type recovered from the round-trip ` [Type]` tag;
       // fall back to the import-wide `--type` (default "Task") for lines that
@@ -2371,13 +2387,13 @@ export default defineExtension({
         { long: "--priority", value_name: "n", description: "Priority 0-4; overrides markers inferred from text" },
         { long: "--tags", value_name: "csv", description: "Comma-separated extra tags added to every imported item" },
         { long: "--section", value_name: "name", description: "Only sync the named markdown section" },
-        { long: "--section-tags", description: "Derive a tag from each item's markdown section heading" },
+        { long: "--no-section-tags", description: "Do not derive tags from markdown section headings" },
         { long: "--group-by", value_name: "field", description: "Section the re-export by status (default) | sprint | type (markdown/tasklist only)" },
         { long: "--metadata", description: "Include (pN)/(A)..(E) and due:YYYY-MM-DD tokens in markdown/tasklist re-export" },
         { long: "--priority-map", value_name: "scheme", description: "Priority token scheme for markdown/tasklist re-export: number (default) | letter" },
-        { long: "--filter", value_name: "expr", description: "Filter items by status/type on the re-export (e.g. status=open,type=Task)" },
+        { long: "--filter", value_name: "expr", description: "Filter parsed and re-exported items by status/type (e.g. status=open,type=Task)" },
         { long: "--sort", value_name: "key", description: "Sort the re-export by priority | deadline | title" },
-        { long: "--reverse", description: "Reverse the re-export order so output is oldest-first (composes with --sort)" },
+        { long: "--reverse", description: "Reverse the re-export order (composes with --sort)" },
         { long: "--dry-run", description: "Report what would change without writing to pm or the file" },
         { long: "--json", description: "Return a JSON result object" },
       ],
@@ -2418,6 +2434,7 @@ export default defineExtension({
         const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
         const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
         const asJson = readBoolOption(ctx.options, "json");
+        const filter = parseFilterExpression(readStringOption(ctx.options, "filter")) ?? {};
 
         // Fail-fast syntax gate before any pm-store write.
         preflightValidateImportFiles([filePath], importFormat);
@@ -2435,6 +2452,8 @@ export default defineExtension({
           pmRoot: ctx.pm_root,
           format: importFormat,
           upsert: true,
+          statusFilter: filter.status,
+          typeFilter: filter.type,
         });
 
         // Re-export the reconciled pm state back to the same file. The export
@@ -2442,7 +2461,6 @@ export default defineExtension({
         // file matches the user's preferred layout. Under --dry-run nothing is
         // written to pm or disk; the export is computed only to report the
         // post-sync row count.
-        const filter = readExportFilter(ctx.options);
         const { markdown: reexport, count: exportCount } = buildTodoMarkdown({
           statusFilter: filter.status,
           typeFilter: filter.type,
@@ -2469,18 +2487,14 @@ export default defineExtension({
           console.error(
             `[dry-run] sync ${filePath}: import ${importResult.imported}, update ${importResult.updated ?? 0}, skip ${importResult.skipped}, re-export ${exportCount} item(s).`,
           );
-          return asJson ? { ...result, previews: importResult.previews } : { ...result, previews: importResult.previews };
+          return asJson ? { ...result, previews: importResult.previews } : result;
         }
 
-        if (exportCount === 0) {
-          console.error(`sync: imported ${importResult.imported} item(s); no items to write back (file left unchanged).`);
-        } else {
-          writeFileSync(filePath, reexport, "utf-8");
-          console.error(
-            `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, skipped ${importResult.skipped}; wrote ${exportCount} item(s) back to ${filePath}.`,
-          );
-        }
-        return asJson ? result : result;
+        writeFileSync(filePath, reexport, "utf-8");
+        console.error(
+          `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, skipped ${importResult.skipped}; wrote ${exportCount} item(s) back to ${filePath}.`,
+        );
+        return result;
       },
     });
 
@@ -2571,6 +2585,29 @@ export default defineExtension({
       const updPart = upsert ? `, updated ${updated ?? 0}` : "";
       console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
       return upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
+    }, {
+      description: "Import markdown, todo.txt, todo JSON, JSONL, or checkbox TODOs into pm.",
+      intent: "import TODO records into pm items",
+      examples: [
+        "pm todos import TODO.md",
+        "pm todos import backlog.jsonl --format jsonl --upsert --filter status=open",
+      ],
+      arguments: [{ name: "file", required: false, description: "TODO file to import (omit when using --glob)" }],
+      flags: [
+        { long: "--file", value_name: "path", description: "TODO file to import (alternative to the positional file)" },
+        { long: "--glob", value_name: "pattern", description: "Import files matching a glob" },
+        { long: "--format", value_name: "fmt", description: "Source format: markdown, todotxt, todojson, jsonl, or checkbox" },
+        { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
+        { long: "--closed-as", value_name: "status", description: "Status for checked items (default: closed)" },
+        { long: "--status", value_name: "status", description: "Status for open/unchecked items (default: open)" },
+        { long: "--priority", value_name: "n", description: "Priority 0-4; overrides inferred markers" },
+        { long: "--tags", value_name: "csv", description: "Comma-separated extra tags" },
+        { long: "--section", value_name: "name", description: "Only import the named markdown section" },
+        { long: "--no-section-tags", description: "Do not derive tags from markdown section headings" },
+        { long: "--filter", value_name: "expr", description: "Filter parsed items by status/type" },
+        { long: "--upsert", description: "Update matching items instead of creating duplicates" },
+        { long: "--dry-run", description: "Preview without writing to pm" },
+      ],
     });
 
     // -----------------------------------------------------------------------

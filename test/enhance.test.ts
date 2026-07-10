@@ -69,7 +69,7 @@ test("parseJsonl skips blank lines", () => {
   assert.equal(items[1].title, "Y");
 });
 
-test("parseJsonl round-trips losslessly through serializeJsonl", () => {
+test("parseJsonl round-trips populated fields and documents omitted empty arrays", () => {
   const items = [
     { id: "pm-1", title: "Task A", status: "open", priority: 0, tags: ["proj"], deadline: "2026-07-01T00:00:00.000Z" },
     { id: "pm-2", title: "Task B", status: "closed", priority: 2, tags: [] },
@@ -82,6 +82,12 @@ test("parseJsonl round-trips losslessly through serializeJsonl", () => {
   assert.deepEqual(parsed[0].tags, ["proj"]);
   assert.equal(parsed[0].deadline, "2026-07-01T00:00:00.000Z");
   assert.equal(parsed[1].status, "closed");
+  assert.equal("tags" in parsed[1], false, "empty tags are intentionally omitted");
+});
+
+test("parseJsonl normalizes kv values to strings and drops nullish values", () => {
+  const [item] = parseJsonl(JSON.stringify({ title: "KV", kv: { count: 2, enabled: true, nested: { x: 1 }, absent: null } }));
+  assert.deepEqual(item.kv, { count: "2", enabled: "true", nested: "[object Object]" });
 });
 
 test("parseJsonl throws a USAGE error on malformed JSON or missing title", () => {
@@ -187,6 +193,13 @@ test("renderCheckboxMarkdown letter scheme emits letter priority tokens", () => 
   assert.ok(!out.includes("(p3)"), "no number token in letter scheme");
 });
 
+test("letter priority metadata parses back without remaining in the title", () => {
+  const [todo] = parseMarkdownTodos("- [ ] Alpha (B) [Task] <!-- pm-1234 -->\n");
+  assert.equal(todo.text, "Alpha");
+  assert.equal(todo.priority, 1);
+  assert.equal(todo.itemType, "Task");
+});
+
 // ---------------------------------------------------------------------------
 // --filter status/type: parseFilterExpression
 // ---------------------------------------------------------------------------
@@ -256,9 +269,8 @@ const orderSample = [
   { id: "pm-3", title: "Cherry", status: "open", deadline: "2026-06-01" }, // no priority
 ];
 
-test("applyExportOrder without sort/reverse returns the input order unchanged (no copy)", () => {
+test("applyExportOrder without sort/reverse preserves the input order", () => {
   const out = applyExportOrder(orderSample, undefined, undefined);
-  assert.equal(out, orderSample, "no sort/reverse returns the same array reference");
   assert.deepEqual(out.map((i) => i.id), ["pm-1", "pm-2", "pm-3"]);
 });
 
