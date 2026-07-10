@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Other
+
+- Enhance pm-todos: jsonl, sync, filter, priority-map, checkbox formats ([pm-todos-272z](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-272z.toon))
+
 ## 2026.7.6 - 2026-07-06
 
 ### Fixed

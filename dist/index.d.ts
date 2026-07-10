@@ -66,7 +66,22 @@ interface PiTodoDetails {
     nextId: number;
     error?: string;
 }
-type TodoImportFormat = "markdown" | "todotxt" | "todojson";
+type TodoImportFormat = "markdown" | "todotxt" | "todojson" | "jsonl" | "checkbox";
+/** Priority-rendering scheme for markdown/tasklist metadata tokens. */
+type PriorityMapScheme = "number" | "letter";
+/**
+ * Parse a `--filter <expr>` option into discrete status/type predicates.
+ * Accepts a comma-separated list of `key=value` or `key:value` pairs where the
+ * only recognized keys are `status` and `type` (e.g. `status=open`,
+ * `type:Task`, or `status=open,type=Task`). Repeated keys take the last value.
+ * Returns undefined when no `--filter` option is present. Throws a USAGE
+ * error on an unrecognised key so a typo like `--filter statis=open` fails
+ * loudly instead of silently matching nothing.
+ */
+export declare function parseFilterExpression(raw: string | undefined): {
+    status?: string;
+    type?: string;
+} | undefined;
 /**
  * Return a new, stably-sorted copy of `items` by the requested key:
  *   - priority: ascending (0 = highest first); missing priority sorts last
@@ -276,6 +291,21 @@ export declare function extractTodojsonSourceId(description: string | undefined)
  */
 export declare function buildTodojsonImportDescription(file: string | undefined, lineNumber: number, todoId?: number): string;
 export declare function serializePiTodoDetails(items: PmItem[]): string;
+/**
+ * Serialize pm items to JSON Lines (one compact JSON object per item, trailing NL).
+ * Each row carries the full pm item payload so a jsonl round-trip is lossless
+ * on every captured field (unlike markdown, which encodes only a subset).
+ * Empty input returns the empty string (no rows, no trailing newline).
+ */
+export declare function serializeJsonl(items: PmItem[]): string;
+/**
+ * Parse a JSON Lines document into pm items. Blank lines are skipped. Each
+ * non-blank line MUST be a JSON object with at least a `title` string; `status`
+ * defaults to "open" when absent. Other pm fields are passed through when
+ * present, so a `serializeJsonl → parseJsonl` cycle is lossless. Throws a USAGE
+ * CommandError on malformed JSON or a missing/empty title.
+ */
+export declare function parseJsonl(content: string): PmItem[];
 /** A markdown group: a heading and the items beneath it. */
 interface ItemGroup {
     heading: string;
@@ -293,7 +323,16 @@ export declare function groupItems(items: PmItem[], groupBy: string): ItemGroup[
  * sections. Closed/canceled items become `- [x]`, everything else `- [ ]`.
  * A trailing `<!-- id -->` comment preserves the pm id for round-trips.
  */
-export declare function renderTaskList(items: PmItem[], groupBy: string, metadata?: boolean): string;
+export declare function renderTaskList(items: PmItem[], groupBy: string, metadata?: boolean, priorityMap?: PriorityMapScheme): string;
+/**
+ * Render pm items as a flat checkbox markdown list: one `- [ ]`/`- [x]` line
+ * per item, each carrying a `<!-- id -->` provenance comment for round-trips.
+ * Unlike the default markdown export, there is no `# TODO` header and no
+ * `## Open`/`## Done` (or `--group-by`) sectioning — just the checkboxes. The
+ * import grammar is identical to the default `markdown` parser, so a
+ * `renderCheckboxMarkdown → parseMarkdownTodos` cycle is a clean round-trip.
+ */
+export declare function renderCheckboxMarkdown(items: PmItem[], metadata?: boolean, priorityMap?: PriorityMapScheme): string;
 interface ValidationIssue {
     line: number;
     severity: "error" | "warning";
@@ -363,18 +402,28 @@ export declare function buildExistingTodoIndex(items: PmItem[]): {
 /** Pull the created item id out of `pm --json create` output (shape varies). */
 export declare function extractCreatedTodoId(stdout: string): string | undefined;
 /**
+ * Apply the export `--sort` and `--reverse` ordering to a list of pm items.
+ * Pure: returns a new array, never mutates the input. `--sort` orders ascending
+ * (priority 0 first, earliest deadline first, alphabetical title); `--reverse`
+ * then flips the order so output is oldest-first (or, with a `--sort` key, the
+ * descending order of that key). The two flags compose: `--sort priority
+ * --reverse` yields lowest-priority first. With neither set the input order is
+ * preserved (pm's native `list-all` ordering, typically newest-first).
+ */
+export declare function applyExportOrder(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined, reverse: boolean | undefined): PmItem[];
+/**
  * Render the default-markdown TODO export. Kept byte-identical to the original
  * (the `# TODO` header, export-timestamp comment, `## Open`/`## Done` sections,
  * and the `[type]` annotation on open items) so existing behaviour is stable.
  * This is the path used when no `--group-by` (or `--group-by status`) is set.
  */
-export declare function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata?: boolean): string;
+export declare function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata?: boolean, priorityMap?: PriorityMapScheme): string;
 /**
  * Render grouped markdown for `--group-by sprint|type` (or an explicit
  * `--group-by status`). Each group is a `## <heading>` section of checkboxes
  * carrying the pm id comment for round-trips.
  */
-export declare function renderGroupedMarkdown(items: PmItem[], groupBy: string, nowIso: string, metadata?: boolean): string;
+export declare function renderGroupedMarkdown(items: PmItem[], groupBy: string, nowIso: string, metadata?: boolean, priorityMap?: PriorityMapScheme): string;
 declare const _default: {
     name: string;
     version: string;

@@ -1,0 +1,12 @@
+id: pm-todos-272z
+title: "Enhance pm-todos: jsonl, sync, filter, priority-map, checkbox formats"
+description: "Add --format jsonl (JSON Lines), --sync bidirectional mode, --filter status/type, --priority-map number|letter, and --format checkbox markdown to pm-todos."
+type: Task
+status: closed
+priority: 1
+tags[6]: checkbox,enhancement,filter,jsonl,priority-map,sync
+created_at: "2026-07-06T19:37:36.920Z"
+updated_at: "2026-07-06T19:39:53.840Z"
+author: codex
+close_reason: "Enhancement complete: jsonl/sync/filter/priority-map/checkbox implemented and tested"
+body: ""

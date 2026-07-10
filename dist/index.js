@@ -78,7 +78,19 @@ function readImportFormat(options) {
     if (v === "todojson" || v === "todo-json" || v === "todo" || v === "pi-todo" || v === "pi-todos") {
         return "todojson";
     }
-    throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt|todojson)`, EXIT_CODE.USAGE);
+    // JSON Lines: one PmItem-shaped JSON object per line. Round-trips the full
+    // pm item payload (id/status/type/priority/tags/deadline/…) without the
+    // section/group conventions of the markdown/tasklist formats.
+    if (v === "jsonl" || v === "json-lines" || v === "jsonline" || v === "json-line") {
+        return "jsonl";
+    }
+    // Flat checkbox markdown: `- [ ]`/`- [x]` lines only, no `# TODO` header and
+    // no `## Open`/`## Done` sections. The import grammar is identical to the
+    // default `markdown` parser, so `checkbox` is a pure export-side variant.
+    if (v === "checkbox" || v === "checkbox-md" || v === "checkbox-markdown") {
+        return "checkbox";
+    }
+    throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt|todojson|jsonl|checkbox)`, EXIT_CODE.USAGE);
 }
 /**
  * Read and validate the export `--format` option (markdown | todotxt | tasklist).
@@ -97,7 +109,13 @@ function readExportFormat(options) {
     if (v === "todojson" || v === "todo-json" || v === "todo" || v === "pi-todo" || v === "pi-todos") {
         return "todojson";
     }
-    throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt|tasklist|todojson)`, EXIT_CODE.USAGE);
+    if (v === "jsonl" || v === "json-lines" || v === "jsonline" || v === "json-line") {
+        return "jsonl";
+    }
+    if (v === "checkbox" || v === "checkbox-md" || v === "checkbox-markdown") {
+        return "checkbox";
+    }
+    throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt|tasklist|todojson|jsonl|checkbox)`, EXIT_CODE.USAGE);
 }
 /**
  * Read and validate the `--group-by` option (status | sprint | type).
@@ -123,6 +141,69 @@ function readSort(options) {
     if (v === "priority" || v === "deadline" || v === "title")
         return v;
     throw new CommandError(`Unknown --sort '${raw}' (expected priority|deadline|title)`, EXIT_CODE.USAGE);
+}
+/**
+ * Read and validate the export `--priority-map` option (number | letter).
+ * `number` (default) emits `(p0)`..`(p4)` tokens in markdown/tasklist metadata;
+ * `letter` emits todo.txt-style `(A)`..`(E)` letters instead. Unknown values throw
+ * a USAGE error so typos surface before any export write.
+ */
+function readPriorityMap(options) {
+    const raw = readStringOption(options, "priority-map", "priorityMap");
+    if (raw === undefined)
+        return "number";
+    const v = raw.toLowerCase();
+    if (v === "number" || v === "numbers" || v === "num" || v === "p")
+        return "number";
+    if (v === "letter" || v === "letters" || v === "alpha" || v === "a")
+        return "letter";
+    throw new CommandError(`Unknown --priority-map '${raw}' (expected number|letter)`, EXIT_CODE.USAGE);
+}
+/**
+ * Parse a `--filter <expr>` option into discrete status/type predicates.
+ * Accepts a comma-separated list of `key=value` or `key:value` pairs where the
+ * only recognized keys are `status` and `type` (e.g. `status=open`,
+ * `type:Task`, or `status=open,type=Task`). Repeated keys take the last value.
+ * Returns undefined when no `--filter` option is present. Throws a USAGE
+ * error on an unrecognised key so a typo like `--filter statis=open` fails
+ * loudly instead of silently matching nothing.
+ */
+export function parseFilterExpression(raw) {
+    if (raw === undefined || raw.trim() === "")
+        return undefined;
+    const out = {};
+    for (const part of raw.split(",")) {
+        const token = part.trim();
+        if (token === "")
+            continue;
+        const sep = token.includes("=") ? "=" : ":";
+        const idx = token.indexOf(sep);
+        if (idx <= 0) {
+            throw new CommandError(`Invalid --filter '${raw}' (expected key=value, e.g. status=open,type=Task)`, EXIT_CODE.USAGE);
+        }
+        const key = token.slice(0, idx).trim().toLowerCase();
+        const value = token.slice(idx + 1).trim();
+        if (key !== "status" && key !== "type") {
+            throw new CommandError(`Unknown --filter key '${key}' (expected status|type)`, EXIT_CODE.USAGE);
+        }
+        out[key] = value;
+    }
+    return out;
+}
+/**
+ * Merge the explicit `--status`/`--type` options with a `--filter` expression
+ * into a single {status?, type?} predicate. The explicit option wins when both
+ * name the same key (a redundant `--filter` does not override an explicit flag).
+ * Returns undefined when neither source provides a predicate.
+ */
+function readExportFilter(options) {
+    const status = readStringOption(options, "status");
+    const type = readStringOption(options, "type");
+    const filter = parseFilterExpression(readStringOption(options, "filter"));
+    return {
+        status: status ?? filter?.status,
+        type: type ?? filter?.type,
+    };
 }
 /**
  * Read a bounded integer option (strict base-10 digits only). Throws a USAGE
@@ -310,6 +391,7 @@ export function buildTodoContextSnapshot(items, options) {
  *
  * Recognised markers (case-insensitive), anywhere in the text:
  *   - `(p0)`..`(p4)`  → that numeric priority
+ *   - `(A)`..`(E)`    → priorities 0..4 (the `--priority-map letter` form)
  *   - trailing/leading `!`, `!!`, `!!!` → 0, 1, 2 (more bangs = higher)
  *
  * Returns the cleaned text plus the inferred priority (undefined if none).
@@ -321,6 +403,11 @@ function extractPriority(text) {
     if (pMatch) {
         priority = parseInt(pMatch[1], 10);
         cleaned = cleaned.replace(pMatch[0], "");
+    }
+    const letterMatch = /\(([A-E])\)/.exec(cleaned);
+    if (letterMatch && priority === undefined) {
+        priority = letterMatch[1].charCodeAt(0) - 65;
+        cleaned = cleaned.replace(letterMatch[0], "");
     }
     // Bang markers: only count a contiguous run of `!` that is its own token
     // (surrounded by start/space/end) so we don't strip "!" inside words.
@@ -518,11 +605,16 @@ function mapPmStatusToChecked(status) {
     return status === "closed" || status === "canceled";
 }
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-function markdownMetadataSuffix(item) {
+function markdownMetadataSuffix(item, priorityMap = "number") {
     const parts = [];
     if (item.priority !== undefined && item.priority !== null) {
         const n = Math.max(0, Math.min(4, Math.trunc(item.priority)));
-        parts.push(`(p${n})`);
+        if (priorityMap === "letter") {
+            parts.push(`(${String.fromCharCode(65 + n)})`);
+        }
+        else {
+            parts.push(`(p${n})`);
+        }
     }
     if (item.deadline) {
         const date = item.deadline.slice(0, 10);
@@ -854,6 +946,112 @@ export function serializePiTodoDetails(items) {
     };
     return JSON.stringify(details, null, 2) + "\n";
 }
+// ---------------------------------------------------------------------------
+// JSON Lines format (one PmItem-shaped JSON object per line)
+// ---------------------------------------------------------------------------
+/** Keys serialized on each jsonl row (a stable, alphabetical order). */
+const JSONL_KEYS = [
+    "id", "title", "description", "status", "type", "priority",
+    "tags", "deadline", "assignee", "sprint", "created_at", "updated_at",
+    "creationDate", "completionDate", "kv",
+];
+/**
+ * Serialize pm items to JSON Lines (one compact JSON object per item, trailing NL).
+ * Each row carries the full pm item payload so a jsonl round-trip is lossless
+ * on every captured field (unlike markdown, which encodes only a subset).
+ * Empty input returns the empty string (no rows, no trailing newline).
+ */
+export function serializeJsonl(items) {
+    if (items.length === 0)
+        return "";
+    return (items
+        .map((item) => {
+        const row = {};
+        for (const key of JSONL_KEYS) {
+            const v = item[key];
+            if (v === undefined || v === null)
+                continue;
+            if (Array.isArray(v) && v.length === 0)
+                continue;
+            if (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0)
+                continue;
+            row[key] = v;
+        }
+        return JSON.stringify(row);
+    })
+        .join("\n") + "\n");
+}
+/**
+ * Parse a JSON Lines document into pm items. Blank lines are skipped. Each
+ * non-blank line MUST be a JSON object with at least a `title` string; `status`
+ * defaults to "open" when absent. Other pm fields are passed through when
+ * present, so a `serializeJsonl → parseJsonl` cycle is lossless. Throws a USAGE
+ * CommandError on malformed JSON or a missing/empty title.
+ */
+export function parseJsonl(content) {
+    const out = [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim() === "")
+            continue;
+        let parsed;
+        try {
+            parsed = JSON.parse(line);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new CommandError(`Invalid jsonl on line ${i + 1}: ${msg}`, EXIT_CODE.USAGE);
+        }
+        if (!isRecord(parsed)) {
+            throw new CommandError(`Invalid jsonl on line ${i + 1} (expected a JSON object)`, EXIT_CODE.USAGE);
+        }
+        const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
+        if (title === "") {
+            throw new CommandError(`Invalid jsonl on line ${i + 1}: Missing or empty 'title'`, EXIT_CODE.USAGE);
+        }
+        const status = typeof parsed.status === "string" && parsed.status !== "" ? parsed.status : "open";
+        const item = {
+            id: typeof parsed.id === "string" ? parsed.id : "",
+            title,
+            status,
+        };
+        // Pass through optional fields only when present and well-typed.
+        if (typeof parsed.description === "string")
+            item.description = parsed.description;
+        if (typeof parsed.type === "string")
+            item.type = parsed.type;
+        if (typeof parsed.priority === "number")
+            item.priority = parsed.priority;
+        if (Array.isArray(parsed.tags))
+            item.tags = parsed.tags.filter((t) => typeof t === "string");
+        if (typeof parsed.deadline === "string")
+            item.deadline = parsed.deadline;
+        if (typeof parsed.assignee === "string")
+            item.assignee = parsed.assignee;
+        if (typeof parsed.sprint === "string")
+            item.sprint = parsed.sprint;
+        if (typeof parsed.created_at === "string")
+            item.created_at = parsed.created_at;
+        if (typeof parsed.updated_at === "string")
+            item.updated_at = parsed.updated_at;
+        if (typeof parsed.creationDate === "string")
+            item.creationDate = parsed.creationDate;
+        if (typeof parsed.completionDate === "string")
+            item.completionDate = parsed.completionDate;
+        if (isRecord(parsed.kv)) {
+            const kv = {};
+            for (const [key, value] of Object.entries(parsed.kv)) {
+                if (value !== null && value !== undefined)
+                    kv[key] = String(value);
+            }
+            if (Object.keys(kv).length > 0)
+                item.kv = kv;
+        }
+        out.push(item);
+    }
+    return out;
+}
 /**
  * Group pm items for sectioned export. `status` (default) splits into Open
  * (open/in_progress/blocked/draft) and Done (closed/canceled), matching the
@@ -896,18 +1094,34 @@ export function groupItems(items, groupBy) {
  * sections. Closed/canceled items become `- [x]`, everything else `- [ ]`.
  * A trailing `<!-- id -->` comment preserves the pm id for round-trips.
  */
-export function renderTaskList(items, groupBy, metadata = false) {
+export function renderTaskList(items, groupBy, metadata = false, priorityMap = "number") {
     const groups = groupItems(items, groupBy);
     const lines = [];
     for (const group of groups) {
         lines.push(`## ${group.heading}`, "");
         for (const item of group.items) {
             const check = mapPmStatusToChecked(item.status) ? "x" : " ";
-            lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item) : ""} <!-- ${item.id} -->`);
+            lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item, priorityMap) : ""} <!-- ${item.id} -->`);
         }
         lines.push("");
     }
     return lines.join("\n").trimEnd() + "\n";
+}
+/**
+ * Render pm items as a flat checkbox markdown list: one `- [ ]`/`- [x]` line
+ * per item, each carrying a `<!-- id -->` provenance comment for round-trips.
+ * Unlike the default markdown export, there is no `# TODO` header and no
+ * `## Open`/`## Done` (or `--group-by`) sectioning — just the checkboxes. The
+ * import grammar is identical to the default `markdown` parser, so a
+ * `renderCheckboxMarkdown → parseMarkdownTodos` cycle is a clean round-trip.
+ */
+export function renderCheckboxMarkdown(items, metadata = false, priorityMap = "number") {
+    const lines = [];
+    for (const item of items) {
+        const check = mapPmStatusToChecked(item.status) ? "x" : " ";
+        lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item, priorityMap) : ""} <!-- ${item.id} -->`);
+    }
+    return lines.length === 0 ? "" : lines.join("\n") + "\n";
 }
 /**
  * Validate a todo file (markdown or todo.txt) and return structured issues.
@@ -935,6 +1149,37 @@ export function validateTodoFile(content, format) {
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             issues.push({ line: 0, severity: "error", message: msg, text: "" });
+        }
+        return { issues, taskCount };
+    }
+    if (format === "jsonl") {
+        for (let i = 0; i < lines.length; i++) {
+            const raw = lines[i];
+            if (raw.trim() === "")
+                continue;
+            try {
+                const parsed = JSON.parse(raw);
+                if (!isRecord(parsed)) {
+                    issues.push({ line: i + 1, severity: "error", message: "Line is not a JSON object", text: raw.trim() });
+                    continue;
+                }
+                const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
+                if (title === "") {
+                    issues.push({ line: i + 1, severity: "error", message: "Missing or empty 'title'", text: raw.trim() });
+                    continue;
+                }
+                taskCount++;
+                if (parsed.deadline !== undefined && typeof parsed.deadline === "string" && parsed.deadline !== "" && !isValidIsoDate(parsed.deadline.slice(0, 10))) {
+                    issues.push({ line: i + 1, severity: "error", message: `Invalid deadline '${parsed.deadline}' (expected YYYY-MM-DD)`, text: raw.trim() });
+                }
+                if (parsed.priority !== undefined && typeof parsed.priority === "number" && (parsed.priority < 0 || parsed.priority > 4 || !Number.isInteger(parsed.priority))) {
+                    issues.push({ line: i + 1, severity: "error", message: `Invalid priority '${parsed.priority}' (expected integer 0-4)`, text: raw.trim() });
+                }
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                issues.push({ line: i + 1, severity: "error", message: `Invalid JSON: ${msg}`, text: raw.trim() });
+            }
         }
         return { issues, taskCount };
     }
@@ -1138,6 +1383,23 @@ function parseFileToNormalized(md, file, format) {
             file,
         }));
     }
+    if (format === "jsonl") {
+        // Each line is a full PmItem JSON object; the upsert key is the carried pm
+        // id (when present), making a jsonl round-trip idempotent under --upsert.
+        return parseJsonl(md).map((item, i) => ({
+            checked: mapPmStatusToChecked(item.status),
+            status: item.status,
+            text: item.title,
+            priority: item.priority,
+            tags: item.tags ?? [],
+            deadline: item.deadline,
+            indent: 0,
+            lineNumber: i + 1,
+            file,
+            pmId: item.id || undefined,
+            itemType: item.type,
+        }));
+    }
     if (format === "todotxt") {
         const lines = md.split("\n");
         const out = [];
@@ -1159,6 +1421,9 @@ function parseFileToNormalized(md, file, format) {
         }
         return out;
     }
+    // `checkbox` shares the markdown checkbox grammar; only the export layout
+    // differs (flat list, no `# TODO` header / sections), so the same parser is
+    // reused for both.
     return parseMarkdownTodos(md, file).map((t) => ({
         checked: t.checked,
         text: t.text,
@@ -1296,6 +1561,22 @@ function runTodoImport(opts) {
             const want = opts.section.trim().toLowerCase();
             todos = todos.filter((t) => (t.section ?? "").toLowerCase() === want);
         }
+        // Apply --filter status/type predicates (after parsing, before creating).
+        // Status is the mapped pm status; type is the per-item type (round-trip tag)
+        // or the import-wide --type default — the same values that get written.
+        if (opts.statusFilter || opts.typeFilter) {
+            todos = todos.filter((t) => {
+                const status = t.status ?? mapStatusToPm(t.checked, opts.closedAs, opts.openAs ?? "open");
+                if (opts.statusFilter && status !== opts.statusFilter)
+                    return false;
+                if (opts.typeFilter) {
+                    const resolvedType = t.itemType ?? opts.itemType;
+                    if (resolvedType !== opts.typeFilter)
+                        return false;
+                }
+                return true;
+            });
+        }
         for (const todo of todos) {
             const tags = [...opts.extraTags];
             // Per-item tags (todo.txt +project/@context) carry through.
@@ -1314,7 +1595,7 @@ function runTodoImport(opts) {
                 : todo.priority !== undefined
                     ? String(todo.priority)
                     : undefined;
-            const status = mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
+            const status = todo.status ?? mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
             // Prefer the per-item type recovered from the round-trip ` [Type]` tag;
             // fall back to the import-wide `--type` (default "Task") for lines that
             // carry no provenance tag (hand-written todos).
@@ -1448,6 +1729,21 @@ function runTodoImport(opts) {
     }
     return { imported, skipped, updated, previews: opts.dryRun ? previews : undefined };
 }
+/**
+ * Apply the export `--sort` and `--reverse` ordering to a list of pm items.
+ * Pure: returns a new array, never mutates the input. `--sort` orders ascending
+ * (priority 0 first, earliest deadline first, alphabetical title); `--reverse`
+ * then flips the order so output is oldest-first (or, with a `--sort` key, the
+ * descending order of that key). The two flags compose: `--sort priority
+ * --reverse` yields lowest-priority first. With neither set the input order is
+ * preserved (pm's native `list-all` ordering, typically newest-first).
+ */
+export function applyExportOrder(items, sort, reverse) {
+    let out = sort ? sortItems(items, sort) : items;
+    if (reverse)
+        out = [...out].reverse();
+    return out;
+}
 /** Fetch + filter pm items via `pm list-all --json`. */
 function fetchPmItems(opts) {
     const result = spawnSync("pm", ["--path", opts.pmRoot, "list-all", "--json"], { encoding: "utf-8" });
@@ -1459,9 +1755,7 @@ function fetchPmItems(opts) {
         items = items.filter((i) => i.status === opts.statusFilter);
     if (opts.typeFilter)
         items = items.filter((i) => i.type === opts.typeFilter);
-    if (opts.sort)
-        items = sortItems(items, opts.sort);
-    return items;
+    return applyExportOrder(items, opts.sort, opts.reverse);
 }
 /**
  * Render the default-markdown TODO export. Kept byte-identical to the original
@@ -1469,7 +1763,7 @@ function fetchPmItems(opts) {
  * and the `[type]` annotation on open items) so existing behaviour is stable.
  * This is the path used when no `--group-by` (or `--group-by status`) is set.
  */
-export function renderDefaultMarkdown(items, nowIso, metadata = false) {
+export function renderDefaultMarkdown(items, nowIso, metadata = false, priorityMap = "number") {
     const lines = [
         "# TODO",
         "",
@@ -1482,7 +1776,7 @@ export function renderDefaultMarkdown(items, nowIso, metadata = false) {
         lines.push("## Open", "");
         for (const item of openItems) {
             const check = mapPmStatusToChecked(item.status) ? "x" : " ";
-            const meta = metadata ? markdownMetadataSuffix(item) : "";
+            const meta = metadata ? markdownMetadataSuffix(item, priorityMap) : "";
             const typeTag = item.type ? ` [${item.type}]` : "";
             lines.push(`- [${check}] ${item.title}${meta}${typeTag} <!-- ${item.id} -->`);
         }
@@ -1491,7 +1785,7 @@ export function renderDefaultMarkdown(items, nowIso, metadata = false) {
     if (closedItems.length > 0) {
         lines.push("## Done", "");
         for (const item of closedItems) {
-            lines.push(`- [x] ${item.title}${metadata ? markdownMetadataSuffix(item) : ""} <!-- ${item.id} -->`);
+            lines.push(`- [x] ${item.title}${metadata ? markdownMetadataSuffix(item, priorityMap) : ""} <!-- ${item.id} -->`);
         }
         lines.push("");
     }
@@ -1502,7 +1796,7 @@ export function renderDefaultMarkdown(items, nowIso, metadata = false) {
  * `--group-by status`). Each group is a `## <heading>` section of checkboxes
  * carrying the pm id comment for round-trips.
  */
-export function renderGroupedMarkdown(items, groupBy, nowIso, metadata = false) {
+export function renderGroupedMarkdown(items, groupBy, nowIso, metadata = false, priorityMap = "number") {
     const lines = [
         "# TODO",
         "",
@@ -1513,7 +1807,7 @@ export function renderGroupedMarkdown(items, groupBy, nowIso, metadata = false) 
         lines.push(`## ${group.heading}`, "");
         for (const item of group.items) {
             const check = mapPmStatusToChecked(item.status) ? "x" : " ";
-            lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item) : ""} <!-- ${item.id} -->`);
+            lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item, priorityMap) : ""} <!-- ${item.id} -->`);
         }
         lines.push("");
     }
@@ -1529,27 +1823,34 @@ function buildTodoMarkdown(opts) {
         return { markdown: "", count: 0 };
     const format = opts.format ?? "markdown";
     const groupBy = opts.groupBy;
+    const priorityMap = opts.priorityMap ?? "number";
     if (format === "todotxt") {
         return { markdown: serializeTodoTxt(items), count: items.length };
     }
     if (format === "todojson") {
         return { markdown: serializePiTodoDetails(items), count: items.length };
     }
+    if (format === "jsonl") {
+        return { markdown: serializeJsonl(items), count: items.length };
+    }
+    if (format === "checkbox") {
+        return { markdown: renderCheckboxMarkdown(items, opts.metadata, priorityMap), count: items.length };
+    }
     if (format === "tasklist") {
-        return { markdown: renderTaskList(items, groupBy ?? "status", opts.metadata), count: items.length };
+        return { markdown: renderTaskList(items, groupBy ?? "status", opts.metadata, priorityMap), count: items.length };
     }
     // markdown
     if (groupBy && groupBy !== "status") {
-        return { markdown: renderGroupedMarkdown(items, groupBy, new Date().toISOString(), opts.metadata), count: items.length };
+        return { markdown: renderGroupedMarkdown(items, groupBy, new Date().toISOString(), opts.metadata, priorityMap), count: items.length };
     }
-    return { markdown: renderDefaultMarkdown(items, new Date().toISOString(), opts.metadata), count: items.length };
+    return { markdown: renderDefaultMarkdown(items, new Date().toISOString(), opts.metadata, priorityMap), count: items.length };
 }
 // ---------------------------------------------------------------------------
 // Extension
 // ---------------------------------------------------------------------------
 export default defineExtension({
     name: "pm-todos",
-    version: "2026.7.6",
+    version: "2026.7.6-1",
     activate(api) {
         // -----------------------------------------------------------------------
         // Command: pm todos validate <file>
@@ -1564,10 +1865,12 @@ export default defineExtension({
                 "pm todos validate TODO.md",
                 "pm todos validate todo.txt --format todotxt",
                 "pm todos validate todo-state.json --format todojson",
+                "pm todos validate backlog.jsonl --format jsonl",
+                "pm todos validate TODO.md --format checkbox --json",
                 "pm todos validate TODO.md --json",
             ],
             flags: [
-                { long: "--format", value_name: "fmt", description: "File format: markdown (default) | todotxt | todojson" },
+                { long: "--format", value_name: "fmt", description: "File format: markdown (default) | todotxt | todojson | jsonl | checkbox" },
                 { long: "--json", description: "Emit a JSON report" },
             ],
             async run(ctx) {
@@ -1575,7 +1878,7 @@ export default defineExtension({
                 const asJson = readBoolOption(ctx.options, "json");
                 const filePath = ctx.args[0];
                 if (!filePath) {
-                    throw new CommandError("Usage: pm todos validate <file> [--format markdown|todotxt|todojson] [--json]", EXIT_CODE.USAGE);
+                    throw new CommandError("Usage: pm todos validate <file> [--format markdown|todotxt|todojson|jsonl|checkbox] [--json]", EXIT_CODE.USAGE);
                 }
                 let content;
                 try {
@@ -1659,6 +1962,131 @@ export default defineExtension({
             },
         });
         // -----------------------------------------------------------------------
+        // Command: pm todos sync <file>
+        //
+        // Bidirectional reconciliation: import file changes into the pm store
+        // (upserting onto existing items so re-syncing does not duplicate), then
+        // write a fresh export of the reconciled pm state back to the SAME file so
+        // pm-side changes (ids, statuses, priorities, deadlines) flow back. The
+        // net effect is that file and pm store converge to the same state.
+        //
+        // Sync always upserts (the import half is meaningless without it). It
+        // supports every round-trippable format (markdown, todotxt, todojson,
+        // jsonl, checkbox). `tasklist` is export-only and rejected.
+        // -----------------------------------------------------------------------
+        api.registerCommand({
+            name: "todos sync",
+            description: "Bidirectionally sync a TODO file with the pm store: import file " +
+                "changes (upsert, no duplicates) and write the reconciled pm state " +
+                "back to the file so ids/statuses round-trip.",
+            intent: "bidirectionally sync a markdown/todo.txt/todojson/jsonl/checkbox file with pm items",
+            examples: [
+                "pm todos sync TODO.md",
+                "pm todos sync todo.txt --format todotxt",
+                "pm todos sync todo-state.json --format todojson",
+                "pm todos sync backlog.jsonl --format jsonl --filter status=open",
+                "pm todos sync TODO.md --format checkbox --metadata --priority-map letter",
+            ],
+            flags: [
+                { long: "--format", value_name: "fmt", description: "File format: markdown (default), todotxt, todojson, jsonl, or checkbox" },
+                { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
+                { long: "--closed-as", value_name: "status", description: "Status for checked items (default: closed)" },
+                { long: "--status", value_name: "status", description: "Status for open/unchecked items (default: open)" },
+                { long: "--priority", value_name: "n", description: "Priority 0-4; overrides markers inferred from text" },
+                { long: "--tags", value_name: "csv", description: "Comma-separated extra tags added to every imported item" },
+                { long: "--section", value_name: "name", description: "Only sync the named markdown section" },
+                { long: "--no-section-tags", description: "Do not derive tags from markdown section headings" },
+                { long: "--group-by", value_name: "field", description: "Section the re-export by status (default) | sprint | type (markdown/tasklist only)" },
+                { long: "--metadata", description: "Include (pN)/(A)..(E) and due:YYYY-MM-DD tokens in markdown/tasklist re-export" },
+                { long: "--priority-map", value_name: "scheme", description: "Priority token scheme for markdown/tasklist re-export: number (default) | letter" },
+                { long: "--filter", value_name: "expr", description: "Filter parsed and re-exported items by status/type (e.g. status=open,type=Task)" },
+                { long: "--sort", value_name: "key", description: "Sort the re-export by priority | deadline | title" },
+                { long: "--reverse", description: "Reverse the re-export order (composes with --sort)" },
+                { long: "--dry-run", description: "Report what would change without writing to pm or the file" },
+                { long: "--json", description: "Return a JSON result object" },
+            ],
+            async run(ctx) {
+                const fileArg = (ctx.args && ctx.args[0]);
+                const fileOpt = readStringOption(ctx.options, "file");
+                if (!fileArg && !fileOpt) {
+                    throw new CommandError("Usage: pm todos sync <file> [--format markdown|todotxt|todojson|jsonl|checkbox] [--dry-run]", EXIT_CODE.USAGE);
+                }
+                const filePath = resolve((fileArg ?? fileOpt));
+                // A single --format drives both directions. `tasklist` is export-only
+                // (no import grammar), so reject it explicitly with a clear message.
+                const formatRaw = readStringOption(ctx.options, "format");
+                if (formatRaw) {
+                    const v = formatRaw.toLowerCase();
+                    if (v === "tasklist" || v === "task-list" || v === "gfm") {
+                        throw new CommandError("todos sync does not support --format tasklist (tasklist is export-only; use markdown, todotxt, todojson, jsonl, or checkbox)", EXIT_CODE.USAGE);
+                    }
+                }
+                const importFormat = readImportFormat(ctx.options);
+                const exportFormat = importFormat === "checkbox" ? "checkbox" : importFormat;
+                const itemType = readStringOption(ctx.options, "type") ?? "Task";
+                const closedAs = readStringOption(ctx.options, "closed-as", "closedAs") ?? "closed";
+                const openAs = readStringOption(ctx.options, "status");
+                const priority = readStringOption(ctx.options, "priority");
+                const section = readStringOption(ctx.options, "section");
+                const extraTags = (readStringOption(ctx.options, "tags") ?? "")
+                    .split(",").map((t) => t.trim()).filter(Boolean);
+                const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
+                const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
+                const asJson = readBoolOption(ctx.options, "json");
+                const filter = parseFilterExpression(readStringOption(ctx.options, "filter")) ?? {};
+                // Fail-fast syntax gate before any pm-store write.
+                preflightValidateImportFiles([filePath], importFormat);
+                const importResult = runTodoImport({
+                    files: [filePath],
+                    itemType,
+                    closedAs,
+                    openAs,
+                    priority,
+                    extraTags,
+                    section,
+                    sectionTags,
+                    dryRun,
+                    pmRoot: ctx.pm_root,
+                    format: importFormat,
+                    upsert: true,
+                    statusFilter: filter.status,
+                    typeFilter: filter.type,
+                });
+                // Re-export the reconciled pm state back to the same file. The export
+                // honours --filter/--group-by/--metadata/--priority-map so the written
+                // file matches the user's preferred layout. Under --dry-run nothing is
+                // written to pm or disk; the export is computed only to report the
+                // post-sync row count.
+                const { markdown: reexport, count: exportCount } = buildTodoMarkdown({
+                    statusFilter: filter.status,
+                    typeFilter: filter.type,
+                    pmRoot: ctx.pm_root,
+                    format: exportFormat,
+                    groupBy: readGroupBy(ctx.options),
+                    sort: readSort(ctx.options),
+                    metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
+                    priorityMap: readPriorityMap(ctx.options),
+                    reverse: readBoolOption(ctx.options, "reverse"),
+                });
+                const result = {
+                    file: filePath,
+                    format: importFormat,
+                    imported: importResult.imported,
+                    updated: importResult.updated ?? 0,
+                    skipped: importResult.skipped,
+                    reexported: exportCount,
+                    dryRun,
+                };
+                if (dryRun) {
+                    console.error(`[dry-run] sync ${filePath}: import ${importResult.imported}, update ${importResult.updated ?? 0}, skip ${importResult.skipped}, re-export ${exportCount} item(s).`);
+                    return asJson ? { ...result, previews: importResult.previews } : result;
+                }
+                writeFileSync(filePath, reexport, "utf-8");
+                console.error(`sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, skipped ${importResult.skipped}; wrote ${exportCount} item(s) back to ${filePath}.`);
+                return result;
+            },
+        });
+        // -----------------------------------------------------------------------
         // Importer: todos  (native `pm import todos` pipeline)
         //
         // Driven by options (config-driven import). Accepts the same knobs as the
@@ -1703,6 +2131,7 @@ export default defineExtension({
             const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
             const format = readImportFormat(ctx.options);
             const upsert = readBoolOption(ctx.options, "upsert") || format === "todojson";
+            const importFilter = parseFilterExpression(readStringOption(ctx.options, "filter"));
             // Fail-fast syntax gate: this importer is the real `pm todos import` path
             // (the action contract shadows the like-named command). Validate every
             // file before any pm-store write so malformed input aborts immediately
@@ -1721,6 +2150,8 @@ export default defineExtension({
                 pmRoot: ctx.pm_root,
                 format,
                 upsert,
+                statusFilter: importFilter?.status,
+                typeFilter: importFilter?.type,
             });
             if (imported === 0 && skipped === 0 && (updated ?? 0) === 0) {
                 console.error("No TODO items found.");
@@ -1734,6 +2165,29 @@ export default defineExtension({
             const updPart = upsert ? `, updated ${updated ?? 0}` : "";
             console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
             return upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
+        }, {
+            description: "Import markdown, todo.txt, todo JSON, JSONL, or checkbox TODOs into pm.",
+            intent: "import TODO records into pm items",
+            examples: [
+                "pm todos import TODO.md",
+                "pm todos import backlog.jsonl --format jsonl --upsert --filter status=open",
+            ],
+            arguments: [{ name: "file", required: false, description: "TODO file to import (omit when using --glob)" }],
+            flags: [
+                { long: "--file", value_name: "path", description: "TODO file to import (alternative to the positional file)" },
+                { long: "--glob", value_name: "pattern", description: "Import files matching a glob" },
+                { long: "--format", value_name: "fmt", description: "Source format: markdown, todotxt, todojson, jsonl, or checkbox" },
+                { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
+                { long: "--closed-as", value_name: "status", description: "Status for checked items (default: closed)" },
+                { long: "--status", value_name: "status", description: "Status for open/unchecked items (default: open)" },
+                { long: "--priority", value_name: "n", description: "Priority 0-4; overrides inferred markers" },
+                { long: "--tags", value_name: "csv", description: "Comma-separated extra tags" },
+                { long: "--section", value_name: "name", description: "Only import the named markdown section" },
+                { long: "--no-section-tags", description: "Do not derive tags from markdown section headings" },
+                { long: "--filter", value_name: "expr", description: "Filter parsed items by status/type" },
+                { long: "--upsert", description: "Update matching items instead of creating duplicates" },
+                { long: "--dry-run", description: "Preview without writing to pm" },
+            ],
         });
         // -----------------------------------------------------------------------
         // Exporter: todos  (native `pm export todos` pipeline)
@@ -1743,14 +2197,17 @@ export default defineExtension({
         // -----------------------------------------------------------------------
         api.registerExporter("todos", async (ctx) => {
             const outputPath = readStringOption(ctx.options, "output");
+            const filter = readExportFilter(ctx.options);
             const { markdown, count } = buildTodoMarkdown({
-                statusFilter: readStringOption(ctx.options, "status"),
-                typeFilter: readStringOption(ctx.options, "type"),
+                statusFilter: filter.status,
+                typeFilter: filter.type,
                 pmRoot: ctx.pm_root,
                 format: readExportFormat(ctx.options),
                 groupBy: readGroupBy(ctx.options),
                 sort: readSort(ctx.options),
                 metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
+                priorityMap: readPriorityMap(ctx.options),
+                reverse: readBoolOption(ctx.options, "reverse"),
             });
             if (count === 0) {
                 console.error("todos: no items found.");
