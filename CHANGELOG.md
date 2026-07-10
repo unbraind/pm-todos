@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- todos import/export unusable via CLI: importer/exporter registrations omit arguments+flags ([pm-todos-chgi](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-chgi.toon))
 - Adversarial review pass 2026-07-10 ([pm-todos-98ht](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-98ht.toon))
 
 ### Other

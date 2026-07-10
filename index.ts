@@ -2603,6 +2603,38 @@ export default defineExtension({
       const updPart = upsert ? `, updated ${updated ?? 0}` : "";
       console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
       return upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
+    }, {
+      // Declare the same file argument + flag contracts the handler already
+      // reads (ctx.args[0], ctx.options.*). Without them the derived
+      // `pm todos import` command rejects the positional file ("too many
+      // arguments") and every option ("unknown option"), even though the
+      // handler supports them — mirroring the working `todos sync` command.
+      description:
+        "Import TODO items from a markdown/todo.txt/todojson/jsonl/checkbox file into the pm store.",
+      intent: "import a markdown/todo.txt/todojson/jsonl/checkbox file into pm items",
+      examples: [
+        "pm todos import TODO.md",
+        "pm todos import backlog.jsonl --format jsonl --upsert",
+        "pm todos import todo.txt --format todotxt --status open",
+        "pm todos import --glob 'docs/**/*.todo.md' --dry-run",
+      ],
+      arguments: [
+        { name: "file", required: false, description: "Path to the TODO file to import (or use --file/--glob)" },
+      ],
+      flags: [
+        { long: "--file", value_name: "path", description: "Path to the TODO file (alternative to the positional argument)" },
+        { long: "--glob", value_name: "pattern", description: "Import every file matching this glob pattern" },
+        { long: "--format", value_name: "fmt", description: "File format: markdown (default), todotxt, todojson, jsonl, or checkbox" },
+        { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
+        { long: "--closed-as", value_name: "status", description: "Status for checked/closed items (default: closed)" },
+        { long: "--status", value_name: "status", description: "Status for open/unchecked items (default: open)" },
+        { long: "--priority", value_name: "n", description: "Priority 0-4; overrides markers inferred from text" },
+        { long: "--section", value_name: "name", description: "Only import the named markdown section" },
+        { long: "--tags", value_name: "csv", description: "Comma-separated extra tags added to every imported item" },
+        { long: "--filter", value_name: "expr", description: "Only import rows matching status/type (e.g. status=open,type=Task)" },
+        { long: "--upsert", description: "Update existing items in place instead of skipping duplicates" },
+        { long: "--dry-run", description: "Report what would change without writing to pm" },
+      ],
     });
 
     // -----------------------------------------------------------------------
@@ -2639,6 +2671,29 @@ export default defineExtension({
       }
 
       return { exported: count, markdown };
+    }, {
+      // Declare the flag contracts the handler already reads so the derived
+      // `pm todos export` command accepts them (parity with `todos sync`).
+      description:
+        "Export pm items to a markdown/todo.txt/tasklist/todojson/jsonl/checkbox TODO file.",
+      intent: "export pm items to a markdown/todo.txt/tasklist/todojson/jsonl/checkbox file",
+      examples: [
+        "pm todos export --output TODO.md",
+        "pm todos export --format jsonl --output backlog.jsonl",
+        "pm todos export --status open --sort priority --reverse",
+      ],
+      flags: [
+        { long: "--output", value_name: "path", description: "Write the export to this file (default: stdout)" },
+        { long: "--format", value_name: "fmt", description: "Output format: markdown (default), todotxt, tasklist, todojson, jsonl, or checkbox" },
+        { long: "--status", value_name: "status", description: "Only export items with this status" },
+        { long: "--type", value_name: "type", description: "Only export items of this type" },
+        { long: "--filter", value_name: "expr", description: "Only export items matching status/type (e.g. status=open,type=Task)" },
+        { long: "--group-by", value_name: "field", description: "Section the export by status (default) | sprint | type" },
+        { long: "--sort", value_name: "key", description: "Sort the export by priority | deadline | title" },
+        { long: "--metadata", description: "Include (pN)/(A)..(E) and due:YYYY-MM-DD tokens in markdown/tasklist output" },
+        { long: "--priority-map", value_name: "scheme", description: "Priority token scheme for --metadata: number (default) | letter" },
+        { long: "--reverse", description: "Reverse the final export order (composes with --sort)" },
+      ],
     });
 
     // -----------------------------------------------------------------------

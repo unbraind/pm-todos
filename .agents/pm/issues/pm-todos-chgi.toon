@@ -1,0 +1,13 @@
+id: pm-todos-chgi
+title: "todos import/export unusable via CLI: importer/exporter registrations omit arguments+flags"
+description: "registerImporter('todos',h) and registerExporter('todos',h) are called WITHOUT the 3rd options arg, so the derived 'pm todos import'/'pm todos export' commands have NO declared positional file argument and NO flag contracts. Result: 'pm todos import f.jsonl' -> 'Too many arguments'; '--file f' -> unknown option; empty --help. The handlers already READ ctx.args[0] + all options, so only the registration contract is missing. By contrast 'pm todos sync' is a registerCommand WITH flags and works perfectly via CLI. Fix: pass {arguments:[{name:'file'}], flags:[...]} to both registrations mirroring the sync command. Verified against pm-cli 2026.7.10; bundled pm-csv (which declares its contracts) works, confirming this is a pm-todos authoring gap."
+type: Issue
+status: closed
+priority: 2
+tags[4]: cli,exporter,importer,usability
+created_at: "2026-07-10T22:14:00.896Z"
+updated_at: "2026-07-10T22:16:34.836Z"
+closed_at: "2026-07-10T22:16:34.834Z"
+author: claude-opus
+close_reason: "Fixed: added arguments+flags contracts to registerImporter/registerExporter('todos'). Verified via CLI in a throwaway workspace: 'pm todos import f.jsonl --format jsonl' imports (positional accepted), '--file' form works, '--help' lists 8 flags, unknown '--bogus' now rejected with 'Expected one of' list, 'pm todos export --format jsonl' emits correct jsonl with exact status. SDK/action path unchanged (no regression); 117 unit tests pass."
+body: ""
