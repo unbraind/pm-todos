@@ -1,0 +1,14 @@
+id: pm-todos-98ht
+title: Adversarial review pass 2026-07-10
+description: "Adversarial diff review of pm-todos. Findings: (1) BLOCKER FIXED: release.yml paths array included dist which exits 1 under set -euo pipefail when dist is gitignored — removed dist from paths. (2) INFO: kv normalization, jsonl status preservation, resolveImportedTodoStatus, applyExportOrder copy safety, sync convergence fix (empty file on 0 items). (3) INFO: release:update-version script replaces inline node -e. All checks pass: typecheck, build, 117 tests, audit 0 vulns, pack:dry-run, changelog:check."
+type: Chore
+status: closed
+priority: 2
+tags[4]: adversarial,audit,dist-removal-fix,review
+created_at: "2026-07-10T19:21:36.321Z"
+updated_at: "2026-07-10T19:21:36.321Z"
+closed_at: "2026-07-10T19:21:36.321Z"
+author: pi-adversarial-review
+acceptance_criteria: "All diffs reviewed; release workflow dist reference fixed; release:check suite passes."
+close_reason: "BLOCKER fixed: removed dist from release.yml paths. All checks green."
+body: ""

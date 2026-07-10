@@ -1,0 +1,13 @@
+id: pm-todos-p88p
+title: "Fix todo status resolution, jsonl parse, and remove letter priority map"
+description: ""
+type: Task
+status: in_progress
+priority: 1
+tags[2]: "area:export","area:import"
+created_at: "2026-07-10T20:02:27.217Z"
+updated_at: "2026-07-10T20:02:27.625Z"
+author: codex
+acceptance_criteria: "resolveImportedTodoStatus handles source status correctly; jsonl parse handles object values; letter priority map removed; release:check green; Greptile clean; PR merged"
+why_now: Status resolution needed extraction; jsonl parse didn't handle object kv values; letter priority map was undocumented
+body: ""

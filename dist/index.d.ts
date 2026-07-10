@@ -356,6 +356,9 @@ export declare function validateTodoFile(content: string, format: TodoImportForm
  * errors (or an unreadable file). Returns silently when all files are clean.
  */
 export declare function preflightValidateImportFiles(files: string[], format: TodoImportFormat): void;
+/** Preserve an exact source status when available; checkbox-style formats
+ * continue to map their binary checked state through --closed-as/--status. */
+export declare function resolveImportedTodoStatus(sourceStatus: string | undefined, checked: boolean, closedAs: string, openAs?: string): string;
 /**
  * An existing pm item the upsert path may target. `status` is carried so the
  * update can omit `--status` when unchanged: re-sending a terminal status
@@ -405,10 +408,9 @@ export declare function extractCreatedTodoId(stdout: string): string | undefined
  * Apply the export `--sort` and `--reverse` ordering to a list of pm items.
  * Pure: returns a new array, never mutates the input. `--sort` orders ascending
  * (priority 0 first, earliest deadline first, alphabetical title); `--reverse`
- * then flips the order so output is oldest-first (or, with a `--sort` key, the
- * descending order of that key). The two flags compose: `--sort priority
- * --reverse` yields lowest-priority first. With neither set the input order is
- * preserved (pm's native `list-all` ordering, typically newest-first).
+ * then flips the order. The two flags compose: `--sort priority --reverse`
+ * yields lowest-priority first. Without a sort key, reverse simply flips pm's
+ * native `list-all` order. The input array is never returned or mutated.
  */
 export declare function applyExportOrder(items: PmItem[], sort: "priority" | "deadline" | "title" | undefined, reverse: boolean | undefined): PmItem[];
 /**

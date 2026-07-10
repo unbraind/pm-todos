@@ -217,7 +217,7 @@ pm todos export --sort priority --reverse --output backlog.md
 | `--filter <expr>` | string | Filter items by status/type (e.g. `status=open` or `status=open,type=Task`); complements `--status`/`--type` |
 | `--metadata` | boolean | Include parseable priority and `due:YYYY-MM-DD` tokens in markdown/tasklist output |
 | `--priority-map <scheme>` | string | Priority token scheme for markdown/tasklist `--metadata`: `number` (default, `(p0)`..`(p4)`) or `letter` (`(A)`..`(E)`) |
-| `--reverse` | boolean | Reverse the export order; composes with `--sort` (e.g. `--sort priority --reverse` → lowest priority first) |
+| `--reverse` | boolean | Reverse the final export order; without `--sort` this flips pm's native order, while `--sort priority --reverse` yields lowest priority first |
 
 The default `markdown` export (no `--group-by`, or `--group-by status`) is unchanged: a
 `# TODO` document with `## Open` / `## Done` sections. `--group-by sprint`/`type` emits a
