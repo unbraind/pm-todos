@@ -2630,6 +2630,7 @@ export default defineExtension({
         { long: "--status", value_name: "status", description: "Status for open/unchecked items (default: open)" },
         { long: "--priority", value_name: "n", description: "Priority 0-4; overrides markers inferred from text" },
         { long: "--section", value_name: "name", description: "Only import the named markdown section" },
+        { long: "--section-tags", description: "Derive tags from markdown section headings (default; pass --no-section-tags to disable)" },
         { long: "--tags", value_name: "csv", description: "Comma-separated extra tags added to every imported item" },
         { long: "--filter", value_name: "expr", description: "Only import rows matching status/type (e.g. status=open,type=Task)" },
         { long: "--upsert", description: "Update existing items in place instead of skipping duplicates" },
