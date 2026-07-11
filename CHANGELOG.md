@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Full pm ecosystem production pass for pm-todos ([pm-todos-gev1](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-gev1.toon))
+
+### Fixed
+
+- Preserve rich JSONL fields across installed pm-todos import/export ([pm-todos-ejm7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ejm7.toon))
+- todos import/export unusable via CLI: importer/exporter registrations omit arguments+flags ([pm-todos-chgi](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-chgi.toon))
+- Adversarial review pass 2026-07-10 ([pm-todos-98ht](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-98ht.toon))
+
+### Other
+
+- Production-readiness audit 2026-05-28 ([pm-todos-kgjf](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-kgjf.toon))
+- Full-cycle hardening wave: pm-todos ([pm-todos-v3lk](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-v3lk.toon))
+- Harden release bun-verify so registry-mirror lag cannot block the GitHub release ([pm-todos-sl3m](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-sl3m.toon))
+
 ## 2026.7.10 - 2026-07-10
 
 ### Other

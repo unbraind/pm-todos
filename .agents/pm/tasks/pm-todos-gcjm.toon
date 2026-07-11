@@ -6,8 +6,34 @@ status: in_progress
 priority: 1
 tags[4]: agent-audit,context-management,ecosystem,release-readiness
 created_at: "2026-07-06T15:33:34.964Z"
-updated_at: "2026-07-06T15:33:34.964Z"
-assignee: codex
+updated_at: "2026-07-10T23:21:09.570Z"
+assignee: codex-importers
 author: codex
 acceptance_criteria: Package uses current pm CLI/SDK and pm-changelog; release/check scripts pass; pm items capture decisions; no tracked secrets/private data are introduced; GitHub PR/release state is reviewed.
+risk: high
+confidence: medium
+comments[3]{created_at,author,text}:
+  "2026-07-09T21:34:59.818Z",codex-importers,"2026-07-09 continuation: reusing this existing nonduplicate work item for dependency alignment, command-by-command production-like testing, agent-context UX evaluation, release/changelog verification, tracked/package/full-history privacy and secret audit, Greptile review, GitHub bot feedback, and green merge."
+  "2026-07-09T21:46:38.151Z",codex-importers,"Preserved exact JSONL statuses, normalized kv values, made sync filtering symmetric/convergent, decoupled --status/--type from export filters, and clarified ordering/docs."
+  "2026-07-10T18:58:32.762Z",context-specialist,"2026-07-10 context-specialist: Updated peerDep to >=2026.7.10. Untracked dist/ from git, standardized .gitignore (added .env.* and .agents/pm/extensions/). New untracked scripts/update-release-version.ts is a clean TypeScript refactor of inline node -e version-sync in release.yml. typecheck+build+test(117 pass)+pack(57.1KB)+changelog all green. npm@2026.7.10 published, CI+release green. No secrets in history."
+notes[4]{created_at,author,text}:
+  "2026-07-09T21:35:00.053Z",codex-importers,"Safety: preserve unrelated checkout changes; do not alter telemetry/observability; use read-only live APIs plus local mocks for Jira/Linear or any unsafe write paths; never log secret values."
+  "2026-07-09T21:46:38.764Z",codex-importers,"Dependency baseline refreshed to @unbrained/pm-cli 2026.7.9, pm-changelog 2026.7.8, TypeScript 7.0.2, and Node types 26.1.1; npm install reported zero vulnerabilities."
+  "2026-07-10T18:58:33.150Z",context-specialist,"Decision: Previous agent's work (jsonl kv normalization, lossless status preservation via resolveImportedTodoStatus, symmetric sync filtering, convergence-guaranteed empty-write, applyExportOrder copy fix) is production-ready. Extension version 2026.7.6 matches package.json."
+  "2026-07-10T19:02:13.820Z",context-specialist,"CRITICAL RISK: scripts/update-release-version.ts is untracked in git, but .github/workflows/release.yml (also uncommitted) calls 'npm run release:update-version'. Both files MUST be committed together or the next CI release will fail with 'Cannot find module scripts/update-release-version.ts'. The last successful release (v2026.07.10) used the old inline node -e command."
+files[9]{path,scope,note}:
+  .github/workflows/ci.yml,project,audited free CI gate
+  .github/workflows/release.yml,project,audited daily change-gated release
+  .gitignore,project,standardized with dist/ .env.* and .agents/pm/extensions/
+  index.ts,project,implementation and SDK integration
+  manifest.json,project,extension metadata and compatibility
+  package-lock.json,project,reproducible dependency graph
+  package.json,project,current toolchain and release scripts
+  scripts/update-release-version.ts,project,TypeScript refactor of inline version-sync in release.yml
+  test/enhance.test.ts,project,review regression coverage
+tests[2]{command,path,scope,timeout_seconds,pm_context_mode}:
+  "npm run release:check",package.json,project,600,schema
+  npm test,test,project,300,schema
+docs[1]{path,scope,note}:
+  README.md,project,user and agent command guidance
 body: "Track the July 6, 2026 fleet pass: align package metadata with latest pm CLI/SDK and pm-changelog, verify daily release automation, run build/test/audit/package checks with real workspace data where practical, inspect GitHub state, and record privacy/history findings without changing pm-cli itself."

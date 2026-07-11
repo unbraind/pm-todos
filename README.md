@@ -167,6 +167,13 @@ carrying the full pm item payload (id, title, status, type, priority, tags, dead
 `serialize → parse` cycle is lossless on every captured field, and the carried pm `id` is the
 `--upsert` match key, so importing the same file repeatedly never duplicates items.
 
+Rich fields (`description`, `assignee`, `sprint`, todo dates, source timestamps, and `kv`)
+also survive an installed-package import/store/export cycle. pm-todos uses namespaced SDK
+fields for source timestamps, todo dates, and `kv` so it never overwrites pm's reserved audit
+metadata. Object-valued `kv` entries are normalized to compact JSON strings; scalar values are
+normalized to strings. This keeps the interchange deterministic without producing
+`[object Object]` or discarding nested context.
+
 ```jsonl
 {"id":"pm-1","title":"Write docs","status":"open","priority":1,"tags":["docs"],"deadline":"2026-09-01"}
 {"id":"pm-2","title":"Done thing","status":"closed"}
@@ -217,7 +224,7 @@ pm todos export --sort priority --reverse --output backlog.md
 | `--filter <expr>` | string | Filter items by status/type (e.g. `status=open` or `status=open,type=Task`); complements `--status`/`--type` |
 | `--metadata` | boolean | Include parseable priority and `due:YYYY-MM-DD` tokens in markdown/tasklist output |
 | `--priority-map <scheme>` | string | Priority token scheme for markdown/tasklist `--metadata`: `number` (default, `(p0)`..`(p4)`) or `letter` (`(A)`..`(E)`) |
-| `--reverse` | boolean | Reverse the export order; composes with `--sort` (e.g. `--sort priority --reverse` → lowest priority first) |
+| `--reverse` | boolean | Reverse the final export order; without `--sort` this flips pm's native order, while `--sort priority --reverse` yields lowest priority first |
 
 The default `markdown` export (no `--group-by`, or `--group-by status`) is unchanged: a
 `# TODO` document with `## Open` / `## Done` sections. `--group-by sprint`/`type` emits a
@@ -261,7 +268,10 @@ pm todos sync TODO.md --dry-run
 `jsonl`, `checkbox`); `tasklist` is export-only and rejected. It accepts the same
 `--format`, `--type`, `--closed-as`, `--status`, `--priority`, `--tags`, `--section`,
 `--no-section-tags`, `--group-by`, `--metadata`, `--priority-map`, `--filter`, and `--dry-run`
-flags as import/export. Under `--dry-run` nothing is written to the pm store or the file.
+flags as import/export; `--file <path>` is an alternative to the positional file. Under
+`--dry-run` nothing is written to the pm store or the file. Sync refuses to replace a
+non-empty file with an empty result (for example, when a restrictive filter matches
+nothing); pass `--allow-empty` only when clearing the file is intentional.
 
 ### `pm todos context`
 

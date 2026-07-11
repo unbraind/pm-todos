@@ -95,6 +95,12 @@ interface PmItem {
    * preserved verbatim so it survives a todo.txt round-trip.
    */
   kv?: Record<string, string>;
+  /** pm-todos extension fields used to preserve source-only JSONL metadata. */
+  todos_kv?: Record<string, string>;
+  todos_creation_date?: string;
+  todos_completion_date?: string;
+  todos_source_created_at?: string;
+  todos_source_updated_at?: string;
 }
 
 interface PiTodo {
@@ -266,6 +272,9 @@ export function parseFilterExpression(raw: string | undefined): { status?: strin
     const value = token.slice(idx + 1).trim();
     if (key !== "status" && key !== "type") {
       throw new CommandError(`Unknown --filter key '${key}' (expected status|type)`, EXIT_CODE.USAGE);
+    }
+    if (value === "") {
+      throw new CommandError(`Invalid --filter '${raw}' (value for '${key}' must not be empty)`, EXIT_CODE.USAGE);
     }
     out[key] = value;
   }
@@ -538,7 +547,6 @@ export function buildTodoContextSnapshot(items: PmItem[], options: TodoContextBu
  *
  * Recognised markers (case-insensitive), anywhere in the text:
  *   - `(p0)`..`(p4)`  → that numeric priority
- *   - `(A)`..`(E)`    → priorities 0..4 (the `--priority-map letter` form)
  *   - trailing/leading `!`, `!!`, `!!!` → 0, 1, 2 (more bangs = higher)
  *
  * Returns the cleaned text plus the inferred priority (undefined if none).
@@ -551,12 +559,6 @@ function extractPriority(text: string): { text: string; priority?: number } {
   if (pMatch) {
     priority = parseInt(pMatch[1], 10);
     cleaned = cleaned.replace(pMatch[0], "");
-  }
-
-  const letterMatch = /\(([A-E])\)/.exec(cleaned);
-  if (letterMatch && priority === undefined) {
-    priority = letterMatch[1].charCodeAt(0) - 65;
-    cleaned = cleaned.replace(letterMatch[0], "");
   }
 
   // Bang markers: only count a contiguous run of `!` that is its own token
@@ -1190,8 +1192,15 @@ export function serializeJsonl(items: PmItem[]): string {
     items
       .map((item) => {
         const row: Record<string, unknown> = {};
+        const sourceFields: Partial<Record<(typeof JSONL_KEYS)[number], unknown>> = {
+          created_at: item.todos_source_created_at,
+          updated_at: item.todos_source_updated_at,
+          creationDate: item.todos_creation_date,
+          completionDate: item.todos_completion_date,
+          kv: item.todos_kv,
+        };
         for (const key of JSONL_KEYS) {
-          const v = (item as unknown as Record<string, unknown>)[key];
+          const v = sourceFields[key] ?? (item as unknown as Record<string, unknown>)[key];
           if (v === undefined || v === null) continue;
           if (Array.isArray(v) && v.length === 0) continue;
           if (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) continue;
@@ -1251,7 +1260,12 @@ export function parseJsonl(content: string): PmItem[] {
     if (isRecord(parsed.kv)) {
       const kv: Record<string, string> = {};
       for (const [key, value] of Object.entries(parsed.kv)) {
-        if (value !== null && value !== undefined) kv[key] = String(value);
+        if (value === null || value === undefined) continue;
+        kv[key] = typeof value === "string"
+          ? value
+          : typeof value === "object"
+            ? JSON.stringify(value)
+            : String(value);
       }
       if (Object.keys(kv).length > 0) item.kv = kv;
     }
@@ -1642,7 +1656,7 @@ interface TodoImportOptions {
  */
 interface NormalizedTodo {
   checked: boolean;
-  /** Exact pm status carried by lossless formats; takes precedence over checked mapping. */
+  /** Exact pm status carried by lossless formats such as jsonl. */
   status?: string;
   text: string;
   priority?: number;
@@ -1658,6 +1672,14 @@ interface NormalizedTodo {
   pmId?: string;
   /** Item type recovered from the exporter's ` [Type]` tag (markdown round-trip). */
   itemType?: string;
+  description?: string;
+  assignee?: string;
+  sprint?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  creationDate?: string;
+  completionDate?: string;
+  kv?: Record<string, string>;
 }
 
 /**
@@ -1696,6 +1718,14 @@ function parseFileToNormalized(
       file,
       pmId: item.id || undefined,
       itemType: item.type,
+      description: item.description,
+      assignee: item.assignee,
+      sprint: item.sprint,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
+      creationDate: item.creationDate,
+      completionDate: item.completionDate,
+      kv: item.kv,
     }));
   }
 
@@ -1735,6 +1765,17 @@ function parseFileToNormalized(
     pmId: t.pmId,
     itemType: t.itemType,
   }));
+}
+
+/** Preserve an exact source status when available; checkbox-style formats
+ * continue to map their binary checked state through --closed-as/--status. */
+export function resolveImportedTodoStatus(
+  sourceStatus: string | undefined,
+  checked: boolean,
+  closedAs: string,
+  openAs = "open",
+): string {
+  return sourceStatus?.trim() || mapStatusToPm(checked, closedAs, openAs);
 }
 
 interface TodoImportResult {
@@ -1850,6 +1891,30 @@ function readPmItemsForUpsert(pmRoot: string): PmItem[] {
 }
 
 /**
+ * Convert JSONL-only metadata into namespaced extension fields. pm owns its
+ * audit timestamps and reserved `kv` slot, so imports must not overwrite those
+ * internals. Namespaced fields preserve the source payload losslessly and the
+ * JSONL serializer maps them back to the public JSONL keys on export.
+ */
+export function buildJsonlImportFieldArgs(todo: Pick<NormalizedTodo,
+  "kv" | "creationDate" | "completionDate" | "createdAt" | "updatedAt"
+>): string[] {
+  const fields: Array<[string, string | Record<string, string> | undefined]> = [
+    ["todos_kv", todo.kv],
+    ["todos_creation_date", todo.creationDate],
+    ["todos_completion_date", todo.completionDate],
+    ["todos_source_created_at", todo.createdAt],
+    ["todos_source_updated_at", todo.updatedAt],
+  ];
+  const args: string[] = [];
+  for (const [name, value] of fields) {
+    if (value === undefined || (typeof value === "string" && value.trim() === "")) continue;
+    args.push("--field", `${name}=${typeof value === "string" ? value : JSON.stringify(value)}`);
+  }
+  return args;
+}
+
+/**
  * Read, parse and (unless dry-run) create pm items for every TODO found across
  * the given files. Single code path shared by the command and the importer.
  */
@@ -1899,7 +1964,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
     // or the import-wide --type default — the same values that get written.
     if (opts.statusFilter || opts.typeFilter) {
       todos = todos.filter((t) => {
-        const status = t.status ?? mapStatusToPm(t.checked, opts.closedAs, opts.openAs ?? "open");
+        const status = resolveImportedTodoStatus(t.status, t.checked, opts.closedAs, opts.openAs ?? "open");
         if (opts.statusFilter && status !== opts.statusFilter) return false;
         if (opts.typeFilter) {
           const resolvedType = t.itemType ?? opts.itemType;
@@ -1928,7 +1993,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             ? String(todo.priority)
             : undefined;
 
-      const status = todo.status ?? mapStatusToPm(todo.checked, opts.closedAs, opts.openAs ?? "open");
+      const status = resolveImportedTodoStatus(todo.status, todo.checked, opts.closedAs, opts.openAs ?? "open");
 
       // Prefer the per-item type recovered from the round-trip ` [Type]` tag;
       // fall back to the import-wide `--type` (default "Task") for lines that
@@ -1996,6 +2061,12 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
           if (priority !== undefined && priority !== "") updArgs.push("--priority", priority);
           if (tags.length > 0) updArgs.push("--tags", tags.join(",")); // --tags replaces
           if (todo.deadline) updArgs.push("--deadline", todo.deadline);
+          if (opts.format === "jsonl") {
+            if (todo.description !== undefined) updArgs.push("--description", todo.description);
+            if (todo.assignee) updArgs.push("--assignee", todo.assignee);
+            if (todo.sprint) updArgs.push("--sprint", todo.sprint);
+            updArgs.push(...buildJsonlImportFieldArgs(todo));
+          }
           const todojsonTodoId = opts.format === "todojson" ? todo.todoId : undefined;
           const todojsonDescription = todojsonTodoId !== undefined
             ? buildTodojsonImportDescription(todo.file, todo.lineNumber, todojsonTodoId)
@@ -2026,11 +2097,17 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             "--title", todo.text,
             "--type", itemType,
             "--status", status,
-            "--description", importDescription,
+            "--description", opts.format === "jsonl" ? (todo.description ?? "") : importDescription,
           ];
+          if (opts.format === "jsonl" && todo.pmId) spawnArgs.push("--id", todo.pmId);
           if (priority !== undefined && priority !== "") spawnArgs.push("--priority", priority);
           if (tags.length > 0) spawnArgs.push("--tags", tags.join(","));
           if (todo.deadline) spawnArgs.push("--deadline", todo.deadline);
+          if (opts.format === "jsonl") {
+            if (todo.assignee) spawnArgs.push("--assignee", todo.assignee);
+            if (todo.sprint) spawnArgs.push("--sprint", todo.sprint);
+            spawnArgs.push(...buildJsonlImportFieldArgs(todo));
+          }
 
           const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
           if (result.status !== 0) {
@@ -2085,8 +2162,8 @@ interface TodoExportOptions {
   metadata?: boolean;
   /** Priority-rendering scheme for markdown/tasklist metadata tokens. */
   priorityMap?: PriorityMapScheme;
-  /** Reverse the final item order so output is oldest-first (or, with --sort,
-   * the descending order of the sort key). Applied AFTER --sort so it composes. */
+  /** Reverse the final item order. With --sort this produces descending order;
+   * without --sort it reverses pm's native list order. */
   reverse?: boolean;
 }
 
@@ -2094,18 +2171,17 @@ interface TodoExportOptions {
  * Apply the export `--sort` and `--reverse` ordering to a list of pm items.
  * Pure: returns a new array, never mutates the input. `--sort` orders ascending
  * (priority 0 first, earliest deadline first, alphabetical title); `--reverse`
- * then flips the order so output is oldest-first (or, with a `--sort` key, the
- * descending order of that key). The two flags compose: `--sort priority
- * --reverse` yields lowest-priority first. With neither set the input order is
- * preserved (pm's native `list-all` ordering, typically newest-first).
+ * then flips the order. The two flags compose: `--sort priority --reverse`
+ * yields lowest-priority first. Without a sort key, reverse simply flips pm's
+ * native `list-all` order. The input array is never returned or mutated.
  */
 export function applyExportOrder(
   items: PmItem[],
   sort: "priority" | "deadline" | "title" | undefined,
   reverse: boolean | undefined,
 ): PmItem[] {
-  let out = sort ? sortItems(items, sort) : items;
-  if (reverse) out = [...out].reverse();
+  const out = sort ? sortItems(items, sort) : [...items];
+  if (reverse) out.reverse();
   return out;
 }
 
@@ -2232,6 +2308,14 @@ export default defineExtension({
   version: "2026.7.10",
 
   activate(api: any) {
+    api.registerItemFields([
+      { name: "todos_kv", type: "object", optional: true },
+      { name: "todos_creation_date", type: "string", optional: true },
+      { name: "todos_completion_date", type: "string", optional: true },
+      { name: "todos_source_created_at", type: "string", optional: true },
+      { name: "todos_source_updated_at", type: "string", optional: true },
+    ]);
+
     // -----------------------------------------------------------------------
     // Command: pm todos validate <file>
     // -----------------------------------------------------------------------
@@ -2379,7 +2463,11 @@ export default defineExtension({
         "pm todos sync backlog.jsonl --format jsonl --filter status=open",
         "pm todos sync TODO.md --format checkbox --metadata --priority-map letter",
       ],
+      arguments: [
+        { name: "file", required: false, description: "Path to the TODO file to sync (or use --file)" },
+      ],
       flags: [
+        { long: "--file", value_name: "path", description: "Path to the TODO file (alternative to the positional argument)" },
         { long: "--format", value_name: "fmt", description: "File format: markdown (default), todotxt, todojson, jsonl, or checkbox" },
         { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
         { long: "--closed-as", value_name: "status", description: "Status for checked items (default: closed)" },
@@ -2387,13 +2475,14 @@ export default defineExtension({
         { long: "--priority", value_name: "n", description: "Priority 0-4; overrides markers inferred from text" },
         { long: "--tags", value_name: "csv", description: "Comma-separated extra tags added to every imported item" },
         { long: "--section", value_name: "name", description: "Only sync the named markdown section" },
-        { long: "--no-section-tags", description: "Do not derive tags from markdown section headings" },
+        { long: "--section-tags", description: "Derive tags from markdown section headings (default; pass --no-section-tags to disable)" },
         { long: "--group-by", value_name: "field", description: "Section the re-export by status (default) | sprint | type (markdown/tasklist only)" },
         { long: "--metadata", description: "Include (pN)/(A)..(E) and due:YYYY-MM-DD tokens in markdown/tasklist re-export" },
         { long: "--priority-map", value_name: "scheme", description: "Priority token scheme for markdown/tasklist re-export: number (default) | letter" },
-        { long: "--filter", value_name: "expr", description: "Filter parsed and re-exported items by status/type (e.g. status=open,type=Task)" },
+        { long: "--filter", value_name: "expr", description: "Filter items by status/type in both import and re-export (e.g. status=open,type=Task)" },
         { long: "--sort", value_name: "key", description: "Sort the re-export by priority | deadline | title" },
-        { long: "--reverse", description: "Reverse the re-export order (composes with --sort)" },
+        { long: "--reverse", description: "Reverse the final re-export order; with --sort this produces descending order" },
+        { long: "--allow-empty", description: "Allow sync to replace a non-empty file with an empty export" },
         { long: "--dry-run", description: "Report what would change without writing to pm or the file" },
         { long: "--json", description: "Return a JSON result object" },
       ],
@@ -2433,10 +2522,23 @@ export default defineExtension({
           .split(",").map((t) => t.trim()).filter(Boolean);
         const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
         const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
-        const asJson = readBoolOption(ctx.options, "json");
-        const filter = parseFilterExpression(readStringOption(ctx.options, "filter")) ?? {};
+        const allowEmpty = readBoolOption(ctx.options, "allow-empty", "allowEmpty");
+        // In sync, --status maps unchecked source rows and --type supplies the
+        // default type for newly created items. Only --filter selects rows;
+        // otherwise those import options would silently erase unrelated items
+        // during the re-export half.
+        const syncFilter = parseFilterExpression(readStringOption(ctx.options, "filter"));
 
-        // Fail-fast syntax gate before any pm-store write.
+        // Preserve the original bytes for the destructive-empty guard below.
+        // The syntax gate still runs before any pm-store write.
+        let originalContent: string;
+        try {
+          originalContent = readFileSync(filePath, "utf-8");
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
+          throw new CommandError(`Failed to read sync file ${filePath}: ${msg}`, exitCode);
+        }
         preflightValidateImportFiles([filePath], importFormat);
 
         const importResult = runTodoImport({
@@ -2452,8 +2554,8 @@ export default defineExtension({
           pmRoot: ctx.pm_root,
           format: importFormat,
           upsert: true,
-          statusFilter: filter.status,
-          typeFilter: filter.type,
+          statusFilter: syncFilter?.status,
+          typeFilter: syncFilter?.type,
         });
 
         // Re-export the reconciled pm state back to the same file. The export
@@ -2462,8 +2564,8 @@ export default defineExtension({
         // written to pm or disk; the export is computed only to report the
         // post-sync row count.
         const { markdown: reexport, count: exportCount } = buildTodoMarkdown({
-          statusFilter: filter.status,
-          typeFilter: filter.type,
+          statusFilter: syncFilter?.status,
+          typeFilter: syncFilter?.type,
           pmRoot: ctx.pm_root,
           format: exportFormat,
           groupBy: readGroupBy(ctx.options),
@@ -2487,13 +2589,27 @@ export default defineExtension({
           console.error(
             `[dry-run] sync ${filePath}: import ${importResult.imported}, update ${importResult.updated ?? 0}, skip ${importResult.skipped}, re-export ${exportCount} item(s).`,
           );
-          return asJson ? { ...result, previews: importResult.previews } : result;
+          return { ...result, previews: importResult.previews };
         }
 
+        if (exportCount === 0 && originalContent.trim() !== "" && !allowEmpty) {
+          throw new CommandError(
+            `Refusing to replace non-empty ${filePath} with an empty sync result. ` +
+              "Broaden/remove --filter, or pass --allow-empty to clear the file intentionally.",
+            EXIT_CODE.USAGE,
+          );
+        }
+
+        // An empty write is allowed for an already-empty file or when the user
+        // explicitly acknowledges the destructive result with --allow-empty.
         writeFileSync(filePath, reexport, "utf-8");
-        console.error(
-          `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, skipped ${importResult.skipped}; wrote ${exportCount} item(s) back to ${filePath}.`,
-        );
+        if (exportCount === 0) {
+          console.error(`sync: imported ${importResult.imported} item(s); cleared ${filePath} because no items remain.`);
+        } else {
+          console.error(
+            `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, skipped ${importResult.skipped}; wrote ${exportCount} item(s) back to ${filePath}.`,
+          );
+        }
         return result;
       },
     });
@@ -2586,27 +2702,37 @@ export default defineExtension({
       console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
       return upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
     }, {
-      description: "Import markdown, todo.txt, todo JSON, JSONL, or checkbox TODOs into pm.",
-      intent: "import TODO records into pm items",
+      // Declare the same file argument + flag contracts the handler already
+      // reads (ctx.args[0], ctx.options.*). Without them the derived
+      // `pm todos import` command rejects the positional file ("too many
+      // arguments") and every option ("unknown option"), even though the
+      // handler supports them — mirroring the working `todos sync` command.
+      description:
+        "Import TODO items from a markdown/todo.txt/todojson/jsonl/checkbox file into the pm store.",
+      intent: "import a markdown/todo.txt/todojson/jsonl/checkbox file into pm items",
       examples: [
         "pm todos import TODO.md",
-        "pm todos import backlog.jsonl --format jsonl --upsert --filter status=open",
+        "pm todos import backlog.jsonl --format jsonl --upsert",
+        "pm todos import todo.txt --format todotxt --status open",
+        "pm todos import --glob 'docs/**/*.todo.md' --dry-run",
       ],
-      arguments: [{ name: "file", required: false, description: "TODO file to import (omit when using --glob)" }],
+      arguments: [
+        { name: "file", required: false, description: "Path to the TODO file to import (or use --file/--glob)" },
+      ],
       flags: [
-        { long: "--file", value_name: "path", description: "TODO file to import (alternative to the positional file)" },
-        { long: "--glob", value_name: "pattern", description: "Import files matching a glob" },
-        { long: "--format", value_name: "fmt", description: "Source format: markdown, todotxt, todojson, jsonl, or checkbox" },
+        { long: "--file", value_name: "path", description: "Path to the TODO file (alternative to the positional argument)" },
+        { long: "--glob", value_name: "pattern", description: "Import every file matching this glob pattern" },
+        { long: "--format", value_name: "fmt", description: "File format: markdown (default), todotxt, todojson, jsonl, or checkbox" },
         { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
-        { long: "--closed-as", value_name: "status", description: "Status for checked items (default: closed)" },
+        { long: "--closed-as", value_name: "status", description: "Status for checked/closed items (default: closed)" },
         { long: "--status", value_name: "status", description: "Status for open/unchecked items (default: open)" },
-        { long: "--priority", value_name: "n", description: "Priority 0-4; overrides inferred markers" },
-        { long: "--tags", value_name: "csv", description: "Comma-separated extra tags" },
+        { long: "--priority", value_name: "n", description: "Priority 0-4; overrides markers inferred from text" },
         { long: "--section", value_name: "name", description: "Only import the named markdown section" },
-        { long: "--no-section-tags", description: "Do not derive tags from markdown section headings" },
-        { long: "--filter", value_name: "expr", description: "Filter parsed items by status/type" },
-        { long: "--upsert", description: "Update matching items instead of creating duplicates" },
-        { long: "--dry-run", description: "Preview without writing to pm" },
+        { long: "--section-tags", description: "Derive tags from markdown section headings (default; pass --no-section-tags to disable)" },
+        { long: "--tags", value_name: "csv", description: "Comma-separated extra tags added to every imported item" },
+        { long: "--filter", value_name: "expr", description: "Only import rows matching status/type (e.g. status=open,type=Task)" },
+        { long: "--upsert", description: "Update existing items in place instead of skipping duplicates" },
+        { long: "--dry-run", description: "Report what would change without writing to pm" },
       ],
     });
 
@@ -2644,6 +2770,29 @@ export default defineExtension({
       }
 
       return { exported: count, markdown };
+    }, {
+      // Declare the flag contracts the handler already reads so the derived
+      // `pm todos export` command accepts them (parity with `todos sync`).
+      description:
+        "Export pm items to a markdown/todo.txt/tasklist/todojson/jsonl/checkbox TODO file.",
+      intent: "export pm items to a markdown/todo.txt/tasklist/todojson/jsonl/checkbox file",
+      examples: [
+        "pm todos export --output TODO.md",
+        "pm todos export --format jsonl --output backlog.jsonl",
+        "pm todos export --status open --sort priority --reverse",
+      ],
+      flags: [
+        { long: "--output", value_name: "path", description: "Write the export to this file (default: stdout)" },
+        { long: "--format", value_name: "fmt", description: "Output format: markdown (default), todotxt, tasklist, todojson, jsonl, or checkbox" },
+        { long: "--status", value_name: "status", description: "Only export items with this status" },
+        { long: "--type", value_name: "type", description: "Only export items of this type" },
+        { long: "--filter", value_name: "expr", description: "Only export items matching status/type (e.g. status=open,type=Task)" },
+        { long: "--group-by", value_name: "field", description: "Section the export by status (default) | sprint | type" },
+        { long: "--sort", value_name: "key", description: "Sort the export by priority | deadline | title" },
+        { long: "--metadata", description: "Include (pN)/(A)..(E) and due:YYYY-MM-DD tokens in markdown/tasklist output" },
+        { long: "--priority-map", value_name: "scheme", description: "Priority token scheme for --metadata: number (default) | letter" },
+        { long: "--reverse", description: "Reverse the final export order (composes with --sort)" },
+      ],
     });
 
     // -----------------------------------------------------------------------
