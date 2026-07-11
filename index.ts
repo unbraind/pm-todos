@@ -95,6 +95,12 @@ interface PmItem {
    * preserved verbatim so it survives a todo.txt round-trip.
    */
   kv?: Record<string, string>;
+  /** pm-todos extension fields used to preserve source-only JSONL metadata. */
+  todos_kv?: Record<string, string>;
+  todos_creation_date?: string;
+  todos_completion_date?: string;
+  todos_source_created_at?: string;
+  todos_source_updated_at?: string;
 }
 
 interface PiTodo {
@@ -266,6 +272,9 @@ export function parseFilterExpression(raw: string | undefined): { status?: strin
     const value = token.slice(idx + 1).trim();
     if (key !== "status" && key !== "type") {
       throw new CommandError(`Unknown --filter key '${key}' (expected status|type)`, EXIT_CODE.USAGE);
+    }
+    if (value === "") {
+      throw new CommandError(`Invalid --filter '${raw}' (value for '${key}' must not be empty)`, EXIT_CODE.USAGE);
     }
     out[key] = value;
   }
@@ -1183,8 +1192,15 @@ export function serializeJsonl(items: PmItem[]): string {
     items
       .map((item) => {
         const row: Record<string, unknown> = {};
+        const sourceFields: Partial<Record<(typeof JSONL_KEYS)[number], unknown>> = {
+          created_at: item.todos_source_created_at,
+          updated_at: item.todos_source_updated_at,
+          creationDate: item.todos_creation_date,
+          completionDate: item.todos_completion_date,
+          kv: item.todos_kv,
+        };
         for (const key of JSONL_KEYS) {
-          const v = (item as unknown as Record<string, unknown>)[key];
+          const v = sourceFields[key] ?? (item as unknown as Record<string, unknown>)[key];
           if (v === undefined || v === null) continue;
           if (Array.isArray(v) && v.length === 0) continue;
           if (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) continue;
@@ -1656,6 +1672,14 @@ interface NormalizedTodo {
   pmId?: string;
   /** Item type recovered from the exporter's ` [Type]` tag (markdown round-trip). */
   itemType?: string;
+  description?: string;
+  assignee?: string;
+  sprint?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  creationDate?: string;
+  completionDate?: string;
+  kv?: Record<string, string>;
 }
 
 /**
@@ -1694,6 +1718,14 @@ function parseFileToNormalized(
       file,
       pmId: item.id || undefined,
       itemType: item.type,
+      description: item.description,
+      assignee: item.assignee,
+      sprint: item.sprint,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
+      creationDate: item.creationDate,
+      completionDate: item.completionDate,
+      kv: item.kv,
     }));
   }
 
@@ -1859,6 +1891,30 @@ function readPmItemsForUpsert(pmRoot: string): PmItem[] {
 }
 
 /**
+ * Convert JSONL-only metadata into namespaced extension fields. pm owns its
+ * audit timestamps and reserved `kv` slot, so imports must not overwrite those
+ * internals. Namespaced fields preserve the source payload losslessly and the
+ * JSONL serializer maps them back to the public JSONL keys on export.
+ */
+export function buildJsonlImportFieldArgs(todo: Pick<NormalizedTodo,
+  "kv" | "creationDate" | "completionDate" | "createdAt" | "updatedAt"
+>): string[] {
+  const fields: Array<[string, string | Record<string, string> | undefined]> = [
+    ["todos_kv", todo.kv],
+    ["todos_creation_date", todo.creationDate],
+    ["todos_completion_date", todo.completionDate],
+    ["todos_source_created_at", todo.createdAt],
+    ["todos_source_updated_at", todo.updatedAt],
+  ];
+  const args: string[] = [];
+  for (const [name, value] of fields) {
+    if (value === undefined || (typeof value === "string" && value.trim() === "")) continue;
+    args.push("--field", `${name}=${typeof value === "string" ? value : JSON.stringify(value)}`);
+  }
+  return args;
+}
+
+/**
  * Read, parse and (unless dry-run) create pm items for every TODO found across
  * the given files. Single code path shared by the command and the importer.
  */
@@ -2005,6 +2061,12 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
           if (priority !== undefined && priority !== "") updArgs.push("--priority", priority);
           if (tags.length > 0) updArgs.push("--tags", tags.join(",")); // --tags replaces
           if (todo.deadline) updArgs.push("--deadline", todo.deadline);
+          if (opts.format === "jsonl") {
+            if (todo.description !== undefined) updArgs.push("--description", todo.description);
+            if (todo.assignee) updArgs.push("--assignee", todo.assignee);
+            if (todo.sprint) updArgs.push("--sprint", todo.sprint);
+            updArgs.push(...buildJsonlImportFieldArgs(todo));
+          }
           const todojsonTodoId = opts.format === "todojson" ? todo.todoId : undefined;
           const todojsonDescription = todojsonTodoId !== undefined
             ? buildTodojsonImportDescription(todo.file, todo.lineNumber, todojsonTodoId)
@@ -2035,11 +2097,17 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             "--title", todo.text,
             "--type", itemType,
             "--status", status,
-            "--description", importDescription,
+            "--description", opts.format === "jsonl" ? (todo.description ?? "") : importDescription,
           ];
+          if (opts.format === "jsonl" && todo.pmId) spawnArgs.push("--id", todo.pmId);
           if (priority !== undefined && priority !== "") spawnArgs.push("--priority", priority);
           if (tags.length > 0) spawnArgs.push("--tags", tags.join(","));
           if (todo.deadline) spawnArgs.push("--deadline", todo.deadline);
+          if (opts.format === "jsonl") {
+            if (todo.assignee) spawnArgs.push("--assignee", todo.assignee);
+            if (todo.sprint) spawnArgs.push("--sprint", todo.sprint);
+            spawnArgs.push(...buildJsonlImportFieldArgs(todo));
+          }
 
           const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
           if (result.status !== 0) {
@@ -2240,6 +2308,14 @@ export default defineExtension({
   version: "2026.7.10",
 
   activate(api: any) {
+    api.registerItemFields([
+      { name: "todos_kv", type: "object", optional: true },
+      { name: "todos_creation_date", type: "string", optional: true },
+      { name: "todos_completion_date", type: "string", optional: true },
+      { name: "todos_source_created_at", type: "string", optional: true },
+      { name: "todos_source_updated_at", type: "string", optional: true },
+    ]);
+
     // -----------------------------------------------------------------------
     // Command: pm todos validate <file>
     // -----------------------------------------------------------------------
@@ -2387,7 +2463,11 @@ export default defineExtension({
         "pm todos sync backlog.jsonl --format jsonl --filter status=open",
         "pm todos sync TODO.md --format checkbox --metadata --priority-map letter",
       ],
+      arguments: [
+        { name: "file", required: false, description: "Path to the TODO file to sync (or use --file)" },
+      ],
       flags: [
+        { long: "--file", value_name: "path", description: "Path to the TODO file (alternative to the positional argument)" },
         { long: "--format", value_name: "fmt", description: "File format: markdown (default), todotxt, todojson, jsonl, or checkbox" },
         { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
         { long: "--closed-as", value_name: "status", description: "Status for checked items (default: closed)" },
@@ -2402,6 +2482,7 @@ export default defineExtension({
         { long: "--filter", value_name: "expr", description: "Filter items by status/type in both import and re-export (e.g. status=open,type=Task)" },
         { long: "--sort", value_name: "key", description: "Sort the re-export by priority | deadline | title" },
         { long: "--reverse", description: "Reverse the final re-export order; with --sort this produces descending order" },
+        { long: "--allow-empty", description: "Allow sync to replace a non-empty file with an empty export" },
         { long: "--dry-run", description: "Report what would change without writing to pm or the file" },
         { long: "--json", description: "Return a JSON result object" },
       ],
@@ -2441,13 +2522,23 @@ export default defineExtension({
           .split(",").map((t) => t.trim()).filter(Boolean);
         const sectionTags = ctx.options["sectionTags"] !== false && ctx.options["section-tags"] !== false;
         const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
+        const allowEmpty = readBoolOption(ctx.options, "allow-empty", "allowEmpty");
         // In sync, --status maps unchecked source rows and --type supplies the
         // default type for newly created items. Only --filter selects rows;
         // otherwise those import options would silently erase unrelated items
         // during the re-export half.
         const syncFilter = parseFilterExpression(readStringOption(ctx.options, "filter"));
 
-        // Fail-fast syntax gate before any pm-store write.
+        // Preserve the original bytes for the destructive-empty guard below.
+        // The syntax gate still runs before any pm-store write.
+        let originalContent: string;
+        try {
+          originalContent = readFileSync(filePath, "utf-8");
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
+          throw new CommandError(`Failed to read sync file ${filePath}: ${msg}`, exitCode);
+        }
         preflightValidateImportFiles([filePath], importFormat);
 
         const importResult = runTodoImport({
@@ -2501,9 +2592,16 @@ export default defineExtension({
           return { ...result, previews: importResult.previews };
         }
 
-        // Always write the computed export, including the empty string. Leaving
-        // stale content behind when zero items match would resurrect deleted or
-        // filtered-out todos on the next sync and violate convergence.
+        if (exportCount === 0 && originalContent.trim() !== "" && !allowEmpty) {
+          throw new CommandError(
+            `Refusing to replace non-empty ${filePath} with an empty sync result. ` +
+              "Broaden/remove --filter, or pass --allow-empty to clear the file intentionally.",
+            EXIT_CODE.USAGE,
+          );
+        }
+
+        // An empty write is allowed for an already-empty file or when the user
+        // explicitly acknowledges the destructive result with --allow-empty.
         writeFileSync(filePath, reexport, "utf-8");
         if (exportCount === 0) {
           console.error(`sync: imported ${importResult.imported} item(s); cleared ${filePath} because no items remain.`);

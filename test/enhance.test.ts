@@ -13,6 +13,7 @@ import {
   validateTodoFile,
   applyExportOrder,
   resolveImportedTodoStatus,
+  buildJsonlImportFieldArgs,
 } from "../dist/index.js";
 
 // ---------------------------------------------------------------------------
@@ -97,6 +98,52 @@ test("parseJsonl normalizes kv values to strings", () => {
     enabled: "true",
     nested: '{"a":1}',
   });
+});
+
+test("jsonl extension fields serialize back to the original public keys", () => {
+  const row = JSON.parse(serializeJsonl([{
+    id: "pm-source",
+    title: "Rich task",
+    status: "open",
+    created_at: "2026-07-11T00:00:00.000Z",
+    updated_at: "2026-07-11T00:01:00.000Z",
+    todos_source_created_at: "2025-01-01T00:00:00.000Z",
+    todos_source_updated_at: "2025-01-02T00:00:00.000Z",
+    todos_creation_date: "2025-01-01",
+    todos_completion_date: "2025-01-02",
+    todos_kv: { shape: '{"nested":true}', plain: "value" },
+  }]).trim());
+  assert.equal(row.created_at, "2025-01-01T00:00:00.000Z");
+  assert.equal(row.updated_at, "2025-01-02T00:00:00.000Z");
+  assert.equal(row.creationDate, "2025-01-01");
+  assert.equal(row.completionDate, "2025-01-02");
+  assert.deepEqual(row.kv, { shape: '{"nested":true}', plain: "value" });
+  assert.equal("todos_kv" in row, false);
+});
+
+test("buildJsonlImportFieldArgs preserves rich metadata through declared fields", () => {
+  assert.deepEqual(buildJsonlImportFieldArgs({
+    kv: { shape: '{"nested":true}', plain: "value" },
+    creationDate: "2025-01-01",
+    completionDate: "2025-01-02",
+    createdAt: "2025-01-01T00:00:00.000Z",
+    updatedAt: "2025-01-02T00:00:00.000Z",
+  }), [
+    "--field", 'todos_kv={"shape":"{\\"nested\\":true}","plain":"value"}',
+    "--field", "todos_creation_date=2025-01-01",
+    "--field", "todos_completion_date=2025-01-02",
+    "--field", "todos_source_created_at=2025-01-01T00:00:00.000Z",
+    "--field", "todos_source_updated_at=2025-01-02T00:00:00.000Z",
+  ]);
+});
+
+test("buildJsonlImportFieldArgs omits empty metadata values", () => {
+  assert.deepEqual(buildJsonlImportFieldArgs({
+    creationDate: "",
+    completionDate: "   ",
+    createdAt: undefined,
+    updatedAt: "",
+  }), []);
 });
 
 test("resolveImportedTodoStatus preserves non-binary jsonl statuses", () => {
@@ -232,6 +279,8 @@ test("parseFilterExpression parses a comma-separated list and last-wins on repea
 test("parseFilterExpression throws on unknown keys and malformed tokens", () => {
   assert.throws(() => parseFilterExpression("sprint=S1"), /Unknown --filter key 'sprint'/);
   assert.throws(() => parseFilterExpression("status"), /Invalid --filter/);
+  assert.throws(() => parseFilterExpression("status="), /value for 'status' must not be empty/);
+  assert.throws(() => parseFilterExpression("type:   "), /value for 'type' must not be empty/);
 });
 
 // ---------------------------------------------------------------------------

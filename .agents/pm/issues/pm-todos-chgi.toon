@@ -6,8 +6,8 @@ status: closed
 priority: 2
 tags[4]: cli,exporter,importer,usability
 created_at: "2026-07-10T22:14:00.896Z"
-updated_at: "2026-07-10T22:16:34.836Z"
+updated_at: "2026-07-10T23:21:09.799Z"
 closed_at: "2026-07-10T22:16:34.834Z"
 author: claude-opus
-close_reason: "Fixed: added arguments+flags contracts to registerImporter/registerExporter('todos'). Verified via CLI in a throwaway workspace: 'pm todos import f.jsonl --format jsonl' imports (positional accepted), '--file' form works, '--help' lists 8 flags, unknown '--bogus' now rejected with 'Expected one of' list, 'pm todos export --format jsonl' emits correct jsonl with exact status. SDK/action path unchanged (no regression); 117 unit tests pass."
+close_reason: "Fixed: added arguments and all 13 declared flag contracts to registerImporter/registerExporter('todos'). Verified via CLI in a throwaway workspace: positional and --file imports work; --help lists all importer flags; unknown options show the supported set; JSONL export preserves exact status. SDK/action path remains compatible and the full test suite passes."
 body: ""

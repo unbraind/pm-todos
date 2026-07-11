@@ -1,0 +1,54 @@
+id: pm-todos-ejm7
+title: Preserve rich JSONL fields across installed pm-todos import/export
+description: "Greptile reproduced that JSONL parsing retained rich fields but runTodoImport dropped them before pm persistence, causing export-after-import data loss."
+type: Issue
+status: closed
+priority: 0
+tags[4]: data-fidelity,jsonl,review-finding,sdk
+created_at: "2026-07-10T23:20:58.173Z"
+updated_at: "2026-07-11T00:52:49.930Z"
+deadline: "2026-07-11T23:20:58.173Z"
+closed_at: "2026-07-10T23:21:52.657Z"
+author: codex
+estimated_minutes: 90
+acceptance_criteria: "A real installed pm-todos package imports and exports id, title, description, status, type, priority, tags, deadline, assignee, sprint, source timestamps, todo dates, and kv without loss; object kv values normalize to JSON strings; package doctor reports zero warnings; unit and release gates pass."
+definition_of_ready: PR #22 is checked out and Greptile/CodeRabbit findings are available.
+reviewer: greptile
+risk: medium
+confidence: high
+sprint: 2026-07-production
+release: next
+reporter: codex
+severity: high
+environment: "pm CLI 2026.7.10, Node 22.19.0"
+repro_steps: Install the branch into an isolated tracker; import JSONL containing object kv and rich metadata; export JSONL; compare all public fields.
+resolution: "Preserved rich JSONL fields through declared SDK fields, made sync inputs fully declared, rejected empty filter values, and added a default no-empty-overwrite guard with explicit --allow-empty acknowledgement."
+expected_result: Installed-package JSONL import/export preserves all 15 supported public fields without mutating pm-owned audit metadata.
+actual_result: 120 tests plus installed-package JSONL import/export/sync pass; real --file sync works; restrictive-filter sync returns a USAGE error and preserves the source bytes; production audit is clean; package/changelog gates pass; no dist artifacts remain tracked.
+affected_version: 2026.7.10
+fixed_version: next
+component: index.ts
+regression: true
+customer_impact: "Agents lose task context during backup, migration, or synchronization."
+dependencies[1]{id,kind,created_at,author,source_kind}:
+  pm-todos-gcjm,related,"2026-07-10T23:20:58.173Z",codex,null
+comments[1]{created_at,author,text}:
+  "2026-07-10T23:20:58.173Z",codex,Greptile review on PR #22 identified the persistence gap; CodeRabbit tracker findings were remediated in the same feedback round.
+notes[1]{created_at,author,text}:
+  "2026-07-10T23:20:58.173Z",codex,Reserved pm audit fields must remain authoritative; source timestamps are preserved in namespaced SDK fields and projected back only at JSONL export.
+learnings[3]{created_at,author,text}:
+  "2026-07-10T23:20:58.173Z",codex,"Parser-level round-trip tests are insufficient for importers: persistence and re-export must be tested through a real installed package."
+  "2026-07-11T00:40:35.374Z",codex,Bidirectional sync must treat a zero-row export as potentially destructive context loss; require explicit acknowledgement before replacing a non-empty source file.
+  "2026-07-11T00:52:49.929Z",codex,"Review hardening: treat blank JSONL source-date metadata as absent before constructing --field arguments, preventing malformed empty date values from reaching the core CLI."
+files[4]{path,scope,note}:
+  index.ts,project,JSONL normalization and persistence
+  test/enhance.test.ts,project,Unit regression coverage
+  test/fixtures/rich-roundtrip.jsonl,project,Real-life rich JSONL fixture
+  test/integration.test.ts,project,Installed-package end-to-end JSONL persistence regression
+tests[2]{command,path,scope,timeout_seconds,pm_context_mode}:
+  "npm run release:check",package.json,project,600,schema
+  npm test,test,project,300,schema
+docs[1]{path,scope,note}:
+  README.md,project,JSONL lossless interchange contract
+close_reason: "Rich JSONL persistence is lossless through the real installed package; unit, doctor, audit, package, and changelog gates pass."
+body: "## Context\\n\\nProject management is context management. JSONL is the lossless interchange format, so dropping context during persistence violates its core contract.\\n\\n## Design\\n\\nUse SDK-registered namespaced item fields for source metadata that cannot safely overwrite pm reserved audit fields, then map them back to stable public JSONL keys on export."

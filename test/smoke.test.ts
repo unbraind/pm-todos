@@ -13,7 +13,7 @@ test("extension has required shape", () => {
 
 test("extension registers commands plus the native todos importer and exporter", () => {
   const registered: string[] = [];
-  const commands: string[] = [];
+  const commands: Array<{ name?: string; arguments?: unknown[]; flags?: Array<{ long?: string }> }> = [];
   const importers: string[] = [];
   const exporters: string[] = [];
   const noop = () => {};
@@ -21,9 +21,9 @@ test("extension registers commands plus the native todos importer and exporter",
   // capability the extension uses (commands, importer, exporter). A partial
   // mock would throw TypeError when activate() calls a missing method.
   const api = {
-    registerCommand: (command: { name?: string }) => {
+    registerCommand: (command: { name?: string; arguments?: unknown[]; flags?: Array<{ long?: string }> }) => {
       registered.push("command");
-      if (command?.name) commands.push(command.name);
+      commands.push(command);
     },
     registerParser: noop, registerPreflight: noop, registerService: noop,
     registerFlags: noop, registerItemFields: noop, registerItemTypes: noop,
@@ -35,8 +35,12 @@ test("extension registers commands plus the native todos importer and exporter",
   };
   extension.activate(api as any);
   assert.ok(registered.length > 0, `extension should register at least one capability, got: ${JSON.stringify(registered)}`);
-  assert.ok(commands.includes("todos context"), `should register 'todos context', got: ${JSON.stringify(commands)}`);
-  assert.ok(commands.includes("todos sync"), `should register 'todos sync', got: ${JSON.stringify(commands)}`);
+  assert.ok(commands.some((command) => command.name === "todos context"), `should register 'todos context', got: ${JSON.stringify(commands)}`);
+  const sync = commands.find((command) => command.name === "todos sync");
+  assert.ok(sync, `should register 'todos sync', got: ${JSON.stringify(commands)}`);
+  assert.equal(sync.arguments?.length, 1, "todos sync should declare its positional file argument");
+  assert.ok(sync.flags?.some((flag) => flag.long === "--file"), "todos sync should declare its --file fallback");
+  assert.ok(sync.flags?.some((flag) => flag.long === "--allow-empty"), "todos sync should declare its destructive-empty override");
   assert.ok(importers.includes("todos"), `should register the native 'todos' importer, got: ${JSON.stringify(importers)}`);
   assert.ok(exporters.includes("todos"), `should register the native 'todos' exporter, got: ${JSON.stringify(exporters)}`);
 });
