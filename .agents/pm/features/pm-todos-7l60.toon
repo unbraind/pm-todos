@@ -19,9 +19,9 @@ files[3]{path,scope,note}:
   index.ts,project,Persist todojson todo-id markers on import and reuse on export
   README.md,project,Document stable todojson id behavior
   test/formats.test.ts,project,Add coverage for todojson id persistence and conflict handling
-tests[2]{command,path,scope,timeout_seconds,pm_context_mode,env_set,env_clear,shared_host_safe,assert_stdout_contains,assert_stdout_regex,assert_stderr_contains,assert_stderr_regex,assert_stdout_min_lines,assert_json_field_equals,assert_json_field_gte,note}:
-  "PM_PATH=/home/steve/container/pm-todos/.agents/pm PM_GLOBAL_PATH=/home/steve/.pm-cli npm run release:check",null,project,null,null,null,null,null,null,null,null,null,null,null,null,null
-  PM_PATH=/home/steve/container/pm-todos/.agents/pm PM_GLOBAL_PATH=/home/steve/.pm-cli npm test,null,project,null,null,null,null,null,null,null,null,null,null,null,null,null
+tests[2]{command,scope}:
+  "PM_PATH=/workspace/pm-todos/.agents/pm PM_GLOBAL_PATH=$HOME/.pm-cli npm run release:check",project
+  PM_PATH=/workspace/pm-todos/.agents/pm PM_GLOBAL_PATH=$HOME/.pm-cli npm test,project
 docs[1]{path,scope,note}:
   README.md,project,Documented todojson stable id sync semantics
 close_reason: Implemented stable todojson id persistence and verified end-to-end sync.
