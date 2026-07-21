@@ -34,14 +34,16 @@
     "release:check": "npm run typecheck && npm run build && npm test && npm run audit:prod && npm run pack:dry-run && npm run changelog:check",
     "prepublishOnly": "npm run release:check",
     "release:notes": "pm-changelog --pm-root .agents/pm --stdout --since-previous-tag --until-release-tag --release-version-from-package --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --pm-bin ./node_modules/.bin/pm --github-step-summary",
-    "release:update-version": "node scripts/update-release-version.ts"
+    "release:update-version": "node scripts/update-release-version.ts",
+    "prepare": "pm merge install",
+    "merge:install": "pm merge install"
   },
   "peerDependencies": {
     "@unbrained/pm-cli": ">=2026.7.10"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "@unbrained/pm-cli": "^2026.7.10",
+    "@unbrained/pm-cli": "^2026.7.21",
     "pm-changelog": "^2026.7.10",
     "typescript": "^7.0.2"
   },
