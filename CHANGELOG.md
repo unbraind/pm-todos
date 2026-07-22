@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.7.22 - 2026-07-22
+
+### Other
+
+- Adopt pm field-aware merge driver for multi-agent branch-merge safety ([pm-todos-qa0y](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-qa0y.toon))
+
 ## 2026.7.11 - 2026-07-11
 
 ### Added
