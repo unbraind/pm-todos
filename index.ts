@@ -2305,7 +2305,7 @@ function buildTodoMarkdown(opts: TodoExportOptions): { markdown: string; count: 
 
 export default defineExtension({
   name: "pm-todos",
-  version: "2026.7.22",
+  version: "2026.7.23",
 
   activate(api: any) {
     api.registerItemFields([
