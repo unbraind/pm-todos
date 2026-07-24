@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- pm item reads are capped at Node's 1 MiB spawnSync default, so a mature tracker fails with no diagnosis ([pm-todos-9b5z](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9b5z.toon))
+
 ## 2026.7.23 - 2026-07-23
 
 ### Fixed
