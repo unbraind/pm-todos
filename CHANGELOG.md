@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Documented install command fails: pm install github.com/unbraind/pm-todos cannot resolve an entry file ([pm-todos-zffc](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-zffc.toon))
+
 ### Other
 
 - Enable governance duplicate-detection advisory mode and adopt pm-cli 2026.7.25 ([pm-todos-wvxn](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-wvxn.toon))

@@ -13,13 +13,13 @@ In addition to markdown, pm-todos round-trips the de-facto [**todo.txt**](https:
 ## Installation
 
 ```bash
-pm install github.com/unbraind/pm-todos --global
+pm install npm:pm-todos --global
 ```
 
 Or install locally:
 
 ```bash
-pm install github.com/unbraind/pm-todos
+pm install npm:pm-todos
 ```
 
 Build manually:
