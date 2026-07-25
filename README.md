@@ -16,6 +16,11 @@ In addition to markdown, pm-todos round-trips the de-facto [**todo.txt**](https:
 pm install npm:pm-todos --global
 ```
 
+> The `npm:` prefix is required. A bare `pm install pm-todos` resolves only a local
+> directory or a bundled alias, never the registry, and a
+> `github.com/unbraind/pm-todos` source cannot work either — pm copies a GitHub
+> source as-is without building it, and this repository does not commit `dist/`.
+
 Or install locally:
 
 ```bash
