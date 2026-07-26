@@ -1,12 +1,11 @@
 // pm-todos — Markdown TODO round-trip for pm-cli
 
+import type { ExtensionApi, ExtensionModule } from "@unbrained/pm-cli/sdk/authoring";
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import type { defineExtension as defineExtensionType } from "@unbrained/pm-cli/sdk";
 
-const defineExtension: typeof defineExtensionType = ((extension: any) => extension) as any;
 
 // ---------------------------------------------------------------------------
 // Error contract
@@ -2337,11 +2336,21 @@ function buildTodoMarkdown(opts: TodoExportOptions): { markdown: string; count: 
 // Extension
 // ---------------------------------------------------------------------------
 
+/**
+ * Local stand-in for the SDK's `defineExtension` identity helper.
+ *
+ * Declared here rather than imported so this package keeps a type-only
+ * dependency on `@unbrained/pm-cli` and adds no runtime module edge. The
+ * generic constraint is the SDK's own, so the extension object is contract-
+ * checked against {@link ExtensionModule} exactly as the imported helper would.
+ */
+const defineExtension = <TModule extends ExtensionModule>(module: TModule): TModule => module;
+
 export default defineExtension({
   name: "pm-todos",
   version: "2026.7.26",
 
-  activate(api: any) {
+  activate(api: ExtensionApi) {
     api.registerItemFields([
       { name: "todos_kv", type: "object", optional: true },
       { name: "todos_creation_date", type: "string", optional: true },
