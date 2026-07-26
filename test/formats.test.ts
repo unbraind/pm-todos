@@ -642,7 +642,8 @@ test("preflightValidateImportFiles throws on a malformed todo.txt (structural er
   writeFileSync(file, "Task due:2026-13-99\n", "utf-8");
   assert.throws(
     () => preflightValidateImportFiles([file], "todotxt"),
-    (err: any) => {
+    (err: unknown) => {
+      assert.ok(err instanceof Error && "exitCode" in err);
       assert.match(err.message, /Preflight: 1 structural error/);
       assert.match(err.message, /Invalid due date/);
       assert.equal(err.exitCode, 1);
@@ -661,7 +662,8 @@ test("preflightValidateImportFiles passes silently on a clean todo.txt", () => {
 test("preflightValidateImportFiles throws NOT_FOUND on an unreadable file", () => {
   assert.throws(
     () => preflightValidateImportFiles(["/no/such/file-xyz.txt"], "markdown"),
-    (err: any) => {
+    (err: unknown) => {
+      assert.ok(err instanceof Error && "exitCode" in err);
       assert.match(err.message, /Preflight: cannot read/);
       assert.equal(err.exitCode, 3);
       return true;

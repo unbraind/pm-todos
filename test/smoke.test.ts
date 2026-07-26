@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ExtensionApi } from "@unbrained/pm-cli/sdk/authoring";
 import extension from "../dist/index.js";
 
 test("extension has required shape", () => {
@@ -33,7 +34,7 @@ test("extension registers commands plus the native todos importer and exporter",
     registerSearchProvider: noop, registerVectorStoreAdapter: noop,
     hooks: { beforeCommand: noop, afterCommand: noop, onWrite: noop, onRead: noop, onIndex: noop },
   };
-  extension.activate(api as any);
+  extension.activate(api as unknown as ExtensionApi);
   assert.ok(registered.length > 0, `extension should register at least one capability, got: ${JSON.stringify(registered)}`);
   assert.ok(commands.some((command) => command.name === "todos context"), `should register 'todos context', got: ${JSON.stringify(commands)}`);
   const sync = commands.find((command) => command.name === "todos sync");

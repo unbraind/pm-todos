@@ -6,6 +6,10 @@
 
 - Adopt pm-cli 2026.7.26 typed authoring contracts and remove the any-cast defineExtension shim ([pm-todos-sxrp](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-sxrp.toon))
 
+### Other
+
+- Type every importer, exporter, and preflight context without any ([pm-todos-l5xl](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-l5xl.toon))
+
 ## 2026.7.26 - 2026-07-26
 
 ### Fixed

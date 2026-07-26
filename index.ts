@@ -1,6 +1,12 @@
 // pm-todos — Markdown TODO round-trip for pm-cli
 
-import type { ExtensionApi, ExtensionModule } from "@unbrained/pm-cli/sdk/authoring";
+import type {
+  CommandHandlerContext,
+  ExtensionApi,
+  ExtensionModule,
+  ImportExportContext,
+  PreflightOverrideContext,
+} from "@unbrained/pm-cli/sdk/authoring";
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -2381,7 +2387,7 @@ export default defineExtension({
         { long: "--format", value_name: "fmt", description: "File format: markdown (default) | todotxt | todojson | jsonl | checkbox" },
         { long: "--json", description: "Emit a JSON report" },
       ],
-      async run(ctx: any) {
+      async run(ctx: CommandHandlerContext) {
         const format = readImportFormat(ctx.options);
         const asJson = readBoolOption(ctx.options, "json");
         const filePath = ctx.args[0] as string | undefined;
@@ -2448,7 +2454,7 @@ export default defineExtension({
         { long: "--limit", value_name: "n", description: "Max focus rows in output (1-200, default: 20)" },
         { long: "--include-tags", description: "Include tags on focus rows (off by default for token efficiency)" },
       ],
-      async run(ctx: any) {
+      async run(ctx: CommandHandlerContext) {
         const statusFilter = readStringOption(ctx.options, "status");
         const typeFilter = readStringOption(ctx.options, "type");
         const sort = readSort(ctx.options);
@@ -2529,7 +2535,7 @@ export default defineExtension({
         { long: "--dry-run", description: "Report what would change without writing to pm or the file" },
         { long: "--json", description: "Return a JSON result object" },
       ],
-      async run(ctx: any) {
+      async run(ctx: CommandHandlerContext) {
         const fileArg = (ctx.args && ctx.args[0]) as string | undefined;
         const fileOpt = readStringOption(ctx.options, "file");
         if (!fileArg && !fileOpt) {
@@ -2670,7 +2676,7 @@ export default defineExtension({
     // source of truth for `pm todos import` and must accept the positional file
     // argument (`ctx.args[0]`) exactly as the command did — otherwise the
     // existing CLI usage would silently break.
-    api.registerImporter("todos", async (ctx: any) => {
+    api.registerImporter("todos", async (ctx: ImportExportContext) => {
       const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
       const glob = readStringOption(ctx.options, "glob");
       const fileArg = (ctx.args && ctx.args[0]) as string | undefined;
@@ -2785,7 +2791,7 @@ export default defineExtension({
     // Mirrors the `todos export` command so markdown is a first-class
     // import/export pair. Writes to `--output` or prints to stdout.
     // -----------------------------------------------------------------------
-    api.registerExporter("todos", async (ctx: any) => {
+    api.registerExporter("todos", async (ctx: ImportExportContext) => {
       const outputPath = readStringOption(ctx.options, "output");
       const filter = readExportFilter(ctx.options);
       const { markdown, count } = buildTodoMarkdown({
@@ -2841,7 +2847,7 @@ export default defineExtension({
     // -----------------------------------------------------------------------
     // Importer: todos-import  (legacy alias — retained for backward compat)
     // -----------------------------------------------------------------------
-    api.registerImporter("todos-import", async (ctx: any) => {
+    api.registerImporter("todos-import", async (ctx: ImportExportContext) => {
       const filePath = readStringOption(ctx.options, "file");
       if (!filePath) {
         console.error("todos-import: no 'file' provided — skipping.");
@@ -2887,7 +2893,7 @@ export default defineExtension({
     // and a best-effort early check; it returns a pass-through decision so it
     // never changes the runtime's gate behaviour.
     // -----------------------------------------------------------------------
-    api.registerPreflight((ctx: any) => {
+    api.registerPreflight((ctx: PreflightOverrideContext) => {
       const d = ctx?.decision ?? {};
       const passthrough = {
         enforce_item_format_gate: d.enforce_item_format_gate ?? true,

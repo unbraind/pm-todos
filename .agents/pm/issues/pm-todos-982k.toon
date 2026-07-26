@@ -1,6 +1,6 @@
 id: pm-todos-982k
 title: "Round-trip import corrupts title + drops type ([Type] tag not parsed back)"
-description: "The exporter (renderDefaultMarkdown) appends each open item's type as a trailing ' [Type]' annotation, but the importer (parseMarkdownTodos) only strips the '<!-- pm-id -->' provenance comment — never the [Type] tag. With the new --upsert (2026.6.5), re-import now MATCHES by pm-id and UPDATES the existing item, so the round-trip: (1) folds '[Type]' into the title, and (2) resets type to the global default (Task). The corruption COMPOUNDS: each export->import --upsert appends another tag ('Crash on startup' -> '[Issue]' -> '[Issue] [Task]'). Confirmed against published pm-todos@2026.6.5."
+description: "The exporter (renderDefaultMarkdown) appends each open item's type as a trailing Type annotation, but the importer (parseMarkdownTodos) only strips the '<!-- pm-id -->' provenance comment — never the Type tag. With the new --upsert (2026.6.5), re-import now MATCHES by pm-id and UPDATES the existing item, so the round-trip: (1) folds the Type annotation into the title, and (2) resets type to the global default (Task). The corruption COMPOUNDS: each export->import --upsert appends another tag (Crash on startup -> Issue -> Issue Task). Confirmed against published pm-todos@2026.6.5."
 type: Issue
 status: closed
 priority: 1

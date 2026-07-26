@@ -1,0 +1,27 @@
+id: pm-todos-l5xl
+title: "Type every importer, exporter, and preflight context without any"
+description: "Replace explicit any annotations on SDK registration callbacks with the published ImportExportContext and PreflightOverrideContext contracts, update pm-changelog to 2026.7.26, and retain subprocess I/O only where the upstream importer/exporter context still lacks ctx.sdk."
+type: Task
+status: closed
+priority: 1
+tags: []
+created_at: "2026-07-26T15:21:41.016Z"
+updated_at: "2026-07-26T15:26:23.008Z"
+closed_at: "2026-07-26T15:23:57.397Z"
+author: codex
+estimated_minutes: 90
+acceptance_criteria: index.ts contains no explicit any; importer/exporter/preflight registrations compile against pm CLI 2026.7.26 authoring types; existing behavior and all tests remain green; release gate and production audit pass; PM evidence links upstream pm-cli#749
+resolution: All SDK registration callbacks and affected tests now use published TypeScript contracts without explicit any; pm-changelog is current. Import/export subprocess replacement remains correctly blocked on upstream pm-cli#749.
+expected_result: "Source and tests compile without explicit any while preserving importer, exporter, preflight, and command behavior on pm CLI 2026.7.26."
+actual_result: Typecheck/build pass; 121/121 tests pass including real installed JSONL import/store/export/sync; production audit is zero; c8 baseline 68.06/84.23/67.94/68.06 is honestly tracked in pm-todos-qpst.
+notes[4]{created_at,author,text}:
+  "2026-07-26T15:21:41.016Z",codex,"Upstream SDK blocker: https://github.com/unbraind/pm-cli/issues/749. ImportExportContext lacks the host-bound sdk field available on CommandHandlerContext, so first-class importers/exporters cannot yet replace their subprocess item reads and mutations safely."
+  "2026-07-26T15:23:57.083Z",codex,"The grep pattern for explicit type escapes reports zero : any, as any, generic any, or any arrays in index.ts and test/*.ts."
+  "2026-07-26T15:23:57.083Z",codex,"Verification: NPM_CONFIG_USERCONFIG=/dev/null npm run release:check passed through 121/121 tests, zero production audit, and package dry-run; only changelog:check was stale because this task and pm-todos-qpst had just been added. Changelog will be regenerated before rerunning the gate."
+  "2026-07-26T15:26:22.993Z",codex,"Release-integrity remediation: pm-changelog initially dropped four historical entries because pm-todos-qa0y, pm-todos-982k, pm-todos-chgi, and pm-todos-mn0f contained encoder-produced quoted bracket-plus-colon text rejected by the bundled decoder (upstream pm-cli#747). Applied minimal wording-only repairs, then ran official pm history-repair for each; all four are readable, history verification is green, pm validate ok:true, and every historical CHANGELOG entry is restored."
+files[1]{path,scope,note}:
+  index.ts,project,typed SDK registration callbacks
+tests[1]{command,scope,timeout_seconds,note}:
+  "NPM_CONFIG_USERCONFIG=/dev/null npm run release:check",project,120,mandatory package release gate
+close_reason: Typed SDK contexts and current changelog dependency implemented and verified
+body: ""
