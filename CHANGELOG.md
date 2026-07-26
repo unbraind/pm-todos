@@ -2,6 +2,12 @@
 
 ## 2026.7.26 - 2026-07-26
 
+### Removed
+
+- Adopt pm-cli 2026.7.26 typed authoring contracts and remove the any-cast defineExtension shim ([pm-todos-sxrp](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-sxrp.toon))
+
+## 2026.7.26 - 2026-07-26
+
 ### Fixed
 
 - Documented install command fails: pm install github.com/unbraind/pm-todos cannot resolve an entry file ([pm-todos-zffc](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-zffc.toon))
