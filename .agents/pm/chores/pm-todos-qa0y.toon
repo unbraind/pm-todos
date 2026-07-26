@@ -31,4 +31,4 @@ tests[1]{command,scope,timeout_seconds}:
 docs[1]{path,scope,note}:
   README.md,project,multi-agent merge safety
 close_reason: completed
-body: "Validated 2026-07-21: two branches editing the same item (priority vs assignee + divergent notes) merged field-level with zero conflicts; both survived, notes[] unioned; pm validate ok:true after pm history-repair --all. Fleet reference: pm-github PR #5; pm-changelog PR #83."
+body: "Validated 2026-07-21: two branches editing the same item (priority vs assignee + divergent notes) merged field-level with zero conflicts; both survived, note entries unioned; pm validate ok:true after pm history-repair --all. Fleet reference: pm-github PR #5; pm-changelog PR #83."

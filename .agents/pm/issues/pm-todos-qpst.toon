@@ -1,0 +1,24 @@
+id: pm-todos-qpst
+title: Enforce honest 100/100/100/100 source coverage
+description: "Close every genuine coverage gap in index.ts with behavior-driven tests, including real installed importer/exporter/command paths, then enforce 100 percent statements, branches, functions, and lines in release:check. Current honest baseline is 68.06/84.23/67.94/68.06."
+type: Issue
+status: open
+priority: 1
+tags: []
+created_at: "2026-07-26T15:23:35.470Z"
+updated_at: "2026-07-26T15:23:35.470Z"
+author: codex
+estimated_minutes: 480
+acceptance_criteria: "c8 reports 100 percent statements, branches, functions, and lines for index.ts; package release:check enforces all four thresholds; tests use real throwaway trackers and installed extension dispatch where integration behavior matters; mutation or equivalent anti-cheat evidence proves assertions detect regressions; tests remain deterministic and avoid duplicated cases"
+severity: high
+environment: "pm-todos 2026.7.26, Node 22, TypeScript 7, c8 12"
+repro_steps: Run NPM_CONFIG_USERCONFIG=/dev/null npx --yes c8@12.0.0 --all --include=dist/index.js --reporter=text node --test dist-test/*.js and inspect the aggregate row.
+expected_result: All maintained TypeScript source is behaviorally exercised and the mandatory release gate rejects any metric below 100 percent.
+actual_result: "Baseline: 68.06 statements, 84.23 branches, 67.94 functions, and 68.06 lines; release:check currently has no coverage threshold."
+component: testing
+customer_impact: "Untested command, importer, exporter, and failure branches can regress without blocking a release."
+files[1]{path,scope,note}:
+  index.ts,project,source coverage target
+tests[1]{command,scope,timeout_seconds,note}:
+  NPM_CONFIG_USERCONFIG=/dev/null npx --yes c8@12.0.0 --all --include=dist/index.js --reporter=text node --test dist-test/*.js,project,60,honest baseline command
+body: "Do not ignore source paths, lower thresholds, use vacuous assertions, or duplicate artificial tests merely to satisfy counters. Exercise public behavior and real SDK-host dispatch where applicable."
