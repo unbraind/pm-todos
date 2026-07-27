@@ -1,47 +1,131 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ExtensionApi } from "@unbrained/pm-cli/sdk/authoring";
+import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
+
 import extension from "../dist/index.js";
 
-test("extension has required shape", () => {
-  assert.ok(extension, "module should export a default value");
-  assert.strictEqual(typeof extension, "object", "extension should be an object");
-  assert.ok("name" in extension, "extension should have a name property");
-  assert.ok("activate" in extension, "extension should have an activate method");
-  assert.strictEqual(typeof extension.activate, "function", "activate should be a function");
+/**
+ * Activate pm-todos through pm's real host engine with the manifest's declared
+ * capabilities.
+ *
+ * This deliberately replaces the hand-rolled `api` doubles these tests used to
+ * build. A double accepts every registration unconditionally, so it cannot
+ * observe host-side rejection — which is how `--json` flags that shadow a
+ * host-owned global stayed green in CI while `todos validate` and `todos sync`
+ * failed to register against a real pm host. The harness runs the same
+ * validation the CLI runs, so an invalid registration fails the suite here.
+ */
+async function harness() {
+  const created = await createExtensionTestHarness(extension, {
+    name: "pm-todos",
+    capabilities: ["commands", "schema", "importers", "preflight"],
+  });
+  assert.deepEqual(created.activation.failed, [], "activation must not fail");
+  return created;
+}
+
+test("extension activates cleanly against the real pm host", async () => {
+  const ext = await harness();
+  assert.strictEqual(ext.name, "pm-todos");
+  await ext.deactivate();
 });
 
-test("extension registers commands plus the native todos importer and exporter", () => {
-  const registered: string[] = [];
-  const commands: Array<{ name?: string; arguments?: unknown[]; flags?: Array<{ long?: string }> }> = [];
-  const importers: string[] = [];
-  const exporters: string[] = [];
-  const noop = () => {};
-  // Mirror the full ExtensionApi surface so activate() can register every
-  // capability the extension uses (commands, importer, exporter). A partial
-  // mock would throw TypeError when activate() calls a missing method.
-  const api = {
-    registerCommand: (command: { name?: string; arguments?: unknown[]; flags?: Array<{ long?: string }> }) => {
-      registered.push("command");
-      commands.push(command);
-    },
-    registerParser: noop, registerPreflight: noop, registerService: noop,
-    registerFlags: noop, registerItemFields: noop, registerItemTypes: noop,
-    registerMigration: noop, registerRenderer: noop,
-    registerImporter: (name: string) => { registered.push("importer"); importers.push(name); },
-    registerExporter: (name: string) => { registered.push("exporter"); exporters.push(name); },
-    registerSearchProvider: noop, registerVectorStoreAdapter: noop,
-    hooks: { beforeCommand: noop, afterCommand: noop, onWrite: noop, onRead: noop, onIndex: noop },
-  };
-  extension.activate(api as unknown as ExtensionApi);
-  assert.ok(registered.length > 0, `extension should register at least one capability, got: ${JSON.stringify(registered)}`);
-  assert.ok(commands.some((command) => command.name === "todos context"), `should register 'todos context', got: ${JSON.stringify(commands)}`);
-  const sync = commands.find((command) => command.name === "todos sync");
-  assert.ok(sync, `should register 'todos sync', got: ${JSON.stringify(commands)}`);
-  assert.equal(sync.arguments?.length, 1, "todos sync should declare its positional file argument");
-  assert.ok(sync.flags?.some((flag) => flag.long === "--file"), "todos sync should declare its --file fallback");
-  assert.ok(sync.flags?.some((flag) => flag.long === "--allow-empty"), "todos sync should declare its destructive-empty override");
-  assert.ok(importers.includes("todos"), `should register the native 'todos' importer, got: ${JSON.stringify(importers)}`);
-  assert.ok(exporters.includes("todos"), `should register the native 'todos' exporter, got: ${JSON.stringify(exporters)}`);
+test("extension registers todos validate, context, and sync commands", async () => {
+  const ext = await harness();
+
+  ext.assertCommandContract({ name: "todos validate" });
+  ext.assertCommandContract({ name: "todos context" });
+  ext.assertCommandContract({ name: "todos sync" });
+
+  await ext.deactivate();
+});
+
+test("extension registers the native todos importer, todos-import importer, and todos exporter", async () => {
+  const ext = await harness();
+
+  const { registrations } = ext.activation;
+  assert.ok(
+    registrations.importers.some((i) => i.importer === "todos"),
+    "should register the 'todos' importer",
+  );
+  assert.ok(
+    registrations.importers.some((i) => i.importer === "todos-import"),
+    "should register the 'todos-import' importer",
+  );
+  assert.strictEqual(registrations.exporters.length, 1, "should register the 'todos' exporter");
+  assert.strictEqual(registrations.exporters[0].exporter, "todos");
+
+  await ext.deactivate();
+});
+
+test("extension registers schema item fields for TODO metadata", async () => {
+  const ext = await harness();
+
+  const { field: kvField } = ext.assertItemField({ name: "todos_kv", type: "object" });
+  assert.strictEqual(kvField.optional, true, "todos_kv should be optional");
+
+  const { field: createdField } = ext.assertItemField({ name: "todos_creation_date", type: "string" });
+  assert.strictEqual(createdField.optional, true, "todos_creation_date should be optional");
+
+  await ext.deactivate();
+});
+
+test("extension registers a preflight override", async () => {
+  const ext = await harness();
+
+  ext.assertPreflightOverride();
+
+  await ext.deactivate();
+});
+
+test("todos sync declares its positional file argument and --file, --allow-empty flags", async () => {
+  const ext = await harness();
+
+  const { flags } = ext.assertCommandContract({
+    name: "todos sync",
+    flags: ["--file", "--allow-empty"],
+  });
+  const longs = flags.map((flag) => flag.long);
+  assert.ok(longs.includes("--file"), "todos sync should declare its --file fallback");
+  assert.ok(longs.includes("--allow-empty"), "todos sync should declare its destructive-empty override");
+
+  await ext.deactivate();
+});
+
+test("todos validate declares --format", async () => {
+  const ext = await harness();
+
+  ext.assertCommandContract({ name: "todos validate", flags: ["--format"] });
+
+  await ext.deactivate();
+});
+
+test("no command redeclares a host-owned global flag", async () => {
+  // Guards the whole surface, not just the one command that regressed:
+  // registering any of these makes the host reject the command outright, and
+  // the value must be read from ctx.global instead.
+  const hostOwned = new Set([
+    "--json",
+    "--quiet",
+    "--path",
+    "--lean",
+    "--id-only",
+    "--author",
+    "--no-changed-fields",
+    "--full-changed-fields",
+    "--pm-path",
+  ]);
+  const ext = await harness();
+
+  for (const registration of ext.activation.registrations.flags) {
+    for (const flag of registration.flags) {
+      assert.ok(
+        flag.long === undefined || !hostOwned.has(flag.long),
+        `${registration.target_command} must not redeclare host-owned global flag ${flag.long}`,
+      );
+    }
+  }
+
+  await ext.deactivate();
 });

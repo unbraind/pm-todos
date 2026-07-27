@@ -2385,11 +2385,13 @@ export default defineExtension({
       ],
       flags: [
         { long: "--format", value_name: "fmt", description: "File format: markdown (default) | todotxt | todojson | jsonl | checkbox" },
-        { long: "--json", description: "Emit a JSON report" },
+        // `--json` is a host-owned global flag: do not redeclare it (the host
+        // rejects the registration); read it from ctx.global instead.
       ],
       async run(ctx: CommandHandlerContext) {
         const format = readImportFormat(ctx.options);
-        const asJson = readBoolOption(ctx.options, "json");
+        // `--json` is a host-owned global flag; read it from ctx.global.
+        const asJson = ctx.global?.json === true;
         const filePath = ctx.args[0] as string | undefined;
         if (!filePath) {
           throw new CommandError(
@@ -2533,7 +2535,8 @@ export default defineExtension({
         { long: "--reverse", description: "Reverse the final re-export order; with --sort this produces descending order" },
         { long: "--allow-empty", description: "Allow sync to replace a non-empty file with an empty export" },
         { long: "--dry-run", description: "Report what would change without writing to pm or the file" },
-        { long: "--json", description: "Return a JSON result object" },
+        // `--json` is a host-owned global flag: do not redeclare it (the host
+        // rejects the registration); read it from ctx.global instead.
       ],
       async run(ctx: CommandHandlerContext) {
         const fileArg = (ctx.args && ctx.args[0]) as string | undefined;
