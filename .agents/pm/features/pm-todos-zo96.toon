@@ -1,0 +1,33 @@
+id: pm-todos-zo96
+title: Enforce a real coverage gate by running tests against TypeScript sources
+description: "The package measured no coverage at all: tests imported the compiled output from dist, so the only obtainable numbers pointed at generated JavaScript offsets an author cannot act on, and no threshold was wired into any gate. The suite now runs against the TypeScript sources directly. Node executes TypeScript natively from the version floor this package already declares, so tests import the source entrypoint, which puts the coverage report on real source lines. The gate is scripts/coverage-gate.ts: it enforces per-dimension thresholds and reconciles the reported file list against the source tree. That second check is the point. Node omits files that never load from its report entirely rather than reporting them at zero, so without it a package can satisfy a full threshold while an entire module goes unexercised."
+type: Feature
+status: closed
+priority: 2
+tags[3]: code-quality,coverage,testing
+created_at: "2026-07-28T23:33:23.392Z"
+updated_at: "2026-07-28T23:33:38.598Z"
+closed_at: "2026-07-28T23:33:38.597Z"
+author: pi-agent
+acceptance_criteria: "Tests import TypeScript sources rather than dist so coverage reports on editable lines; the gate fails the build when any threshold regresses; the gate fails when a source file never loads, proven by a negative control; thresholds are recorded in package.json as a ratchet at the measured baseline; the gate runs in the release check and in CI on Node 22 and 26."
+resolution: "Tests moved onto the TypeScript source and scripts/coverage-gate.ts wired into release:check and CI."
+expected_result: "A coverage gate runs in the release check and in CI on both supported Node lines, reports against TypeScript sources, and fails when a source file is untested or a threshold regresses."
+actual_result: "npm run check passes. npm run coverage passes with 127 tests, the single source file (index.ts) present in the report, at 68.40 line, 85.44 branch and 74.29 function coverage. A negative control adding an untested __probe.ts made the gate exit 1 and name that file, so the presence check is not vacuous. Thresholds pinned at 68/85/74."
+comments[1]{created_at,author,text}:
+  "2026-07-28T23:33:32.336Z",pi-agent,"Negative control run: adding an untested __probe.ts source file made the gate exit 1 and name that file,so the presence check is not vacuous. Removing the probe restored exit 0."
+notes[1]{created_at,author,text}:
+  "2026-07-28T23:33:32.336Z",pi-agent,"This package is a flat layout with index.ts at the repo root; coverageGate.sources uses the explicit file list [\"index.ts\"] rather than a directory walk. The integration test spawns node_modules/.bin/pm (the host CLI),which must not be rewritten."
+learnings[1]{created_at,author,text}:
+  "2026-07-28T23:33:32.336Z",pi-agent,"Node omits never-loaded files from its coverage report rather than reporting them at zero,so a threshold flag alone is satisfiable by narrowing what the suite imports. Any coverage gate must reconcile the report against the source tree."
+files[4]{path,scope,note}:
+  scripts/coverage-gate.ts,project,coverage gate with source-presence reconciliation
+  package.json,project,"coverageGate config and coverage script wired into release:check"
+  tsconfig.json,project,rewriteRelativeImportExtensions so sources import siblings as .ts
+  .github/workflows/ci.yml,project,coverage gate on a Node 22 and 26 matrix
+tests[2]{command,scope,timeout_seconds}:
+  npm run coverage,project,1800
+  "npm run release:check",project,3600
+docs[1]{path,scope,note}:
+  scripts/coverage-gate.ts,project,gate implementation and rationale
+close_reason: Coverage gate landed and locally verified; the Node 22 and 26 CI legs are unobserved until the pull request runs.
+body: "Baseline measured 2026-07-29 across one source file (index.ts): 68.40 line, 85.44 branch, 74.29 function. Thresholds are pinned at the measured floor (68/85/74) so the number can only move up."

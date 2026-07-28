@@ -14,7 +14,7 @@ import {
   applyExportOrder,
   resolveImportedTodoStatus,
   buildJsonlImportFieldArgs,
-} from "../dist/index.js";
+} from "../index.ts";
 
 // ---------------------------------------------------------------------------
 // --format jsonl: serialize / parse / round-trip
