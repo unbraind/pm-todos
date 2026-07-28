@@ -1,6 +1,6 @@
 {
   "name": "pm-todos",
-  "version": "2026.7.27",
+  "version": "2026.7.28",
   "description": "TODO round-trip extension for pm-cli: markdown, todo.txt, GitHub task lists, and pi coding-agent todo JSON",
   "repository": {
     "type": "git",
@@ -39,11 +39,11 @@
     "merge:install": "pm merge install"
   },
   "peerDependencies": {
-    "@unbrained/pm-cli": ">=2026.7.27"
+    "@unbrained/pm-cli": ">=2026.7.28"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "@unbrained/pm-cli": "^2026.7.27",
+    "@unbrained/pm-cli": "^2026.7.28",
     "pm-changelog": "^2026.7.26",
     "typescript": "^7.0.2"
   },
