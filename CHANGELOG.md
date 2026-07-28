@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- todos validate and todos sync fail to register on pm-cli 2026.7.27 because they redeclare the host-owned --json global ([pm-todos-cq41](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-cq41.toon))
+- Fix todo status resolution, jsonl parse, and remove letter priority map ([pm-todos-p88p](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-p88p.toon))
+
+### Other
+
+- Adopt --respect-item-release in changelog scripts and bump pm-changelog to 2026.7.24 ([pm-todos-sn6h](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-sn6h.toon))
+- Ecosystem release readiness pass 2026-07-06 ([pm-todos-gcjm](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-gcjm.toon))
+
 ## 2026.7.28 - 2026-07-28
 
 ### Other
