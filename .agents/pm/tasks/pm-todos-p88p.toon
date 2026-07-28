@@ -2,12 +2,17 @@ id: pm-todos-p88p
 title: "Fix todo status resolution, jsonl parse, and remove letter priority map"
 description: ""
 type: Task
-status: in_progress
+status: closed
 priority: 1
 tags[2]: "area:export","area:import"
 created_at: "2026-07-10T20:02:27.217Z"
-updated_at: "2026-07-10T20:02:27.625Z"
+updated_at: "2026-07-28T11:34:54.209Z"
+closed_at: "2026-07-28T11:14:09.826Z"
 author: codex
 acceptance_criteria: "resolveImportedTodoStatus handles source status correctly; jsonl parse handles object values; letter priority map removed; release:check green; Greptile clean; PR merged"
 why_now: Status resolution needed extraction; jsonl parse didn't handle object kv values; letter priority map was undocumented
+release: 2026.7.11
+notes[1]{created_at,author,text}:
+  "2026-07-28T11:34:54.209Z",claude-code,"Correction raised by CodeRabbit on pm-todos#38: the close reason covered two of the three code acceptance criteria and omitted the jsonl object-value parsing one. Verifying it now for the record, at index.ts around line 1230: each jsonl line is JSON.parse'd inside a try/catch that raises a usage error naming the line number, then guarded by isRecord so a non-object line is rejected with expected a JSON object rather than crashing, and every field is individually type-guarded (typeof parsed.title === string, and the same for description, type, status and the other optional passthroughs). An object value landing in a scalar field is therefore ignored safely instead of being coerced. The criterion holds; only the close reason was incomplete. Original record preserved rather than rewritten."
+close_reason: "Shipped and verified 2026-07-28: resolveImportedTodoStatus is exported and used on the import path, and the letter priority map is gone from the source. Closing the tracker."
 body: ""
