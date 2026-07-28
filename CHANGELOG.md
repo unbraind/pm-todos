@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.7.28 - 2026-07-28
+
+### Other
+
+- Adopt pm-cli 2026.7.28 ([pm-todos-ktww](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-ktww.toon))
+
 ## 2026.7.27 - 2026-07-27
 
 ### Removed
