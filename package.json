@@ -37,7 +37,7 @@
     "release:update-version": "node scripts/update-release-version.ts",
     "prepare": "node scripts/prepare-merge-driver.mjs",
     "merge:install": "pm merge install",
-    "coverage": "npm run build && node scripts/coverage-gate.ts"
+    "coverage": "npm run build && npm run build:test && node scripts/coverage-gate.ts"
   },
   "peerDependencies": {
     "@unbrained/pm-cli": ">=2026.7.28"
@@ -102,7 +102,7 @@
   },
   "coverageGate": {
     "sources": [
-      "index.ts"
+      "."
     ],
     "tests": [
       "test/*.test.ts"
