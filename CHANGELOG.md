@@ -1,17 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
-
-- todos validate and todos sync fail to register on pm-cli 2026.7.27 because they redeclare the host-owned --json global ([pm-todos-cq41](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-cq41.toon))
-- Fix todo status resolution, jsonl parse, and remove letter priority map ([pm-todos-p88p](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-p88p.toon))
-
-### Other
-
-- Adopt --respect-item-release in changelog scripts and bump pm-changelog to 2026.7.24 ([pm-todos-sn6h](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-sn6h.toon))
-- Ecosystem release readiness pass 2026-07-06 ([pm-todos-gcjm](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-gcjm.toon))
-
 ## 2026.7.28 - 2026-07-28
 
 ### Other
@@ -19,6 +7,10 @@
 - Adopt pm-cli 2026.7.28 ([pm-todos-ktww](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-ktww.toon))
 
 ## 2026.7.27 - 2026-07-27
+
+### Fixed
+
+- todos validate and todos sync fail to register on pm-cli 2026.7.27 because they redeclare the host-owned --json global ([pm-todos-cq41](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-cq41.toon))
 
 ### Removed
 
@@ -44,6 +36,10 @@
 
 - pm item reads are capped at Node's 1 MiB spawnSync default, so a mature tracker fails with no diagnosis ([pm-todos-9b5z](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9b5z.toon))
 
+### Other
+
+- Adopt --respect-item-release in changelog scripts and bump pm-changelog to 2026.7.24 ([pm-todos-sn6h](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-sn6h.toon))
+
 ## 2026.7.23 - 2026-07-23
 
 ### Fixed
@@ -62,12 +58,14 @@
 
 ### Fixed
 
+- Fix todo status resolution, jsonl parse, and remove letter priority map ([pm-todos-p88p](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-p88p.toon))
 - Preserve rich JSONL fields across installed pm-todos import/export ([pm-todos-ejm7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ejm7.toon))
 - todos import/export unusable via CLI: importer/exporter registrations omit arguments+flags ([pm-todos-chgi](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-chgi.toon))
 - Adversarial review pass 2026-07-10 ([pm-todos-98ht](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-98ht.toon))
 
 ### Other
 
+- Ecosystem release readiness pass 2026-07-06 ([pm-todos-gcjm](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-gcjm.toon))
 - Production-readiness audit 2026-05-28 ([pm-todos-kgjf](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-kgjf.toon))
 - Full-cycle hardening wave: pm-todos ([pm-todos-v3lk](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-v3lk.toon))
 - Harden release bun-verify so registry-mirror lag cannot block the GitHub release ([pm-todos-sl3m](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-sl3m.toon))

@@ -6,10 +6,11 @@ status: closed
 priority: 1
 tags[2]: "area:export","area:import"
 created_at: "2026-07-10T20:02:27.217Z"
-updated_at: "2026-07-28T11:14:09.828Z"
+updated_at: "2026-07-28T11:22:22.458Z"
 closed_at: "2026-07-28T11:14:09.826Z"
 author: codex
 acceptance_criteria: "resolveImportedTodoStatus handles source status correctly; jsonl parse handles object values; letter priority map removed; release:check green; Greptile clean; PR merged"
 why_now: Status resolution needed extraction; jsonl parse didn't handle object kv values; letter priority map was undocumented
+release: 2026.7.11
 close_reason: "Shipped and verified 2026-07-28: resolveImportedTodoStatus is exported and used on the import path, and the letter priority map is gone from the source. Closing the tracker."
 body: ""
