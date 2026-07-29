@@ -34,7 +34,7 @@ import {
   extractMarkdownDue,
   sortItemsForContext,
   buildTodoContextSnapshot,
-} from "../dist/index.js";
+} from "../index.ts";
 
 // ---------------------------------------------------------------------------
 // Priority letter <-> pm number mapping
