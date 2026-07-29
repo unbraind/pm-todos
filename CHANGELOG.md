@@ -6,6 +6,10 @@
 
 - Enforce a real coverage gate by running tests against TypeScript sources ([pm-todos-zo96](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-zo96.toon))
 
+### Other
+
+- Adopt pm-cli 2026.7.29 ([pm-todos-wrku](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-wrku.toon))
+
 ## 2026.7.28 - 2026-07-28
 
 ### Other
