@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Other
+
+- Resolve pm-changelog to the release that derives release dates in UTC ([pm-todos-zalo](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-zalo.toon))
+
 ## 2026.7.29 - 2026-07-29
 
 ### Added
