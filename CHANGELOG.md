@@ -4,7 +4,7 @@
 
 ### Other
 
-- Gate CI on pm health so a silently discarded peer edit cannot merge ([pm-todos-qpyp](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-qpyp.toon))
+- Gate CI on pm health for tracker integrity (does not cover discarded peer edits, see pm-cli 922) ([pm-todos-qpyp](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-qpyp.toon))
 
 ## 2026.8.4 - 2026-08-04
 
