@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Other
+
+- Gate CI on strict tracked pm project health ([pm-todos-qpyp](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-qpyp.toon))
+
 ## 2026.8.4 - 2026-08-04
 
 ### Other
