@@ -432,13 +432,18 @@ function compareText(a: string, b: string): number {
  * The entries are sorted by count (highest first) and ties are broken with
  * `compareKeys` when supplied, otherwise a case-insensitive locale compare, so
  * the resulting object is reproducible rather than in map insertion order.
- * `Object.fromEntries` preserves the sorted insertion order, so a consumer
- * iterating the record sees the most significant counts first.
+ * `Object.fromEntries` preserves that insertion order for the labels this is
+ * called with - statuses and item types - so a consumer iterating the record
+ * sees the most significant counts first. The guarantee is not universal: a
+ * JavaScript object always enumerates integer-like keys (`"0"`, `"1"`) in
+ * ascending numeric order regardless of insertion, so passing array-index-shaped
+ * labels would silently discard the sort. Use a `Map` if such labels ever become
+ * possible here.
  *
- * @param countMap - Counts keyed by a status, type, or other label.
+ * @param countMap - Counts keyed by a status, type, or other non-numeric label.
  * @param compareKeys - Optional tie-breaker over the keys; defaults to a
  *   case-insensitive locale compare.
- * @returns A record whose key order mirrors the sort.
+ * @returns A record whose key order mirrors the sort, for non-integer-like keys.
  */
 function toSortedCountRecord(
   countMap: Map<string, number>,
@@ -1086,11 +1091,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Validate and coerce one element of a todojson `todos` array into a
- * {@link PiTodo}.
+ * Validate one element of a todojson `todos` array as a {@link PiTodo}.
  *
  * Each field is checked against the shape the pi todo extension emits: `id` is
- * an integer, `text` a non-empty trimmed string, `done` a boolean. Any failure
+ * an integer, `text` a string whose trimmed form is non-empty, `done` a
+ * boolean. Nothing is coerced or normalised - `text` is returned exactly as it
+ * arrived, so surrounding whitespace survives; trimming is used only to reject
+ * a value that is entirely blank. Any failure
  * throws a usage {@link CommandError} that names the offending index, so the
  * caller's aggregate error pinpoints the bad entry rather than aborting on a
  * generic "invalid JSON".
