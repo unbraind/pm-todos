@@ -366,6 +366,14 @@ interface TodoContextBuildOptions {
   typeFilter?: string;
 }
 
+/**
+ * One TODO projected into a context snapshot's focus list.
+ *
+ * Carries only the fields an agent needs to triage or act, not the full pm
+ * item: the optionals are absent when the source item has no value for them,
+ * so a consumer can distinguish "no deadline" from a deadline that happens to
+ * be empty. Serialized into {@link TodoContextSnapshot.focus}.
+ */
 export interface TodoContextFocusItem {
   id: string;
   title: string;
@@ -418,6 +426,25 @@ function compareText(a: string, b: string): number {
   return a.localeCompare(b, undefined, { sensitivity: "base" });
 }
 
+/**
+ * Project a count map onto a count-descending plain record.
+ *
+ * The entries are sorted by count (highest first) and ties are broken with
+ * `compareKeys` when supplied, otherwise a case-insensitive locale compare, so
+ * the resulting object is reproducible rather than in map insertion order.
+ * `Object.fromEntries` preserves that insertion order for the labels this is
+ * called with - statuses and item types - so a consumer iterating the record
+ * sees the most significant counts first. The guarantee is not universal: a
+ * JavaScript object always enumerates integer-like keys (`"0"`, `"1"`) in
+ * ascending numeric order regardless of insertion, so passing array-index-shaped
+ * labels would silently discard the sort. Use a `Map` if such labels ever become
+ * possible here.
+ *
+ * @param countMap - Counts keyed by a status, type, or other non-numeric label.
+ * @param compareKeys - Optional tie-breaker over the keys; defaults to a
+ *   case-insensitive locale compare.
+ * @returns A record whose key order mirrors the sort, for non-integer-like keys.
+ */
 function toSortedCountRecord(
   countMap: Map<string, number>,
   compareKeys?: (a: string, b: string) => number,
@@ -577,6 +604,18 @@ function extractPriority(text: string): { text: string; priority?: number } {
   return { text: cleaned.replace(/\s+/g, " ").trim(), priority };
 }
 
+/**
+ * Pull a `due:YYYY-MM-DD` marker out of a markdown TODO and strip it.
+ *
+ * Matches a `due:` date only when it is a whole token (bounded by whitespace
+ * or the string edges), so a date embedded in a word is left alone. The marker
+ * is removed from the returned `text` and surrounding whitespace collapsed, so
+ * the line reads cleanly whether or not it carried a due date; the date itself
+ * is returned in `deadline` only on a match.
+ *
+ * @param text - One markdown TODO line, possibly carrying a `due:` marker.
+ * @returns The cleaned text and the captured deadline, or no deadline on miss.
+ */
 export function extractMarkdownDue(text: string): { text: string; deadline?: string } {
   const dueRe = /(^|\s)due:(\d{4}-\d{2}-\d{2})(?=\s|$)/;
   const match = dueRe.exec(text);
@@ -816,6 +855,22 @@ interface TodoTxtItem {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Render a TODO's pm metadata as a trailing markdown suffix.
+ *
+ * Emits a priority token and a `due:` date, space-joined and led by a single
+ * space, ready to append to a checkbox line. The priority is clamped to the
+ * `0`–`4` band pm uses (truncated, never rounded) and rendered through the
+ * chosen scheme — `(p0)`…`(p4)` for `number`, `(A)`…`(E)` for `letter` — and is
+ * omitted entirely when the item has no priority. The deadline is taken from
+ * the first ten characters and only emitted when they satisfy `DATE_RE`, so a
+ * malformed deadline never produces a broken `due:` token. Returns an empty
+ * string when neither field contributes.
+ *
+ * @param item - The pm item whose metadata to render.
+ * @param priorityMap - How to spell a priority; defaults to the `number` scheme.
+ * @returns A leading-space-prefixed suffix, or "" when there is nothing to add.
+ */
 function markdownMetadataSuffix(item: PmItem, priorityMap: PriorityMapScheme = "number"): string {
   const parts: string[] = [];
   if (item.priority !== undefined && item.priority !== null) {
@@ -1035,6 +1090,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Validate one element of a todojson `todos` array as a {@link PiTodo}.
+ *
+ * Each field is checked against the shape the pi todo extension emits: `id` is
+ * an integer, `text` a string whose trimmed form is non-empty, `done` a
+ * boolean. Nothing is coerced or normalised - `text` is returned exactly as it
+ * arrived, so surrounding whitespace survives; trimming is used only to reject
+ * a value that is entirely blank. Any failure
+ * throws a usage {@link CommandError} that names the offending index, so the
+ * caller's aggregate error pinpoints the bad entry rather than aborting on a
+ * generic "invalid JSON".
+ *
+ * @param value - One raw element from the parsed todos array.
+ * @param index - Position in the array, used in the thrown message.
+ * @returns The validated `{ id, text, done }` triple.
+ * @throws {CommandError} When `value` is not an object or a field is malformed.
+ */
 function parsePiTodo(value: unknown, index: number): PiTodo {
   if (!isRecord(value)) {
     throw new CommandError(`todojson item at index ${index} is not an object`, EXIT_CODE.USAGE);
@@ -1127,6 +1199,22 @@ function parseTimestamp(value: string | undefined): number {
   return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
 }
 
+/**
+ * Serialize pm items back into the pi todojson details JSON.
+ *
+ * Assigns stable todo ids in two passes: first reuse the `todo-id:<n>` marker
+ * persisted in each item's description, skipping any id already taken so a
+ * duplicate marker cannot collide; then hand out fresh ids to the rest in a
+ * deterministic order (created_at, then updated_at, then id, then title),
+ * starting one above the highest preserved id. `nextId` is left one past the
+ * last assigned id so a subsequent `add` does not reuse one. The emitted todos
+ * are ordered by id and mapped to `{ id, text, done }` with `done` derived from
+ * the pm status, and the whole payload is pretty-printed with a trailing
+ * newline so it round-trips through a text file cleanly.
+ *
+ * @param items - pm items to export, in any order.
+ * @returns A newline-terminated JSON string in the todojson details shape.
+ */
 export function serializePiTodoDetails(items: PmItem[]): string {
   type Row = { item: PmItem; todoId?: number };
   const rows: Row[] = items.map((item) => ({ item }));
