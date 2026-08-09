@@ -1,0 +1,14 @@
+id: pm-todos-g8m7
+title: Adopt the mandatory docstring gate
+description: "Wire the canonical pm-ops/docstrings analyzer into release:check and CI, and document every declaration it reports."
+type: Task
+status: closed
+priority: 2
+tags: []
+created_at: "2026-08-09T14:50:58.966Z"
+updated_at: "2026-08-09T14:58:24.715Z"
+closed_at: "2026-08-09T14:58:24.703Z"
+completed_at: "2026-08-09T14:58:24.703Z"
+author: pi-agent
+close_reason: "Adopted the canonical pm-ops/docstrings gate: exact-pinned pm-ops@2026.8.8 devDep, launcher + ported test, wired into release:check and CI. Documented all 6 index.ts violations. typecheck/build/docstring/coverage(69.25/85.44/74.29 vs 68/85/74)/tests(136)/release:check all green."
+body: ""
