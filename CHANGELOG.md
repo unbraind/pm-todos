@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Other
+
+- Adopt the mandatory docstring gate ([pm-todos-g8m7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-g8m7.toon))
+
 ## 2026.8.7 - 2026-08-07
 
 ### Other
