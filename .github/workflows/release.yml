@@ -222,7 +222,7 @@ jobs:
               --base main \
               --head "$release_branch" \
               --title "Release pm-todos ${RELEASE_TAG}" \
-              --body "Automated daily release metadata for \`${RELEASE_TAG}\`. The release gate passed before this PR was created; npm publication and tagging remain blocked until this protected PR is merged.)"
+              --body "Automated daily release metadata for \`${RELEASE_TAG}\`. The release gate passed before this PR was created; npm publication and tagging remain blocked until this protected PR is merged. Tracking: [pm-todos-ja6k](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ja6k.toon).")"
             pr_number="${pr_url##*/}"
           fi
 
