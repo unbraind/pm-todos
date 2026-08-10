@@ -79,6 +79,32 @@ test("extension registers a preflight override", async () => {
   await ext.deactivate();
 });
 
+/**
+ * The preflight override must declare its command ownership STATICALLY.
+ *
+ * A runtime `ctx.command !== "todos import"` guard inside the callback scopes
+ * dispatch but is invisible to anything that inspects the registration without
+ * executing it. An unscoped registration is owned by every command, so the host
+ * invokes it on every command and `pm health` reads it as contending with every
+ * other extension that registers a preflight.
+ *
+ * Asserting the exact array rather than merely that it is non-empty is what
+ * makes this test fail on a revert to the bare-callback form, where `commands`
+ * is `undefined`.
+ */
+test("preflight override declares static command ownership of todos import", async () => {
+  const ext = await harness();
+
+  const override = ext.assertPreflightOverride({ extensionName: "pm-todos" });
+  assert.deepEqual(
+    override.commands,
+    ["todos import"],
+    "preflight ownership must be declared statically so the host scopes dispatch without running the callback",
+  );
+
+  await ext.deactivate();
+});
+
 test("todos sync declares its positional file argument and --file, --allow-empty flags", async () => {
   const ext = await harness();
 

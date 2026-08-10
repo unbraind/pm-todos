@@ -2983,40 +2983,50 @@ export default defineExtension({
     // pm-store write. This override is the documented, scoped preflight surface
     // and a best-effort early check; it returns a pass-through decision so it
     // never changes the runtime's gate behaviour.
+    //
+    // Ownership is declared STATICALLY via `commands`. The runtime `ctx.command`
+    // check below is not sufficient on its own: `pm health` inspects the
+    // registered ownership without executing the callback, so an unscoped
+    // registration reads as "runs on every command" and collides with every
+    // other extension that registers a preflight — 21 pairwise
+    // `extension_preflight_override_collision` warnings across the seven fleet
+    // packages that register one. Declaring the command here makes the host
+    // invoke this override only for `todos import`, which is what the runtime
+    // guard already enforced dynamically.
     // -----------------------------------------------------------------------
-    api.registerPreflight((ctx: PreflightOverrideContext) => {
-      const d = ctx?.decision ?? {};
-      const passthrough = {
-        enforce_item_format_gate: d.enforce_item_format_gate ?? true,
-        run_preflight_item_format_sync: d.run_preflight_item_format_sync ?? false,
-        run_extension_migrations: d.run_extension_migrations ?? true,
-        enforce_mandatory_migration_gate: d.enforce_mandatory_migration_gate ?? false,
-      };
+    api.registerPreflight({
+      commands: ["todos import"],
+      run: (ctx: PreflightOverrideContext) => {
+        const d = ctx?.decision ?? {};
+        const passthrough = {
+          enforce_item_format_gate: d.enforce_item_format_gate ?? true,
+          run_preflight_item_format_sync: d.run_preflight_item_format_sync ?? false,
+          run_extension_migrations: d.run_extension_migrations ?? true,
+          enforce_mandatory_migration_gate: d.enforce_mandatory_migration_gate ?? false,
+        };
 
-      // Scope strictly to the import command; never touch export/validate.
-      if (ctx?.command !== "todos import") return passthrough;
-
-      // Resolve the input file(s) exactly as the import handler does.
-      const glob = readStringOption(ctx.options ?? {}, "glob");
-      const fileArg = (ctx.args && ctx.args[0]) as string | undefined;
-      const fileOpt = readStringOption(ctx.options ?? {}, "file");
-      let files: string[] = [];
-      if (glob) {
-        files = resolveGlob(glob, process.cwd());
-        if (files.length === 0 && ctx.pm_root) {
-          files = resolveGlob(glob, resolve(ctx.pm_root, ".."));
+        // Resolve the input file(s) exactly as the import handler does.
+        const glob = readStringOption(ctx.options ?? {}, "glob");
+        const fileArg = (ctx.args && ctx.args[0]) as string | undefined;
+        const fileOpt = readStringOption(ctx.options ?? {}, "file");
+        let files: string[] = [];
+        if (glob) {
+          files = resolveGlob(glob, process.cwd());
+          if (files.length === 0 && ctx.pm_root) {
+            files = resolveGlob(glob, resolve(ctx.pm_root, ".."));
+          }
+        } else if (fileArg || fileOpt) {
+          files = [resolve((fileArg ?? fileOpt) as string)];
         }
-      } else if (fileArg || fileOpt) {
-        files = [resolve((fileArg ?? fileOpt) as string)];
-      }
-      if (files.length === 0) return passthrough; // usage error surfaces in the handler
+        if (files.length === 0) return passthrough; // usage error surfaces in the handler
 
-      const format = readImportFormat(ctx.options ?? {});
-      // Best-effort early gate. The handler re-runs (and enforces) the same
-      // check, so even though a throw here is swallowed by the runtime, the
-      // import still fails fast with no partial write.
-      preflightValidateImportFiles(files, format);
-      return passthrough;
+        const format = readImportFormat(ctx.options ?? {});
+        // Best-effort early gate. The handler re-runs (and enforces) the same
+        // check, so even though a throw here is swallowed by the runtime, the
+        // import still fails fast with no partial write.
+        preflightValidateImportFiles(files, format);
+        return passthrough;
+      },
     });
   },
 });

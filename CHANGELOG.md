@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Preflight override declared no static command ownership, so the host ran it on every command ([pm-todos-ldh7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ldh7.toon))
+
 ## 2026.8.10 - 2026-08-10
 
 ### Other
