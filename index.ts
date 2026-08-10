@@ -2984,15 +2984,18 @@ export default defineExtension({
     // and a best-effort early check; it returns a pass-through decision so it
     // never changes the runtime's gate behaviour.
     //
-    // Ownership is declared STATICALLY via `commands`. The runtime `ctx.command`
-    // check below is not sufficient on its own: `pm health` inspects the
-    // registered ownership without executing the callback, so an unscoped
-    // registration reads as "runs on every command" and collides with every
-    // other extension that registers a preflight — 21 pairwise
-    // `extension_preflight_override_collision` warnings across the seven fleet
-    // packages that register one. Declaring the command here makes the host
-    // invoke this override only for `todos import`, which is what the runtime
-    // guard already enforced dynamically.
+    // Ownership is declared STATICALLY via `commands` so the HOST scopes
+    // dispatch. An unscoped registration is owned by every command, so pm
+    // invokes it on every command and the callback body is the only thing
+    // stopping it from acting. Declaring the command here means the override is
+    // invoked only for `todos import` — which is what the previous runtime
+    // `ctx.command` guard enforced dynamically, and why that guard is now gone.
+    //
+    // This is about dispatch only. It does NOT change the `pm health`
+    // `extension_preflight_override_collision` warnings: that check does not
+    // inspect declared ownership, so it reports the same pairwise clique over
+    // every extension registering a preflight, scoped or not. Verified before
+    // and after this change; filed upstream as unbraind/pm-cli#971.
     // -----------------------------------------------------------------------
     api.registerPreflight({
       commands: ["todos import"],

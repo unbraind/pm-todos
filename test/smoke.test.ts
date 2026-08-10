@@ -82,11 +82,12 @@ test("extension registers a preflight override", async () => {
 /**
  * The preflight override must declare its command ownership STATICALLY.
  *
- * A runtime `ctx.command !== "todos import"` guard inside the callback scopes
- * dispatch but is invisible to anything that inspects the registration without
- * executing it. An unscoped registration is owned by every command, so the host
- * invokes it on every command and `pm health` reads it as contending with every
- * other extension that registers a preflight.
+ * A runtime `ctx.command !== "todos import"` guard inside the callback keeps the
+ * body from acting, but it cannot stop the host from invoking the override in
+ * the first place: an unscoped registration is owned by every command. Declaring
+ * `commands` moves that decision to the host, which is the behaviour this test
+ * pins. (It has no bearing on the `pm health` collision warnings, which ignore
+ * declared ownership entirely — see unbraind/pm-cli#971.)
  *
  * Asserting the exact array rather than merely that it is non-empty is what
  * makes this test fail on a revert to the bare-callback form, where `commands`
