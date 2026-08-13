@@ -1,0 +1,29 @@
+id: pm-todos-mq3x
+title: Supply a close reason on todos import so completed items land and report partial imports
+description: ""
+type: Issue
+status: closed
+priority: 2
+tags: []
+created_at: "2026-08-13T22:12:06.034Z"
+updated_at: "2026-08-13T22:28:21.359Z"
+closed_at: "2026-08-13T22:21:57.199Z"
+completed_at: "2026-08-13T22:21:57.199Z"
+author: pi-agent
+files[3]{path,scope,note}:
+  index.ts,project,supply a traceable close reason on import create/update of terminal statuses; track dropped lines; route all three handlers through withDroppedReport for partial-import reporting and non-zero exit
+  test/import-close-reason.test.ts,project,"end-to-end regression for issue 49 via real pm subprocess: completed items land with a traceable close reason; partial imports report dropped lines on stdout and exit non-zero; sync refuses to overwrite on drop"
+  test/import-helpers.test.ts,project,in-process unit coverage of isTerminalStatus and buildImportCloseReason and withDroppedReport branch-for-branch
+tests[8]{command,scope,note}:
+  PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global node --test --test-name-pattern='a partial import reports every dropped line on the normal output path and exits non-zero' test/import-close-reason.test.ts,project,a partial import reports every dropped line on the normal output path and exits non-zero
+  "PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global node --test --test-name-pattern='buildImportCloseReason names the status, source file, and line' test/import-helpers.test.ts",project,"buildImportCloseReason names the status, source file, and line"
+  "PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global node --test --test-name-pattern='import creates the completed \\[x\\] item \\(issue #49 regression\\)' test/import-close-reason.test.ts",project,"import creates the completed [x] item (issue #49 regression)"
+  PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global node --test --test-name-pattern='import of an all-completed file closes every item and exits 0' test/import-close-reason.test.ts,project,import of an all-completed file closes every item and exits 0
+  PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global node --test --test-name-pattern='isTerminalStatus is true only for closed and canceled' test/import-helpers.test.ts,project,isTerminalStatus is true only for closed and canceled
+  PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global node --test --test-name-pattern='todos sync does not overwrite the source file when an import line drops' test/import-close-reason.test.ts,project,todos sync does not overwrite the source file when an import line drops
+  PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global node --test --test-name-pattern='withDroppedReport attaches the dropped report and a non-zero exit code' test/import-helpers.test.ts,project,withDroppedReport attaches the dropped report and a non-zero exit code
+  PM_PATH=.agents/pm PM_GLOBAL_PATH=.agents/pm-global node --test --test-name-pattern='withDroppedReport leaves a clean result and the exit code untouched' test/import-helpers.test.ts,project,withDroppedReport leaves a clean result and the exit code untouched
+docs[1]{path,scope,note}:
+  "https://github.com/unbraind/pm-todos/issues/49",project,Import silently drops every completed item and exits 0 because it closes without a reason while require_close_reason is on by default
+close_reason: "Fixed: runTodoImport now attaches a traceable close reason (Imported as <status> from <file> line <n>) whenever it creates or upserts an item into a terminal status, so checked [x] lines land in the tracker instead of being rejected by the default governance.require_close_reason policy. Partial-import contract chosen: import what it can, then report every dropped line in a structured 'dropped' array on the normal output path (stdout JSON) and set a non-zero process exit code via withDroppedReport (used by the todos importer, todos-import legacy importer, and todos sync). sync refuses to overwrite the source file when the import half dropped a line, preserving the original bytes. Verified by 8 tests (4 end-to-end via real pm subprocess, 4 in-process unit) all run green through pm test --run; release:check passes."
+body: ""

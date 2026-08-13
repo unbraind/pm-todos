@@ -822,6 +822,53 @@ function mapPmStatusToChecked(status: string): boolean {
   return status === "closed" || status === "canceled";
 }
 
+/**
+ * Whether a resolved pm status is terminal (closed/canceled). pm refuses to
+ * CREATE or UPDATE an item directly into a terminal status without a close
+ * reason whenever `governance.require_close_reason` is enabled — and that
+ * policy is a built-in default, so this is the out-of-the-box path. The import
+ * create/update paths must therefore attach a close reason for every terminal
+ * status they write, or the item is rejected and the line is lost.
+ */
+export function isTerminalStatus(status: string): boolean {
+  return status === "closed" || status === "canceled";
+}
+
+/**
+ * Build the traceable close reason an imported completed/canceled line carries
+ * into the pm store. The source file and line number are already known at the
+ * call site, so the reason names them — making the immutable closure evidence
+ * reconstructable from the originating TODO file rather than invented. Mirrors
+ * the `Imported from <file> line <n>` provenance string already written to the
+ * item description so the two records agree.
+ */
+export function buildImportCloseReason(status: string, file: string | undefined, lineNumber: number): string {
+  return `Imported as ${status} from ${file ?? "stdin"} line ${lineNumber}`;
+}
+
+/**
+ * Apply the partial-import contract to a handler result object. When no line
+ * was dropped, the base result is returned unchanged and the process exit code
+ * is left untouched (success). When one or more lines were dropped, the
+ * per-line `dropped` report and a non-zero `exit_code` are attached to the
+ * result so they reach the normal output path (stdout), and `process.exitCode`
+ * is set directly so the command exits non-zero.
+ *
+ * Setting `process.exitCode` directly (rather than relying on the result-level
+ * `exit_code` alone) is required because the pm runtime renders an extension
+ * importer's RESULT to stdout but does not propagate a result-level `exit_code`
+ * to the process exit on the importer dispatch path — the action wrapper
+ * renders and returns without reading `exitCode`. A thrown error would exit
+ * non-zero but moves the report to stderr, contradicting the "normal output
+ * path" requirement. Setting the process exit code directly is the only way to
+ * satisfy both: the structured `dropped` report on stdout AND a non-zero exit.
+ */
+export function withDroppedReport<T extends object>(base: T, droppedLines: DroppedTodoLine[]): T {
+  if (droppedLines.length === 0) return base;
+  process.exitCode = EXIT_CODE.GENERIC_FAILURE;
+  return { ...base, dropped: droppedLines, exit_code: EXIT_CODE.GENERIC_FAILURE } as T;
+}
+
 // ---------------------------------------------------------------------------
 // todo.txt format (https://github.com/todotxt/todo.txt)
 // ---------------------------------------------------------------------------
@@ -1877,6 +1924,26 @@ interface TodoImportResult {
   /** Number of existing items updated in place (only meaningful with --upsert). */
   updated?: number;
   previews?: Array<Record<string, unknown>>;
+  /**
+   * Every source line whose pm create/update FAILED, with the file, line,
+   * title, and the pm error that rejected it. A non-empty array means the
+   * import was partial: the tracker now holds a subset of the file and the two
+   * disagree. Callers surface this on the normal output path (the structured
+   * result) and exit non-zero so a partial import is never reported as success.
+   */
+  dropped?: DroppedTodoLine[];
+}
+
+/**
+ * A single source TODO line that did not land in the pm store. `reason` is the
+ * pm error message (stripped of the surrounding recovery envelope) so the user
+ * can see why the line was lost without re-running.
+ */
+interface DroppedTodoLine {
+  file: string;
+  line: number;
+  title: string;
+  reason: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -2050,6 +2117,12 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
   let skipped = 0;
   let updated = 0;
   const previews: Array<Record<string, unknown>> = [];
+  // Every source line whose pm create/update failed. A non-empty array is the
+  // signal that the import was partial and the tracker/file now disagree; the
+  // caller turns it into a non-zero exit and a structured report so the loss is
+  // never silent. (With the close-reason fix below, the normal completed-line
+  // path no longer fails, so this stays empty on the common case.)
+  const dropped: DroppedTodoLine[] = [];
 
   // With --upsert, build the lookup indexes once up front (also in dry-run so
   // the preview reports create vs. update accurately). Without --upsert these
@@ -2184,7 +2257,16 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
           // Only set status when it actually changes. Re-sending a terminal
           // status (closed/canceled) makes `pm update` require --force; omitting
           // it keeps re-import idempotent without forcing a spurious re-close.
-          if (status !== existing.status) updArgs.push("--status", status);
+          if (status !== existing.status) {
+            updArgs.push("--status", status);
+            // pm refuses to transition an item into a terminal status without a
+            // close reason when require_close_reason is on (the default). Supply
+            // the traceable source provenance so an upsert that closes an item
+            // is not rejected — which would otherwise drop the line.
+            if (isTerminalStatus(status)) {
+              updArgs.push("--close-reason", buildImportCloseReason(status, todo.file, todo.lineNumber));
+            }
+          }
           if (priority !== undefined && priority !== "") updArgs.push("--priority", priority);
           if (tags.length > 0) updArgs.push("--tags", tags.join(",")); // --tags replaces
           if (todo.deadline) updArgs.push("--deadline", todo.deadline);
@@ -2227,6 +2309,18 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             "--description", opts.format === "jsonl" ? (todo.description ?? "") : importDescription,
           ];
           if (opts.format === "jsonl" && todo.pmId) spawnArgs.push("--id", todo.pmId);
+          // pm refuses to create an item directly in a terminal status
+          // (closed/canceled) without a close reason when
+          // `governance.require_close_reason` is enabled — and that policy is a
+          // built-in default, not something a fresh workspace opts into. Without
+          // a reason here, every checked `[x]` line is rejected on the normal
+          // out-of-the-box path and the importer silently drops it. The source
+          // file and line are already known at this call site, so attach them as
+          // the immutable closure evidence: a traceable reason a user can tie
+          // back to the originating TODO file.
+          if (isTerminalStatus(status)) {
+            spawnArgs.push("--close-reason", buildImportCloseReason(status, todo.file, todo.lineNumber));
+          }
           if (priority !== undefined && priority !== "") spawnArgs.push("--priority", priority);
           if (tags.length > 0) spawnArgs.push("--tags", tags.join(","));
           if (todo.deadline) spawnArgs.push("--deadline", todo.deadline);
@@ -2263,12 +2357,17 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`${todo.file}:${todo.lineNumber}: ${existing ? "update" : "create"} failed — ${msg}`);
+        // Record the loss in the structured result so it reaches the normal
+        // output path (stdout), not only the stderr line above. `skipped` stays
+        // as the historical count; `dropped` is the per-line report a caller or
+        // script can inspect to see exactly which finished work vanished.
+        dropped.push({ file: todo.file ?? "stdin", line: todo.lineNumber, title: todo.text, reason: msg });
         skipped++;
       }
     }
   }
 
-  return { imported, skipped, updated, previews: opts.dryRun ? previews : undefined };
+  return { imported, skipped, updated, dropped, previews: opts.dryRun ? previews : undefined };
 }
 
 // ---------------------------------------------------------------------------
@@ -2715,6 +2814,7 @@ export default defineExtension({
           reverse: readBoolOption(ctx.options, "reverse"),
         });
 
+        const droppedLines = importResult.dropped ?? [];
         const result = {
           file: filePath,
           format: importFormat,
@@ -2729,7 +2829,23 @@ export default defineExtension({
           console.error(
             `[dry-run] sync ${filePath}: import ${importResult.imported}, update ${importResult.updated ?? 0}, skip ${importResult.skipped}, re-export ${exportCount} item(s).`,
           );
-          return { ...result, previews: importResult.previews };
+          return withDroppedReport({ ...result, previews: importResult.previews }, droppedLines);
+        }
+
+        // If the import half dropped any line, the pm store now holds a subset
+        // of the file. Re-exporting that subset back over the file would
+        // SILENTLY DELETE the dropped lines (the exact data-loss this command
+        // must never cause), so refuse the write, report every dropped line on
+        // the normal output path, and exit non-zero. The original file bytes
+        // are preserved so the user can fix the cause and re-run. This guard
+        // runs BEFORE the empty-result refusal: a drop is the primary
+        // diagnosis, and an empty export caused entirely by drops must not be
+        // misreported as a bare "refusing to replace non-empty file" error.
+        if (droppedLines.length > 0) {
+          console.error(
+            `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, but DROPPED ${droppedLines.length} item(s); NOT writing ${filePath} to avoid losing them (see the 'dropped' field for file/line/reason).`,
+          );
+          return withDroppedReport(result, droppedLines);
         }
 
         if (exportCount === 0 && originalContent.trim() !== "" && !allowEmpty) {
@@ -2810,7 +2926,7 @@ export default defineExtension({
       // with a clear error and leaves the store untouched.
       preflightValidateImportFiles(files, format);
 
-      const { imported, skipped, updated, previews } = runTodoImport({
+      const { imported, skipped, updated, previews, dropped } = runTodoImport({
         files,
         itemType,
         closedAs,
@@ -2838,9 +2954,22 @@ export default defineExtension({
         return { dryRun: true, wouldImport: imported, wouldUpdate: updated ?? 0, wouldSkip: skipped, previews };
       }
 
-      const updPart = upsert ? `, updated ${updated ?? 0}` : "";
-      console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
-      return upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
+      const droppedLines = dropped ?? [];
+      // A partial import (some lines rejected by pm) must NOT exit 0. The
+      // per-line `dropped` report travels in the structured result so it reaches
+      // the normal output path (stdout), and `withDroppedReport` sets the
+      // non-zero process exit code. The stderr line repeats the count so a
+      // human scanning the terminal also sees it next to the import summary.
+      if (droppedLines.length > 0) {
+        console.error(
+          `Imported ${imported}${upsert ? `, updated ${updated ?? 0}` : ""}, but DROPPED ${droppedLines.length} item(s) (see the 'dropped' field for file/line/reason).`,
+        );
+      } else {
+        const updPart = upsert ? `, updated ${updated ?? 0}` : "";
+        console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
+      }
+      const base = upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
+      return withDroppedReport(base, droppedLines);
     }, {
       // Declare the same file argument + flag contracts the handler already
       // reads (ctx.args[0], ctx.options.*). Without them the derived
@@ -2949,7 +3078,7 @@ export default defineExtension({
       const legacyFormat = readImportFormat(ctx.options);
       // Fail-fast syntax gate before any pm-store write.
       preflightValidateImportFiles([resolve(filePath)], legacyFormat);
-      const { imported, skipped } = runTodoImport({
+      const { imported, skipped, dropped } = runTodoImport({
         files: [resolve(filePath)],
         itemType: readStringOption(ctx.options, "type") ?? "Task",
         closedAs,
@@ -2962,7 +3091,16 @@ export default defineExtension({
         format: readImportFormat(ctx.options),
       });
 
-      console.error(`todos-import: done — imported ${imported}, skipped ${skipped}.`);
+      const droppedLines = dropped ?? [];
+      // Mirror the primary importer's contract: a partial legacy import must
+      // not be reported as success. The dropped report rides the structured
+      // result (stdout) and withDroppedReport sets the non-zero exit code.
+      if (droppedLines.length > 0) {
+        console.error(`todos-import: imported ${imported}, but DROPPED ${droppedLines.length} item(s) (see the 'dropped' field).`);
+      } else {
+        console.error(`todos-import: done — imported ${imported}, skipped ${skipped}.`);
+      }
+      return withDroppedReport({ imported, skipped }, droppedLines);
     });
 
     // -----------------------------------------------------------------------
