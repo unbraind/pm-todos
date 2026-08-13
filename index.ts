@@ -847,6 +847,22 @@ export function buildImportCloseReason(status: string, file: string | undefined,
 }
 
 /**
+ * A handler result carrying the partial-import report.
+ *
+ * `Omit` is deliberate rather than a plain intersection: a base result that
+ * already declared `dropped` or `exit_code` would otherwise intersect into an
+ * impossible type (`string & DroppedTodoLine[]`), which typed callers cannot
+ * consume. Omitting first lets the report's own fields win, which matches what
+ * the spread at runtime actually does.
+ */
+export type DroppedReportOf<T> = Omit<T, "dropped" | "exit_code"> & {
+  /** Every source line that could not be imported, in file order. */
+  dropped: DroppedTodoLine[];
+  /** Non-zero exit code echoed into the result so structured consumers see it on the normal output path. */
+  exit_code: number;
+};
+
+/**
  * Apply the partial-import contract to a handler result object. When no line
  * was dropped, the base result is returned unchanged and the process exit code
  * is left untouched (success). When one or more lines were dropped, the
@@ -863,10 +879,13 @@ export function buildImportCloseReason(status: string, file: string | undefined,
  * path" requirement. Setting the process exit code directly is the only way to
  * satisfy both: the structured `dropped` report on stdout AND a non-zero exit.
  */
-export function withDroppedReport<T extends object>(base: T, droppedLines: DroppedTodoLine[]): T {
+export function withDroppedReport<T extends object>(
+  base: T,
+  droppedLines: DroppedTodoLine[],
+): T | DroppedReportOf<T> {
   if (droppedLines.length === 0) return base;
   process.exitCode = EXIT_CODE.GENERIC_FAILURE;
-  return { ...base, dropped: droppedLines, exit_code: EXIT_CODE.GENERIC_FAILURE } as T;
+  return { ...base, dropped: droppedLines, exit_code: EXIT_CODE.GENERIC_FAILURE };
 }
 
 // ---------------------------------------------------------------------------
@@ -1939,7 +1958,7 @@ interface TodoImportResult {
  * pm error message (stripped of the surrounding recovery envelope) so the user
  * can see why the line was lost without re-running.
  */
-interface DroppedTodoLine {
+export interface DroppedTodoLine {
   file: string;
   line: number;
   title: string;

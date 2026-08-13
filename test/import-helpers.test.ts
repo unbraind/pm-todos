@@ -72,15 +72,15 @@ test("withDroppedReport attaches the dropped report and a non-zero exit code", (
   try {
     const base = { imported: 1, skipped: 1 };
     const dropped = [sampleDroppedLine()];
-    // The helper's static return type is `T` (the base shape) so the
-    // runtime-added `dropped`/`exit_code` fields are invisible to the checker;
-    // widen through `unknown` to assert them without resorting to `any`.
-    const out = withDroppedReport(base, dropped) as unknown as {
-      imported: number;
-      skipped: number;
-      dropped: typeof dropped;
-      exit_code: number;
-    };
+    // Accessed WITHOUT a cast on purpose. The helper used to be declared as
+    // returning `T`, so the runtime-added `dropped`/`exit_code` fields were
+    // invisible to the checker and this assertion needed to widen through
+    // `unknown`. Since `dist/index.d.ts` is published, that gap was real for
+    // downstream consumers too. The declaration now returns
+    // `T | DroppedReportOf<T>`, so narrowing is all that is required — and this
+    // test failing to compile is the signal that the published type regressed.
+    const out = withDroppedReport(base, dropped);
+    assert.ok("dropped" in out, "the report branch must be distinguishable by a property check");
     assert.equal(out.imported, 1);
     assert.equal(out.skipped, 1);
     assert.deepEqual(out.dropped, dropped);
