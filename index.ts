@@ -2816,24 +2816,60 @@ export default defineExtension({
           typeFilter: syncFilter?.type,
         });
 
+        // Read the dropped report BEFORE the re-export. The import half has
+        // already mutated the pm store by this point, so the record of which
+        // lines were lost is the only thing standing between the user and a
+        // silent partial write. `buildTodoMarkdown` reads pm and parses JSON,
+        // both of which can throw; letting it run first meant a re-export
+        // failure propagated a bare error and took the dropped report with it,
+        // leaving the store modified and no record of what was dropped.
+        const droppedLines = importResult.dropped ?? [];
+
         // Re-export the reconciled pm state back to the same file. The export
         // honours --filter/--group-by/--metadata/--priority-map so the written
         // file matches the user's preferred layout. Under --dry-run nothing is
         // written to pm or disk; the export is computed only to report the
         // post-sync row count.
-        const { markdown: reexport, count: exportCount } = buildTodoMarkdown({
-          statusFilter: syncFilter?.status,
-          typeFilter: syncFilter?.type,
-          pmRoot: ctx.pm_root,
-          format: exportFormat,
-          groupBy: readGroupBy(ctx.options),
-          sort: readSort(ctx.options),
-          metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
-          priorityMap: readPriorityMap(ctx.options),
-          reverse: readBoolOption(ctx.options, "reverse"),
-        });
+        let reexport: string;
+        let exportCount: number;
+        try {
+          ({ markdown: reexport, count: exportCount } = buildTodoMarkdown({
+            statusFilter: syncFilter?.status,
+            typeFilter: syncFilter?.type,
+            pmRoot: ctx.pm_root,
+            format: exportFormat,
+            groupBy: readGroupBy(ctx.options),
+            sort: readSort(ctx.options),
+            metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
+            priorityMap: readPriorityMap(ctx.options),
+            reverse: readBoolOption(ctx.options, "reverse"),
+          }));
+        } catch (error) {
+          // With nothing dropped there is no report to protect, so the export
+          // failure is the whole story and propagates unchanged. With lines
+          // dropped, the report outranks the export error: the file is left
+          // untouched either way, but only this path tells the user which lines
+          // the store is now missing.
+          if (droppedLines.length === 0) throw error;
+          const reason = error instanceof Error ? error.message : String(error);
+          console.error(
+            `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, but DROPPED ${droppedLines.length} item(s), and the re-export then failed (${reason}); NOT writing ${filePath} (see the 'dropped' field for file/line/reason).`,
+          );
+          return withDroppedReport(
+            {
+              file: filePath,
+              format: importFormat,
+              imported: importResult.imported,
+              updated: importResult.updated ?? 0,
+              skipped: importResult.skipped,
+              reexported: 0,
+              dryRun,
+              reexport_error: reason,
+            },
+            droppedLines,
+          );
+        }
 
-        const droppedLines = importResult.dropped ?? [];
         const result = {
           file: filePath,
           format: importFormat,
