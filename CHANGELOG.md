@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Supply a close reason on todos import so completed items land and report partial imports ([pm-todos-mq3x](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-mq3x.toon))
+
 ## 2026.8.11 - 2026-08-11
 
 ### Fixed
