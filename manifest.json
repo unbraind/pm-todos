@@ -4,6 +4,7 @@
   "description": "TODO round-trip. Import/export/sync markdown checkboxes, todo.txt, jsonl, checkbox, and pi coding-agent todo JSON as pm items.",
   "author": "@unbraind",
   "entry": "./dist/index.js",
+  "pm_min_version": "2026.8.15",
   "priority": 50,
   "capabilities": [
     "commands",
