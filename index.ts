@@ -2080,12 +2080,77 @@ function describePmReadFailure(error: Error, limitBytes: number): string {
   return `pm read failed: ${error.message}`;
 }
 
+/**
+ * Subset of the `pm list-all --json` envelope that reports whether the answer is
+ * the whole workspace.
+ */
+interface ListAllEnvelope {
+  count?: number;
+  total?: number;
+  truncated?: boolean;
+  has_more?: boolean;
+  completeness?: { status?: string };
+  omission_receipt?: { has_omissions?: boolean };
+}
+
+/**
+ * Throw unless a `pm list-all` envelope represents the entire workspace.
+ *
+ * Both readers below take `.items` and act on it as if it were everything. That
+ * assumption was silently false under pm-cli 2026.8.14, which returned 10 items
+ * of a 682-item workspace with `truncated: true` — the upsert index then missed
+ * keys and created duplicates, and the exporter wrote a TODO file missing 98% of
+ * its rows. Neither reported anything wrong, because a short list and a small
+ * workspace are indistinguishable once the receipt is discarded.
+ *
+ * Four independent signals each mean "these are not all the rows". An absent
+ * `completeness` object counts as incomplete: an answer that cannot be verified
+ * is not a verified answer.
+ *
+ * Refusing is the point. Returning the partial list, or warning and continuing,
+ * would preserve exactly the failure this exists to stop.
+ *
+ * @param envelope - Parsed `pm list-all --json` output.
+ * @param usedFor - What the read feeds, named in the error so the operator knows
+ *                  which operation was refused.
+ * @throws {CommandError} When any incompleteness signal is set.
+ */
+export function assertListAllComplete(envelope: unknown, usedFor: string): void {
+  // A non-object, or a bare array, carries no receipt to contradict. Both
+  // readers below already handle a bare array (`Array.isArray(parsed)`), and
+  // refusing it here would reject the one shape that cannot be partial-with-a-
+  // receipt — it is either the whole answer or a parse problem the callers
+  // handle. Only an ENVELOPE can claim to be incomplete.
+  if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) return;
+  const env = envelope as ListAllEnvelope;
+  const scale = `${env.count ?? "?"} of ${env.total ?? "?"} item(s) returned`;
+  const reason = env.truncated === true
+    ? `the row list was truncated (${scale})`
+    : env.has_more === true
+      ? `more rows exist past the returned page (${scale})`
+      : env.completeness?.status !== "complete"
+        ? `completeness.status is ${env.completeness?.status === undefined ? "absent" : env.completeness.status}, not "complete" (${scale})`
+        : env.omission_receipt?.has_omissions === true
+          ? `field groups were omitted from the projection (${scale})`
+          : null;
+  if (reason) {
+    throw new CommandError(
+      `Refusing an incomplete \`pm list-all\` answer for ${usedFor}: ${reason}. `
+        + "Acting on a partial workspace here would silently produce a partial result.",
+    );
+  }
+}
+
 /** Fetch current workspace items via `pm list-all --json` (for the upsert index). */
 function readPmItemsForUpsert(pmRoot: string): PmItem[] {
   const maxBuffer = pmJsonMaxBuffer();
   const result = spawnSync(
     "pm",
-    ["--path", pmRoot, "--json", "list-all", "--limit", "10000"],
+    // No `--limit`. Omitting it is what makes `list-all` return every row, and
+    // with the completeness gate below a row ceiling would convert every
+    // workspace past that size from a large read into a hard refusal of
+    // `--upsert` rather than into a larger read.
+    ["--path", pmRoot, "--json", "list-all"],
     { encoding: "utf-8", maxBuffer },
   );
   if (result.error) {
@@ -2096,6 +2161,7 @@ function readPmItemsForUpsert(pmRoot: string): PmItem[] {
   }
   try {
     const parsed = JSON.parse(result.stdout);
+    assertListAllComplete(parsed, "the --upsert key index");
     const items = Array.isArray(parsed) ? parsed : parsed.items ?? parsed.results ?? [];
     return items as PmItem[];
   } catch {
@@ -2432,15 +2498,24 @@ export function applyExportOrder(
 
 /** Fetch + filter pm items via `pm list-all --json`. */
 function fetchPmItems(opts: TodoExportOptions): PmItem[] {
+  const maxBuffer = pmJsonMaxBuffer();
   const result = spawnSync(
     "pm",
     ["--path", opts.pmRoot, "list-all", "--json"],
-    { encoding: "utf-8" },
+    // Without an explicit maxBuffer this inherits Node's 1 MiB default, and an
+    // overrun kills the child with `status: null` and EMPTY stderr — which the
+    // check below would report as "pm list-all failed" with nothing to act on.
+    { encoding: "utf-8", maxBuffer },
   );
+  if (result.error) {
+    throw new CommandError(describePmReadFailure(result.error, maxBuffer));
+  }
   if (result.status !== 0) {
     throw new CommandError(result.stderr || "pm list-all failed");
   }
-  let items: PmItem[] = JSON.parse(result.stdout).items ?? [];
+  const parsed = JSON.parse(result.stdout);
+  assertListAllComplete(parsed, "the TODO export");
+  let items: PmItem[] = parsed.items ?? [];
   if (opts.statusFilter) items = items.filter((i) => i.status === opts.statusFilter);
   if (opts.typeFilter) items = items.filter((i) => i.type === opts.typeFilter);
   return applyExportOrder(items, opts.sort, opts.reverse);

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A truncated list-all answer is consumed as if it were the whole workspace ([pm-todos-iw4m](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-iw4m.toon))
+
 ## 2026.8.14 - 2026-08-14
 
 ### Fixed
