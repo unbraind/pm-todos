@@ -2141,6 +2141,28 @@ export function assertListAllComplete(envelope: unknown, usedFor: string): void 
   }
 }
 
+/**
+ * Take the item rows out of a parsed `pm list-all --json` response.
+ *
+ * Handles the three shapes the readers can legitimately receive: an envelope
+ * with `items`, an envelope with `results`, and a bare array. The bare array
+ * matters because {@link assertListAllComplete} exempts it (an array carries no
+ * receipt to contradict), so a reader that only knows how to read `.items` off
+ * an object silently produced ZERO rows for it — an empty export reported as a
+ * success, which is precisely the failure the completeness gate exists to stop,
+ * reintroduced one line below the gate.
+ *
+ * @param parsed - Parsed `pm list-all --json` output.
+ * @returns The item rows, or an empty array when the response carries none.
+ */
+export function readItemsFromListAll(parsed: unknown): PmItem[] {
+  if (Array.isArray(parsed)) return parsed as PmItem[];
+  if (parsed === null || typeof parsed !== "object") return [];
+  const envelope = parsed as { items?: unknown; results?: unknown };
+  const rows = envelope.items ?? envelope.results;
+  return Array.isArray(rows) ? (rows as PmItem[]) : [];
+}
+
 /** Fetch current workspace items via `pm list-all --json` (for the upsert index). */
 function readPmItemsForUpsert(pmRoot: string): PmItem[] {
   const maxBuffer = pmJsonMaxBuffer();
@@ -2159,14 +2181,19 @@ function readPmItemsForUpsert(pmRoot: string): PmItem[] {
   if (result.status !== 0) {
     throw new CommandError(result.stderr || "pm list-all failed (needed for --upsert)");
   }
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(result.stdout);
-    assertListAllComplete(parsed, "the --upsert key index");
-    const items = Array.isArray(parsed) ? parsed : parsed.items ?? parsed.results ?? [];
-    return items as PmItem[];
+    parsed = JSON.parse(result.stdout);
   } catch {
     throw new CommandError("Could not parse `pm list-all --json` output (needed for --upsert).");
   }
+  // Deliberately OUTSIDE the parse try/catch. Inside it, the CommandError this
+  // throws was caught by that bare `catch` and replaced with "Could not parse",
+  // so an incomplete-envelope refusal surfaced as a parse error and the operator
+  // lost the signal naming and the count-versus-total scale — the diagnostic
+  // this gate exists to produce.
+  assertListAllComplete(parsed, "the --upsert key index");
+  return readItemsFromListAll(parsed);
 }
 
 /**
@@ -2515,7 +2542,7 @@ function fetchPmItems(opts: TodoExportOptions): PmItem[] {
   }
   const parsed = JSON.parse(result.stdout);
   assertListAllComplete(parsed, "the TODO export");
-  let items: PmItem[] = parsed.items ?? [];
+  let items: PmItem[] = readItemsFromListAll(parsed);
   if (opts.statusFilter) items = items.filter((i) => i.status === opts.statusFilter);
   if (opts.typeFilter) items = items.filter((i) => i.type === opts.typeFilter);
   return applyExportOrder(items, opts.sort, opts.reverse);
