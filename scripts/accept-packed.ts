@@ -106,6 +106,7 @@ try {
     { name: "npm-current", manager: "npm", hostVersion: developmentVersion },
     { name: "bun-current", manager: "bun", hostVersion: developmentVersion },
     { name: "npm-minimum", manager: "npm", hostVersion: minimumVersion },
+    { name: "bun-minimum", manager: "bun", hostVersion: minimumVersion },
   ];
   const receipts: AcceptanceReceipt[] = [];
 
@@ -158,6 +159,9 @@ try {
     }
     const rows = readFileSync(output, "utf8").split(/\r?\n/u).filter((line) => line.length > 0)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
+    if (rows.length !== exportReceipt.exported) {
+      throw new Error(`${scenario.name} export file has ${String(rows.length)} rows but the receipt reports ${String(exportReceipt.exported)}`);
+    }
     const titles = new Set(rows.map((row) => row.title));
     if (!titles.has(existingTitle) || !titles.has(importedTitle)) {
       throw new Error(`${scenario.name} complete export omitted a real tracker fixture`);

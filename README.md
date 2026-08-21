@@ -398,8 +398,8 @@ checks, production dependency audit, package packing, deterministic
 pm-changelog validation, a canonical-reader integration acceptance, and a fresh
 packed-extension matrix. The integration acceptance proves that upsert and
 export each issue one exact complete-corpus read. The packed matrix uses
-npm/npx and Bun/bunx against the current development pm host plus npm/npx
-against the declared minimum host, creates real tracker data, exercises upsert
+npm/npx and Bun/bunx against both the current development pm host and the
+declared minimum host, creates real tracker data, exercises upsert
 import and complete JSONL export, and rejects deprecated-command diagnostics.
 Independent honest all-source coverage and reachable-history privacy items
 remain authoritative readiness gates; passing the packed matrix alone is not

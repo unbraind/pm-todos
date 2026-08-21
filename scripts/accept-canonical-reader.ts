@@ -40,12 +40,13 @@ function completeEnvelope(): Record<string, unknown> {
 test("canonical reader acceptance: upsert and export each issue exactly one complete-list read", async () => {
   const root = mkdtempSync(join(tmpdir(), "pm-todos-canonical-reader-"));
   const fakePmScript = join(root, "fake-pm.mjs");
-  const fakePm = join(root, process.platform === "win32" ? "pm.cmd" : "pm");
+  const fakePm = join(root, "pm");
   const argsFile = join(root, "args.jsonl");
   const input = join(root, "TODO.md");
   const previousPath = process.env.PATH;
   const previousResponse = process.env.PM_TODOS_FAKE_RESPONSE;
   const previousArgsFile = process.env.PM_TODOS_ARGS_FILE;
+  const previousPackageRoot = process.env.PM_CLI_PACKAGE_ROOT;
   writeFileSync(input, "# TODO\n\n- [ ] Tracked TODO\n", "utf8");
   writeFileSync(fakePmScript, `#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
@@ -53,15 +54,15 @@ const args = process.argv.slice(2);
 appendFileSync(process.env.PM_TODOS_ARGS_FILE, JSON.stringify(args) + "\\n");
 process.stdout.write(args.includes("list") ? process.env.PM_TODOS_FAKE_RESPONSE : '{"item":{"id":"fixture-1"}}');
 `, "utf8");
-  if (process.platform === "win32") {
-    writeFileSync(fakePm, '@node "%~dp0\\fake-pm.mjs" %*\r\n', "utf8");
-  } else {
+  writeFileSync(join(root, "package.json"), JSON.stringify({ bin: { pm: "fake-pm.mjs" } }), "utf8");
+  if (process.platform !== "win32") {
     writeFileSync(fakePm, readFileSync(fakePmScript, "utf8"), "utf8");
     chmodSync(fakePm, 0o755);
   }
   process.env.PATH = `${root}${delimiter}${previousPath ?? ""}`;
   process.env.PM_TODOS_FAKE_RESPONSE = JSON.stringify(completeEnvelope());
   process.env.PM_TODOS_ARGS_FILE = argsFile;
+  process.env.PM_CLI_PACKAGE_ROOT = root;
 
   const harness = await createExtensionTestHarness(extension, {
     name: "pm-todos",
@@ -98,6 +99,8 @@ process.stdout.write(args.includes("list") ? process.env.PM_TODOS_FAKE_RESPONSE 
     else process.env.PM_TODOS_FAKE_RESPONSE = previousResponse;
     if (previousArgsFile === undefined) delete process.env.PM_TODOS_ARGS_FILE;
     else process.env.PM_TODOS_ARGS_FILE = previousArgsFile;
+    if (previousPackageRoot === undefined) delete process.env.PM_CLI_PACKAGE_ROOT;
+    else process.env.PM_CLI_PACKAGE_ROOT = previousPackageRoot;
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -55,23 +55,5 @@ jobs:
           # still exiting successfully.
           ./node_modules/.bin/pm health --strict-exit
 
-      - name: Type check
-        run: npm run check
-
-      - name: Verify complete docstring coverage
-        run: npm run docstring
-
-      - name: Test with coverage gate
-        run: npm run coverage
-
-      - name: Production dependency audit
-        run: npm run audit:prod
-
-      - name: Verify npm package contents
-        run: npm run pack:dry-run
-
-      - name: Verify generated changelog
-        run: npm run changelog:check
-
-      - name: Verify Bun can install the package graph
-        run: bun install --no-save
+      - name: Run mandatory release gate
+        run: npm run release:check

@@ -6,7 +6,7 @@ status: open
 priority: 1
 tags: []
 created_at: "2026-07-26T15:23:35.470Z"
-updated_at: "2026-08-21T09:28:53.787Z"
+updated_at: "2026-08-21T09:48:36.026Z"
 author: codex
 estimated_minutes: 480
 acceptance_criteria: "c8 reports 100 percent statements, branches, functions, and lines for index.ts; package release:check enforces all four thresholds; tests use real throwaway trackers and installed extension dispatch where integration behavior matters; mutation or equivalent anti-cheat evidence proves assertions detect regressions; tests remain deterministic and avoid duplicated cases"
@@ -14,18 +14,20 @@ severity: high
 environment: "pm-todos 2026.7.26, Node 22, TypeScript 7, c8 12"
 repro_steps: Run NPM_CONFIG_USERCONFIG=/dev/null npx --yes c8@12.0.0 --all --include=dist/index.js --reporter=text node --test dist-test/*.js and inspect the aggregate row.
 expected_result: All maintained TypeScript source is behaviorally exercised and the mandatory release gate rejects any metric below 100 percent.
-actual_result: "Current measured baseline on 2026-08-21 after the canonical-reader implementation is 69.11 percent lines, 86.84 percent branches, and 76.52 percent functions for index.ts. The integration acceptance runs separately because activating the full extension changes the V8 branch denominator non-monotonically; it remains mandatory in release:check. The gate measures only index.ts; scripts/coverage-gate.ts, scripts/docstring-gate.ts, scripts/update-release-version.ts, scripts/accept-packed.ts, scripts/accept-canonical-reader.ts, and scripts/prepare-merge-driver.mjs are executable tooling outside coverage. The repository has no ESLint, jscpd, Semgrep, Trivy, or Codecov configuration. No actual TypeScript any annotations were found by the scoped syntax scan. This item remains an independent merge/publication blocker."
+actual_result: "Current measured configured baseline on 2026-08-21 after secure host-owned CLI resolution is 68.69 percent lines, 86.84 percent branches, and 75.86 percent functions for index.ts. The integration and packed acceptances run separately and remain mandatory in release:check; CI now invokes that complete release gate. The configured gate measures only index.ts; scripts/coverage-gate.ts, scripts/docstring-gate.ts, scripts/update-release-version.ts, scripts/accept-packed.ts, scripts/accept-canonical-reader.ts, and scripts/prepare-merge-driver.mjs are executable tooling outside coverage. The repository has no ESLint, jscpd, Semgrep, Trivy, or Codecov configuration. No actual TypeScript any annotations were found by the scoped syntax scan. This item remains an independent merge/publication blocker."
 component: testing
 customer_impact: "Untested command, importer, exporter, and failure branches can regress without blocking a release."
 notes[1]{created_at,author,text}:
   "2026-08-21T09:16:39.479Z",codex,Ninth-tranche quality audit separates a passing configured ratchet from the mandatory all-source 100/100/100/100 claim. The latter is not met and must not be implied by CI green status.
-files[5]{path,scope,note}:
-  index.ts,project,source coverage target
+files[7]{path,scope,note}:
+  index.ts,project,Configured runtime source coverage target
   scripts/coverage-gate.ts,project,Executable tooling outside configured coverage
   scripts/docstring-gate.ts,project,Executable tooling outside configured coverage
   scripts/update-release-version.ts,project,Executable tooling outside configured coverage
+  scripts/accept-packed.ts,project,Executable acceptance tooling outside configured coverage
+  scripts/accept-canonical-reader.ts,project,Executable integration tooling outside configured coverage
   scripts/prepare-merge-driver.mjs,project,JavaScript tooling outside TypeScript and configured coverage
 tests[2]{command,scope,timeout_seconds,note}:
-  NPM_CONFIG_USERCONFIG=/dev/null npx --yes c8@12.0.0 --all --include=dist/index.js --reporter=text node --test dist-test/*.js,project,120,honest all-source baseline command
-  npm run coverage,project,120,Configured index.ts baseline 69.11 lines 86.84 branches 76.52 functions
+  NPM_CONFIG_USERCONFIG=/dev/null npx --yes c8@12.0.0 --all --include=dist/index.js --reporter=text node --test dist-test/*.js,project,120,Legacy index.ts-only baseline command; not all-source evidence
+  npm run coverage,project,120,Configured index.ts-only baseline 68.69 lines 86.84 branches 75.86 functions
 body: "Do not ignore source paths, lower thresholds, use vacuous assertions, or duplicate artificial tests merely to satisfy counters. Exercise public behavior and real SDK-host dispatch where applicable."

@@ -22,6 +22,7 @@ const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "
 const extensionManifest = JSON.parse(readFileSync(resolve(repoRoot, "manifest.json"), "utf8")) as ExtensionManifest;
 const ciWorkflow = readFileSync(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8");
 const releaseWorkflow = readFileSync(resolve(repoRoot, ".github/workflows/release.yml"), "utf8");
+const packedAcceptance = readFileSync(resolve(repoRoot, "scripts/accept-packed.ts"), "utf8");
 const cliPackage = "@unbrained/pm-cli";
 const exactVersion = /^\d+\.\d+\.\d+$/u;
 const minimumHost = "2026.8.20";
@@ -56,6 +57,7 @@ test("the complete raw manifest satisfies minimum and development SDK hosts", ()
 
 test("CI and release automation use the exact Node floor", () => {
   assert.match(ciWorkflow, /node-version:\s*\[22\.18\.0, 26\]/u);
+  assert.match(ciWorkflow, /run:\s*npm run release:check/u);
   assert.match(releaseWorkflow, /node-version:\s*22\.18\.0/u);
 });
 
@@ -80,6 +82,9 @@ test("the mandatory release gate includes canonical-reader and packed-host accep
   assert.equal(packageJson.scripts?.["accept:packed"], "node scripts/accept-packed.ts");
   assert.match(packageJson.scripts?.["release:check"] ?? "", /npm run accept:canonical-reader/u);
   assert.match(packageJson.scripts?.["release:check"] ?? "", /npm run accept:packed/u);
+  for (const scenario of ["npm-current", "bun-current", "npm-minimum", "bun-minimum"]) {
+    assert.match(packedAcceptance, new RegExp(`name: "${scenario}"`, "u"));
+  }
 });
 
 test("calendar versions compare numerically rather than lexicographically", () => {

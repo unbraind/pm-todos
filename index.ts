@@ -9,8 +9,8 @@ import type {
 } from "@unbrained/pm-cli/sdk/authoring";
 import { certifyCompleteListResult, EXIT_CODE, inspectCompleteListResult } from "@unbrained/pm-cli/sdk";
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
-import { resolve, join, relative, sep } from "node:path";
-import { spawnSync } from "node:child_process";
+import { isAbsolute, resolve, join, relative, sep } from "node:path";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
 
 
@@ -2073,6 +2073,44 @@ function describePmReadFailure(error: Error, limitBytes: number): string {
   return `pm read failed: ${error.message}`;
 }
 
+/**
+ * Run the host-owned pm CLI without routing workspace arguments through a shell.
+ *
+ * POSIX hosts can resolve the executable shim directly through `PATH`. Windows
+ * cannot execute npm `.cmd` shims through shell-free `spawnSync`, so the pm host
+ * publishes its package root and this runner validates the declared `bin.pm`
+ * entry before invoking it with the current Node executable.
+ */
+function runPmCommand(args: string[], maxBuffer = 64 * 1024 * 1024): SpawnSyncReturns<string> {
+  let command = "pm";
+  let commandArgs = args;
+  if (process.platform === "win32") {
+    const configuredRoot = process.env.PM_CLI_PACKAGE_ROOT;
+    if (typeof configuredRoot !== "string" || configuredRoot.trim() === "") {
+      throw new CommandError("The pm host did not publish PM_CLI_PACKAGE_ROOT for a secure Windows CLI relaunch.");
+    }
+    const packageRoot = resolve(configuredRoot.trim());
+    let packageMetadata: unknown;
+    try {
+      packageMetadata = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+    } catch {
+      throw new CommandError("Could not read the installed pm CLI package metadata.");
+    }
+    const bin = isRecord(packageMetadata) && isRecord(packageMetadata.bin) ? packageMetadata.bin.pm : undefined;
+    if (typeof bin !== "string" || bin.trim() === "") {
+      throw new CommandError("The installed pm CLI package does not declare its pm executable.");
+    }
+    const cliEntry = resolve(packageRoot, bin);
+    const relativeEntry = relative(packageRoot, cliEntry);
+    if (relativeEntry.startsWith("..") || isAbsolute(relativeEntry)) {
+      throw new CommandError("The installed pm CLI package declares an executable outside its package root.");
+    }
+    command = process.execPath;
+    commandArgs = [cliEntry, ...args];
+  }
+  return spawnSync(command, commandArgs, { encoding: "utf8", maxBuffer });
+}
+
 /** Render an untrusted receipt value while preserving missing evidence. */
 function describeReceiptValue(value: unknown): string {
   return value === undefined ? "<missing>" : String(JSON.stringify(value));
@@ -2106,9 +2144,10 @@ function supplementalCompleteListFindings(record: Record<string, unknown>): stri
       findings.push(`omission_receipt.omitted_field_groups=${describeReceiptValue(omission.omitted_field_groups)}`);
     }
   }
-  const readOutput = isRecord(record.read_output) ? record.read_output : undefined;
+  const rawReadOutput = record.read_output;
+  const readOutput = isRecord(rawReadOutput) ? rawReadOutput : undefined;
   if (readOutput === undefined) {
-    findings.push("read_output=<missing>");
+    findings.push(`read_output=${describeReceiptValue(rawReadOutput)}`);
   } else {
     for (const [field, expected] of [
       ["command", "list"], ["within_budget", true], ["strings_compacted", false],
@@ -2122,7 +2161,7 @@ function supplementalCompleteListFindings(record: Record<string, unknown>): stri
     }
     const dimensions = readOutput.requested_dimensions;
     if (!Array.isArray(dimensions)) {
-      findings.push("read_output.requested_dimensions=<missing>");
+      findings.push(`read_output.requested_dimensions=${describeReceiptValue(dimensions)}`);
     } else {
       for (const dimension of ["include", "amount", "cost"] as const) {
         if (!dimensions.includes(dimension)) findings.push(`read_output.requested_dimensions missing ${dimension}`);
@@ -2186,11 +2225,7 @@ export function assertListAllComplete(envelope: unknown, usedFor: string): void 
 /** Fetch current workspace items for either upsert indexing or TODO export. */
 function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
   const maxBuffer = pmJsonMaxBuffer();
-  const result = spawnSync(
-    "pm",
-    ["--pm-path", pmRoot, ...COMPLETE_LIST_COMMAND_ARGUMENTS],
-    { encoding: "utf-8", maxBuffer },
-  );
+  const result = runPmCommand(["--pm-path", pmRoot, ...COMPLETE_LIST_COMMAND_ARGUMENTS], maxBuffer);
   if (result.error) {
     throw new CommandError(describePmReadFailure(result.error, maxBuffer));
   }
@@ -2411,7 +2446,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             updArgs.push("--description", todojsonDescription as string);
           }
 
-          const result = spawnSync("pm", updArgs, { encoding: "utf-8" });
+          const result = runPmCommand(updArgs);
           if (result.status !== 0) {
             throw new Error(result.stderr || "pm update failed");
           }
@@ -2457,7 +2492,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             spawnArgs.push(...buildJsonlImportFieldArgs(todo));
           }
 
-          const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
+          const result = runPmCommand(spawnArgs);
           if (result.status !== 0) {
             throw new Error(result.stderr || "pm create failed");
           }
