@@ -6,7 +6,7 @@ status: in_progress
 priority: 1
 tags[5]: agents,cli-ux,complete-corpus,latest-cli,multi-agent
 created_at: "2026-08-21T09:04:11.361Z"
-updated_at: "2026-08-21T09:50:59.947Z"
+updated_at: "2026-08-21T09:54:25.241Z"
 author: codex
 estimated_minutes: 420
 acceptance_criteria: "Create one shared canonical list reader used by upsert and export; assert the exact argv and exactly one read per operation; use public SDK inspection/certification for shared policy and supplement only verified SDK gaps; reject missing/contradictory unreadable, omission, read-output, budget, count and identity evidence; exact-pin development pm CLI/SDK 2026.8.21 while proving a 2026.8.20 minimum behavior floor; add mandatory fresh packed npm-current, Bun-current, npm-minimum, and Bun-minimum acceptance using real data; pass all existing and new tests, docstring gate, production audit, clean pack, deterministic changelog, PM validation, merge dry-run, duplicate scan and exact-head CI/review; retain separate pm-todos-qpst and pm-todos-oz1n blockers rather than overclaiming release readiness"
@@ -17,7 +17,7 @@ actual_result: "Implementation now uses one canonical strict full doubly-unbound
 affected_version: pm-todos 2026.8.16 with pm CLI 2026.8.21
 component: TODO import/export tracker reads
 customer_impact: Partial or compacted tracker reads can make upsert create duplicates or export omit tasks while appearing successful; deprecated diagnostics and stale host assumptions make agent automation noisy and brittle.
-notes[4]:
+notes[5]:
   - created_at: "2026-08-21T09:18:39.859Z"
     author: codex
     text: "Ninth-tranche measured evidence: npm test 157/157 pass in 46 seconds; configured coverage 69.11 lines,86.84 branches,76.52 functions; packed three-host matrix green with two exported fixtures per scenario; GitHub Dependabot and secret-scanning open-alert counts are zero, while code scanning is not configured. Current tracked privacy scan has zero absolute home paths, private IPs, or private keys; full reachable history is not clear and is tracked separately."
@@ -31,6 +31,9 @@ notes[4]:
   - created_at: "2026-08-21T09:50:59.947Z"
     author: codex
     text: "CodeRabbit review 4991971714 produced six threads. Fixed index-only coverage labels and inventory; wrong-typed receipt diagnostics; shell-free Windows host CLI resolution; Bun minimum-host acceptance; exact JSONL row-count reconciliation; and mandatory CI release:check. Retained the 2026.8.20 floor because fresh packed npm and Bun scenarios both prove the SDK exports and full receipt contract on that exact host."
+  - created_at: "2026-08-21T09:54:25.241Z"
+    author: codex
+    text: "Expanded CI exposed npm 10 behavior on Node 22.18.0: lifecycle output preceded npm pack --json even with the subcommand --ignore-scripts flag and made the receipt unparsable. The packed gate now also sets both npm ignore-scripts environment spellings; the four-scenario local rerun is green and exact-head CI must reconfirm."
 files[7]{path,scope,note}:
   index.ts,project,Canonical complete-list reader and SDK receipt validation
   test/list-all-completeness.test.ts,project,Fail-closed envelope and exact argv unit tests

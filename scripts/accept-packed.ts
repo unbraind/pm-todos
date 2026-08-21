@@ -91,8 +91,15 @@ try {
   const packRoot = join(temporaryRoot, "pack");
   mkdirSync(packRoot);
   // release:check runs a lifecycle-enabled pack dry-run immediately before this
-  // gate. Ignore scripts here so prepare stdout cannot corrupt npm's JSON receipt.
-  const packed = run(npmCommand, ["pack", "--json", "--ignore-scripts", "--pack-destination", packRoot], repoRoot);
+  // gate. Set both npm's CLI flag and environment controls because the npm
+  // bundled with Node 22 otherwise allowed prepare stdout to corrupt --json in
+  // GitHub Actions despite the subcommand flag being present.
+  const packed = run(
+    npmCommand,
+    ["pack", "--json", "--ignore-scripts", "--pack-destination", packRoot],
+    repoRoot,
+    { ...cleanEnvironment, npm_config_ignore_scripts: "true", NPM_CONFIG_IGNORE_SCRIPTS: "true" },
+  );
   const packedEntries: unknown = JSON.parse(packed.stdout);
   const packedEntry = Array.isArray(packedEntries) && packedEntries.length === 1 ? packedEntries[0] : undefined;
   const packedName = packedEntry !== null && typeof packedEntry === "object"
