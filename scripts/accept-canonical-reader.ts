@@ -70,6 +70,13 @@ process.stdout.write(args.includes("list") ? process.env.PM_TODOS_FAKE_RESPONSE 
   try {
     const exported = await harness.runExporter({ exporter: "todos", pmRoot: "/tracker", options: { format: "jsonl" } });
     assert.equal((exported.result as Record<string, unknown>).exported, 1);
+    const exportInvocations = readFileSync(argsFile, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as string[]);
+    assert.deepEqual(
+      exportInvocations.filter((args) => args.includes("list")),
+      [["--pm-path", "/tracker", ...COMPLETE_LIST_COMMAND_ARGUMENTS]],
+      "export must issue exactly one canonical complete-list read",
+    );
     const imported = await harness.runImporter({
       importer: "todos",
       pmRoot: "/tracker",
@@ -79,7 +86,7 @@ process.stdout.write(args.includes("list") ? process.env.PM_TODOS_FAKE_RESPONSE 
     const invocations = readFileSync(argsFile, "utf8").trim().split("\n")
       .map((line) => JSON.parse(line) as string[]);
     const reads = invocations.filter((args) => args.includes("list"));
-    assert.equal(reads.length, 2, "one read is required for export and one for upsert import");
+    assert.equal(reads.length, 2, "upsert import must add exactly one canonical read after export");
     for (const args of reads) {
       assert.deepEqual(args, ["--pm-path", "/tracker", ...COMPLETE_LIST_COMMAND_ARGUMENTS]);
     }
