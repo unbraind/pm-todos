@@ -7,9 +7,10 @@ import type {
   ImportExportContext,
   PreflightOverrideContext,
 } from "@unbrained/pm-cli/sdk/authoring";
+import { certifyCompleteListResult, EXIT_CODE, inspectCompleteListResult } from "@unbrained/pm-cli/sdk";
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
-import { resolve, join, relative, sep } from "node:path";
-import { spawnSync } from "node:child_process";
+import { isAbsolute, resolve, join, relative, sep } from "node:path";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
 
 
@@ -18,17 +19,9 @@ import { spawnSync } from "node:child_process";
 // ---------------------------------------------------------------------------
 
 // pm's extension command runtime only treats a thrown error as a cleanly
-// handled non-zero exit when the error carries a numeric `exitCode` property
-// (see @unbrained/pm-cli runCommandHandler). A plain `Error` makes the runtime
-// fall through to its "unhandled" path, which RE-INVOKES the command handler a
-// second time and exits with a generic code. We mirror the SDK's EXIT_CODE
-// contract here rather than importing it: standalone-installed extensions load
-// only their own `dist/`, so `@unbrained/pm-cli` is not resolvable at runtime.
-const EXIT_CODE = {
-  GENERIC_FAILURE: 1,
-  USAGE: 2,
-  NOT_FOUND: 3,
-} as const;
+// handled non-zero exit when the error carries a numeric `exitCode` property.
+// Use the same public SDK peer that certifies tracker reads so package and host
+// contracts cannot drift independently.
 
 class CommandError extends Error {
   exitCode: number;
@@ -2081,119 +2074,176 @@ function describePmReadFailure(error: Error, limitBytes: number): string {
 }
 
 /**
- * Subset of the `pm list-all --json` envelope that reports whether the answer is
- * the whole workspace.
+ * Run the host-owned pm CLI without routing workspace arguments through a shell.
+ *
+ * POSIX hosts can resolve the executable shim directly through `PATH`. Windows
+ * cannot execute npm `.cmd` shims through shell-free `spawnSync`, so the pm host
+ * publishes its package root and this runner validates the declared `bin.pm`
+ * entry before invoking it with the current Node executable.
  */
-interface ListAllEnvelope {
-  count?: number;
-  total?: number;
-  truncated?: boolean;
-  has_more?: boolean;
-  completeness?: { status?: string };
-  omission_receipt?: { has_omissions?: boolean };
+function runPmCommand(args: string[], maxBuffer = 64 * 1024 * 1024): SpawnSyncReturns<string> {
+  let command = "pm";
+  let commandArgs = args;
+  if (process.platform === "win32") {
+    const configuredRoot = process.env.PM_CLI_PACKAGE_ROOT;
+    if (typeof configuredRoot !== "string" || configuredRoot.trim() === "") {
+      throw new CommandError("The pm host did not publish PM_CLI_PACKAGE_ROOT for a secure Windows CLI relaunch.");
+    }
+    const packageRoot = resolve(configuredRoot.trim());
+    let packageMetadata: unknown;
+    try {
+      packageMetadata = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+    } catch {
+      throw new CommandError("Could not read the installed pm CLI package metadata.");
+    }
+    const bin = isRecord(packageMetadata) && isRecord(packageMetadata.bin) ? packageMetadata.bin.pm : undefined;
+    if (typeof bin !== "string" || bin.trim() === "") {
+      throw new CommandError("The installed pm CLI package does not declare its pm executable.");
+    }
+    const cliEntry = resolve(packageRoot, bin);
+    const relativeEntry = relative(packageRoot, cliEntry);
+    if (relativeEntry.startsWith("..") || isAbsolute(relativeEntry)) {
+      throw new CommandError("The installed pm CLI package declares an executable outside its package root.");
+    }
+    command = process.execPath;
+    commandArgs = [cliEntry, ...args];
+  }
+  return spawnSync(command, commandArgs, { encoding: "utf8", maxBuffer });
 }
 
-/**
- * Throw unless a `pm list-all` envelope represents the entire workspace.
- *
- * Both readers below take `.items` and act on it as if it were everything. That
- * assumption was silently false under pm-cli 2026.8.14, which returned 10 items
- * of a 682-item workspace with `truncated: true` — the upsert index then missed
- * keys and created duplicates, and the exporter wrote a TODO file missing 98% of
- * its rows. Neither reported anything wrong, because a short list and a small
- * workspace are indistinguishable once the receipt is discarded.
- *
- * Four independent signals each mean "these are not all the rows". An absent
- * `completeness` object counts as incomplete: an answer that cannot be verified
- * is not a verified answer.
- *
- * Refusing is the point. Returning the partial list, or warning and continuing,
- * would preserve exactly the failure this exists to stop.
- *
- * @param envelope - Parsed `pm list-all --json` output.
- * @param usedFor - What the read feeds, named in the error so the operator knows
- *                  which operation was refused.
- * @throws {CommandError} When any incompleteness signal is set.
- */
-export function assertListAllComplete(envelope: unknown, usedFor: string): void {
-  // A non-object, or a bare array, carries no receipt to contradict. Both
-  // readers below already handle a bare array (`Array.isArray(parsed)`), and
-  // refusing it here would reject the one shape that cannot be partial-with-a-
-  // receipt — it is either the whole answer or a parse problem the callers
-  // handle. Only an ENVELOPE can claim to be incomplete.
-  if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) return;
-  const env = envelope as ListAllEnvelope;
-  const scale = `${env.count ?? "?"} of ${env.total ?? "?"} item(s) returned`;
-  const reason = env.truncated === true
-    ? `the row list was truncated (${scale})`
-    : env.has_more === true
-      ? `more rows exist past the returned page (${scale})`
-      : env.completeness?.status !== "complete"
-        ? `completeness.status is ${env.completeness?.status === undefined ? "absent" : env.completeness.status}, not "complete" (${scale})`
-        : env.omission_receipt?.has_omissions === true
-          ? `field groups were omitted from the projection (${scale})`
-          : null;
-  if (reason) {
+/** Render an untrusted receipt value while preserving missing evidence. */
+function describeReceiptValue(value: unknown): string {
+  return value === undefined ? "<missing>" : String(JSON.stringify(value));
+}
+
+/** Receipt contracts whose completeness semantics this reader has verified. */
+const SUPPORTED_READ_OUTPUT_CONTRACT_VERSIONS: ReadonlySet<number> = new Set([1]);
+
+/** Canonical whole-corpus arguments shared by both TODO read consumers. */
+export const COMPLETE_LIST_COMMAND_ARGUMENTS = [
+  "list", "--all", "--json", "--include-body", "--strict-read", "--no-truncate",
+  "--output-budget", "unbounded", "--output-limit", "unbounded", "--output-include", "full",
+] as const;
+
+/** Collect the pm 2026.8.21 receipt gaps not yet rejected by the public SDK. */
+function supplementalCompleteListFindings(record: Record<string, unknown>): string[] {
+  const findings: string[] = [];
+  const completeness = isRecord(record.completeness) ? record.completeness : undefined;
+  for (const field of ["unreadable_item_count", "unreadable_directory_count"] as const) {
+    if (completeness?.[field] !== 0) findings.push(`completeness.${field}=${describeReceiptValue(completeness?.[field])}`);
+  }
+  const omission = isRecord(record.omission_receipt) ? record.omission_receipt : undefined;
+  if (omission === undefined) {
+    findings.push("omission_receipt=<missing>");
+  } else {
+    if (omission.has_omissions !== false) findings.push(`omission_receipt.has_omissions=${describeReceiptValue(omission.has_omissions)}`);
+    if (!Number.isSafeInteger(omission.omitted_field_group_count) || omission.omitted_field_group_count !== 0) {
+      findings.push(`omission_receipt.omitted_field_group_count=${describeReceiptValue(omission.omitted_field_group_count)}`);
+    }
+    if (!Array.isArray(omission.omitted_field_groups) || omission.omitted_field_groups.length !== 0) {
+      findings.push(`omission_receipt.omitted_field_groups=${describeReceiptValue(omission.omitted_field_groups)}`);
+    }
+  }
+  const rawReadOutput = record.read_output;
+  const readOutput = isRecord(rawReadOutput) ? rawReadOutput : undefined;
+  if (readOutput === undefined) {
+    findings.push(`read_output=${describeReceiptValue(rawReadOutput)}`);
+  } else {
+    for (const [field, expected] of [
+      ["command", "list"], ["within_budget", true], ["strings_compacted", false],
+      ["rows_compacted", false], ["result_omitted", false],
+    ] as const) {
+      if (readOutput[field] !== expected) findings.push(`read_output.${field}=${describeReceiptValue(readOutput[field])}`);
+    }
+    const contractVersion = readOutput.contract_version;
+    if (typeof contractVersion !== "number" || !SUPPORTED_READ_OUTPUT_CONTRACT_VERSIONS.has(contractVersion)) {
+      findings.push(`read_output.contract_version=${describeReceiptValue(contractVersion)}`);
+    }
+    const dimensions = readOutput.requested_dimensions;
+    if (!Array.isArray(dimensions)) {
+      findings.push(`read_output.requested_dimensions=${describeReceiptValue(dimensions)}`);
+    } else {
+      for (const dimension of ["include", "amount", "cost"] as const) {
+        if (!dimensions.includes(dimension)) findings.push(`read_output.requested_dimensions missing ${dimension}`);
+      }
+    }
+  }
+  if (record.output_budget_truncation !== undefined) findings.push("output_budget_truncation=<present>");
+  if (record.output_budget_exceeded !== undefined) findings.push("output_budget_exceeded=<present>");
+  return findings;
+}
+
+/** Decode only a complete, unbounded `pm list --all` envelope. */
+export function readItemsFromListAll(parsed: unknown, usedFor = "the TODO operation"): PmItem[] {
+  const record = isRecord(parsed) ? parsed : undefined;
+  const sdkFindings = inspectCompleteListResult(parsed).findings.map((finding) => `${finding.code}: ${finding.message}`);
+  const findings = record === undefined ? sdkFindings : [...sdkFindings, ...supplementalCompleteListFindings(record)];
+  if (record === undefined || findings.length > 0) {
+    const count = record && typeof record.count === "number" ? record.count : "unknown";
+    const total = record && typeof record.total === "number" ? record.total : "unknown";
     throw new CommandError(
-      `Refusing an incomplete \`pm list-all\` answer for ${usedFor}: ${reason}. `
-        + "Acting on a partial workspace here would silently produce a partial result.",
+      `pm list --all complete-corpus answer was refused for ${usedFor}: ${findings.join("; ")}; `
+      + `count=${count} of total=${total}. A partial tracker read could create duplicates or omit exported tasks.`,
     );
   }
+  const rows: PmItem[] = [];
+  for (const item of certifyCompleteListResult(record).items) {
+    if (typeof item.title !== "string" || typeof item.status !== "string") {
+      throw new CommandError(`Refusing unverifiable pm list --all output: item ${item.id} needs string title and status.`);
+    }
+    const row: PmItem = { id: item.id, title: item.title, status: item.status };
+    for (const field of ["description", "type", "deadline", "assignee", "sprint", "created_at", "updated_at", "todos_creation_date", "todos_completion_date", "todos_source_created_at", "todos_source_updated_at"] as const) {
+      if (item[field] !== undefined && typeof item[field] !== "string") {
+        throw new CommandError(`Refusing unverifiable pm list --all output: item ${item.id} field ${field} must be a string when present.`);
+      }
+      if (typeof item[field] === "string") row[field] = item[field];
+    }
+    if (item.priority !== undefined && typeof item.priority !== "number") {
+      throw new CommandError(`Refusing unverifiable pm list --all output: item ${item.id} priority must be a number when present.`);
+    }
+    if (typeof item.priority === "number") row.priority = item.priority;
+    if (item.tags !== undefined && (!Array.isArray(item.tags) || item.tags.some((tag) => typeof tag !== "string"))) {
+      throw new CommandError(`Refusing unverifiable pm list --all output: item ${item.id} tags must be strings when present.`);
+    }
+    if (Array.isArray(item.tags)) row.tags = item.tags as string[];
+    for (const field of ["todos_kv", "kv"] as const) {
+      if (item[field] !== undefined && (!isRecord(item[field]) || Object.values(item[field]).some((value) => typeof value !== "string"))) {
+        throw new CommandError(`Refusing unverifiable pm list --all output: item ${item.id} field ${field} must contain string values.`);
+      }
+      if (isRecord(item[field])) row[field] = item[field] as Record<string, string>;
+    }
+    rows.push(row);
+  }
+  return rows;
 }
 
-/**
- * Take the item rows out of a parsed `pm list-all --json` response.
- *
- * Handles the three shapes the readers can legitimately receive: an envelope
- * with `items`, an envelope with `results`, and a bare array. The bare array
- * matters because {@link assertListAllComplete} exempts it (an array carries no
- * receipt to contradict), so a reader that only knows how to read `.items` off
- * an object silently produced ZERO rows for it — an empty export reported as a
- * success, which is precisely the failure the completeness gate exists to stop,
- * reintroduced one line below the gate.
- *
- * @param parsed - Parsed `pm list-all --json` output.
- * @returns The item rows, or an empty array when the response carries none.
- */
-export function readItemsFromListAll(parsed: unknown): PmItem[] {
-  if (Array.isArray(parsed)) return parsed as PmItem[];
-  if (parsed === null || typeof parsed !== "object") return [];
-  const envelope = parsed as { items?: unknown; results?: unknown };
-  const rows = envelope.items ?? envelope.results;
-  return Array.isArray(rows) ? (rows as PmItem[]) : [];
+/** Backward-compatible assertion backed by the canonical SDK certifier. */
+export function assertListAllComplete(envelope: unknown, usedFor: string): void {
+  readItemsFromListAll(envelope, usedFor);
 }
 
-/** Fetch current workspace items via `pm list-all --json` (for the upsert index). */
-function readPmItemsForUpsert(pmRoot: string): PmItem[] {
+/** Fetch current workspace items for either upsert indexing or TODO export. */
+function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
   const maxBuffer = pmJsonMaxBuffer();
-  const result = spawnSync(
-    "pm",
-    // No `--limit`. Omitting it is what makes `list-all` return every row, and
-    // with the completeness gate below a row ceiling would convert every
-    // workspace past that size from a large read into a hard refusal of
-    // `--upsert` rather than into a larger read.
-    ["--path", pmRoot, "--json", "list-all"],
-    { encoding: "utf-8", maxBuffer },
-  );
+  const result = runPmCommand(["--pm-path", pmRoot, ...COMPLETE_LIST_COMMAND_ARGUMENTS], maxBuffer);
   if (result.error) {
     throw new CommandError(describePmReadFailure(result.error, maxBuffer));
   }
   if (result.status !== 0) {
-    throw new CommandError(result.stderr || "pm list-all failed (needed for --upsert)");
+    throw new CommandError(result.stderr || `pm list --all failed (needed for ${usedFor})`);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(result.stdout);
   } catch {
-    throw new CommandError("Could not parse `pm list-all --json` output (needed for --upsert).");
+    throw new CommandError(`Could not parse \`pm list --all --json\` output (needed for ${usedFor}).`);
   }
   // Deliberately OUTSIDE the parse try/catch. Inside it, the CommandError this
   // throws was caught by that bare `catch` and replaced with "Could not parse",
   // so an incomplete-envelope refusal surfaced as a parse error and the operator
   // lost the signal naming and the count-versus-total scale — the diagnostic
   // this gate exists to produce.
-  assertListAllComplete(parsed, "the --upsert key index");
-  return readItemsFromListAll(parsed);
+  return readItemsFromListAll(parsed, usedFor);
 }
 
 /**
@@ -2240,7 +2290,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
   // the preview reports create vs. update accurately). Without --upsert these
   // stay empty and every item is created — the unchanged historical behaviour.
   const index = opts.upsert
-    ? buildExistingTodoIndex(readPmItemsForUpsert(opts.pmRoot))
+    ? buildExistingTodoIndex(readCompletePmItems(opts.pmRoot, "the --upsert key index"))
     : { byId: new Map<string, ExistingTodoItem>(), bySig: new Map<string, ExistingTodoItem>() };
 
   // Resolve an incoming TODO to an existing item: prefer the embedded pm-id
@@ -2396,7 +2446,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             updArgs.push("--description", todojsonDescription as string);
           }
 
-          const result = spawnSync("pm", updArgs, { encoding: "utf-8" });
+          const result = runPmCommand(updArgs);
           if (result.status !== 0) {
             throw new Error(result.stderr || "pm update failed");
           }
@@ -2442,7 +2492,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             spawnArgs.push(...buildJsonlImportFieldArgs(todo));
           }
 
-          const result = spawnSync("pm", spawnArgs, { encoding: "utf-8" });
+          const result = runPmCommand(spawnArgs);
           if (result.status !== 0) {
             throw new Error(result.stderr || "pm create failed");
           }
@@ -2523,26 +2573,9 @@ export function applyExportOrder(
   return out;
 }
 
-/** Fetch + filter pm items via `pm list-all --json`. */
+/** Fetch + filter proven-complete pm items via canonical `pm list --all`. */
 function fetchPmItems(opts: TodoExportOptions): PmItem[] {
-  const maxBuffer = pmJsonMaxBuffer();
-  const result = spawnSync(
-    "pm",
-    ["--path", opts.pmRoot, "list-all", "--json"],
-    // Without an explicit maxBuffer this inherits Node's 1 MiB default, and an
-    // overrun kills the child with `status: null` and EMPTY stderr — which the
-    // check below would report as "pm list-all failed" with nothing to act on.
-    { encoding: "utf-8", maxBuffer },
-  );
-  if (result.error) {
-    throw new CommandError(describePmReadFailure(result.error, maxBuffer));
-  }
-  if (result.status !== 0) {
-    throw new CommandError(result.stderr || "pm list-all failed");
-  }
-  const parsed = JSON.parse(result.stdout);
-  assertListAllComplete(parsed, "the TODO export");
-  let items: PmItem[] = readItemsFromListAll(parsed);
+  let items = readCompletePmItems(opts.pmRoot, "the TODO export");
   if (opts.statusFilter) items = items.filter((i) => i.status === opts.statusFilter);
   if (opts.typeFilter) items = items.filter((i) => i.type === opts.typeFilter);
   return applyExportOrder(items, opts.sort, opts.reverse);

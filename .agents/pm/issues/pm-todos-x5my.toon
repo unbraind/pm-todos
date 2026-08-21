@@ -1,0 +1,55 @@
+id: pm-todos-x5my
+title: Replace deprecated list-all readers with SDK-certified canonical complete reads
+description: "Both upsert indexing and TODO export still shell out through the deprecated list-all alias and rely on a package-local partial receipt checker. Migrate both consumers to one canonical strict full doubly-unbounded pm list --all reader, delegate shared completeness policy to the public pm SDK, reject the documented pm-cli#1078 receipt gaps fail-closed, and prove real packed npm/Bun behavior on the current and declared minimum host versions."
+type: Issue
+status: in_progress
+priority: 1
+tags[5]: agents,cli-ux,complete-corpus,latest-cli,multi-agent
+created_at: "2026-08-21T09:04:11.361Z"
+updated_at: "2026-08-21T10:00:46.425Z"
+author: codex
+estimated_minutes: 420
+acceptance_criteria: "Create one shared canonical list reader used by upsert and export; assert the exact argv and exactly one read per operation; use public SDK inspection/certification for shared policy and supplement only verified SDK gaps; reject missing/contradictory unreadable, omission, read-output, budget, count and identity evidence; exact-pin development pm CLI/SDK 2026.8.21 while proving a 2026.8.20 minimum behavior floor; add mandatory fresh packed npm-current, Bun-current, npm-minimum, and Bun-minimum acceptance using real data; pass all existing and new tests, docstring gate, production audit, clean pack, deterministic changelog, PM validation, merge dry-run, duplicate scan and exact-head CI/review; retain separate pm-todos-qpst and pm-todos-oz1n blockers rather than overclaiming release readiness"
+severity: high
+repro_steps: Run pm todos export or pm todos import --upsert through installed pm CLI 2026.8.21 and inspect stderr/source argv; index.ts invokes list-all twice and the package has no packed current/minimum-host acceptance gate.
+expected_result: "A single canonical reader requests all statuses, bodies, strict reads, no truncation, full projection, and both unbounded controls; SDK certification plus narrow supplemental validation refuses every unverifiable receipt; import upsert and every export format operate on the proven complete corpus without deprecation diagnostics; packed npm/npx and Bun/bunx acceptance exercises real tracker data on both 2026.8.21 and the declared 2026.8.20 behavior floor; README, changelog, PM evidence, CI and release gates state exact boundaries."
+actual_result: "Implementation now uses one canonical strict full doubly-unbounded pm list --all argv for both upsert and export; public SDK certification owns shared policy and a narrow supplement rejects pm-cli#1078 gaps while preserving actual wrong-typed receipt diagnostics. A shell-free Windows path resolves the host-declared pm executable from PM_CLI_PACKAGE_ROOT. Development exact-pins 2026.8.21 and fresh packed npm and Bun acceptance proves the declared 2026.8.20 floor as well as the current host. Ten focused unit compatibility/completeness tests, the full 157-test unit suite, and the separate canonical-reader integration acceptance pass. Each of the four packed scenarios imports one real TODO and exports exactly two tracker fixtures without deprecated diagnostics. CI invokes the complete release gate. Raw manifest warnings are zero and every changelog reader uses the pinned project host plus both unbounded controls. Configured index.ts-only coverage is 68.69/86.84/75.86, so pm-todos-qpst remains open; reachable-history privacy item pm-todos-oz1n and GitHub issue #54 independently prohibit merge/publication. Previously stale pm-todos-irjt and pm-todos-ja6k were reconciled closed from shipped v2026.08.10 evidence."
+affected_version: pm-todos 2026.8.16 with pm CLI 2026.8.21
+component: TODO import/export tracker reads
+customer_impact: Partial or compacted tracker reads can make upsert create duplicates or export omit tasks while appearing successful; deprecated diagnostics and stale host assumptions make agent automation noisy and brittle.
+notes[6]:
+  - created_at: "2026-08-21T09:18:39.859Z"
+    author: codex
+    text: "Ninth-tranche measured evidence: npm test 157/157 pass in 46 seconds; configured coverage 69.11 lines,86.84 branches,76.52 functions; packed three-host matrix green with two exported fixtures per scenario; GitHub Dependabot and secret-scanning open-alert counts are zero, while code scanning is not configured. Current tracked privacy scan has zero absolute home paths, private IPs, or private keys; full reachable history is not clear and is tracked separately."
+  - created_at: "2026-08-21T09:21:33.953Z"
+    author: codex
+    text: "A fake executable host records every argv while the real SDK extension harness runs the registered importer and exporter. It proves each operation issues exactly one read and both reads are byte-for-byte the shared canonical argv; non-list update calls are excluded by command classification, not hidden."
+  - created_at: "2026-08-21T09:38:46.995Z"
+    author: codex
+    text: The canonical-reader acceptance now snapshots the read log immediately after export and again after upsert import; this proves each operation contributes exactly one canonical read rather than merely asserting an aggregate total of two.
+    edited_at: "2026-08-21T09:39:05.373Z"
+  - created_at: "2026-08-21T09:50:59.947Z"
+    author: codex
+    text: "CodeRabbit review 4991971714 produced six threads. Fixed index-only coverage labels and inventory; wrong-typed receipt diagnostics; shell-free Windows host CLI resolution; Bun minimum-host acceptance; exact JSONL row-count reconciliation; and mandatory CI release:check. Retained the 2026.8.20 floor because fresh packed npm and Bun scenarios both prove the SDK exports and full receipt contract on that exact host."
+  - created_at: "2026-08-21T09:54:25.241Z"
+    author: codex
+    text: "Expanded CI exposed npm 10 behavior on Node 22.18.0: lifecycle output preceded npm pack --json even with the subcommand --ignore-scripts flag and made the receipt unparsable. The packed gate now also sets both npm ignore-scripts environment spellings; the four-scenario local rerun is green and exact-head CI must reconfirm."
+  - created_at: "2026-08-21T10:00:46.425Z"
+    author: codex
+    text: "Exact-head Node 22/npm 10 CI disproved the environment-only workaround: prepare output still preceded the npm pack JSON payload. Packed acceptance now treats the freshly created pack destination as the authoritative receipt, requires exactly one .tgz, and never parses lifecycle-contaminated stdout. The four isolated npm/Bun current/minimum scenarios pass locally; exact-head CI must reconfirm Node 22 and Node 26."
+files[7]{path,scope,note}:
+  index.ts,project,Canonical complete-list reader and SDK receipt validation
+  test/list-all-completeness.test.ts,project,Fail-closed envelope and exact argv unit tests
+  scripts/accept-canonical-reader.ts,project,Behavioral proof of exactly one shared canonical read per upsert/export operation
+  scripts/accept-packed.ts,project,Real packed current/minimum-host acceptance
+  package.json,project,Exact host/changelog/release-gate contracts
+  .github/workflows/ci.yml,project,Exact Node floor and mandatory gates
+  .github/workflows/release.yml,project,Pinned host changelog reads and exact Node floor
+tests[2]{command,scope,timeout_seconds,note}:
+  "npm run release:check",project,900,Authoritative package gate including separate canonical reader and packed acceptance
+  "npm run accept:canonical-reader",project,30,Exact argv and invocation-count integration behavior
+docs[3]{path,scope,note}:
+  "https://github.com/unbraind/pm-cli-companion/blob/21a8a00e6447e0238d85dc74cc4f0bb69cda5dee/.agents/pm/issues/pm-cli-website-cbyb.toon",global,Companion fleet canonical-command migration
+  "https://github.com/unbraind/pm-cli/issues/1078",global,Public SDK complete-list certification gaps
+  "https://github.com/unbraind/pm-todos/issues/54",global,Independent reachable-history privacy blocker
+body: "Project management is context management: preserve package-owned append-only evidence and link the companion migration item and upstream pm-cli#1078. Do not merge or publish while independent honest-coverage, privacy-history, or reviewer gates remain unresolved."

@@ -1,0 +1,29 @@
+id: pm-todos-oz1n
+title: Reachable history contains personal identities and absolute host-path evidence
+description: "A full reachable-history audit found package-owned PM patches containing absolute home paths and commit metadata containing non-noreply personal identity domains. Current tracked source has no absolute home paths, private IPs, or private keys, and current credential-pattern hits are benign variable/control names, but current cleanliness does not remove reachable historical disclosure."
+type: Issue
+status: open
+priority: 1
+tags[4]: git-history,privacy,public-repo,release-blocker
+created_at: "2026-08-21T09:18:09.879Z"
+updated_at: "2026-08-21T09:18:38.530Z"
+author: codex
+estimated_minutes: 240
+acceptance_criteria: "Produce a value-redacted path/commit inventory; obtain explicit maintainer authorization for retain versus coordinated rewrite; if rewriting, preserve PM semantic history and retag/review every affected release; rerun current tracked, full patch, full blob, author-identity, npm tarball, and GitHub secret scans; record exact post-remediation counts and external coordination; prohibit merge/publication while unresolved"
+severity: high
+repro_steps: Count absolute-home pattern patch lines under .agents/pm across git log --all -p without printing values; count commit author emails outside users.noreply.github.com by domain; inspect affected paths with usernames redacted.
+expected_result: "Every public reachable commit and PM history stream is cleared for personal/private data, or the maintainer explicitly accepts named residual metadata after reviewing a value-redacted inventory. Any authorized rewrite preserves release/tag provenance and is followed by fresh current/history scans, package gates, remote review, and coordinated publication decisions."
+actual_result: "Two package-owned PM records retain absolute home-path evidence across reachable patches: one test-command record and one prior readiness note/history stream. The reachable commit graph has 97 commits using a personal-domain author email and one localhost identity. Historical vendored dependencies also contain generic private-IP and email fixtures. No private-key pattern was found. No history rewrite is authorized, so merge and publication remain blocked."
+affected_version: all published pm-todos releases through 2026.8.16
+component: reachable git history
+customer_impact: "Publishing or republishing from the current graph continues distributing avoidable personal identity and host-layout metadata; rewriting without authorization could instead break tags, forks, and consumers."
+files[4]{path,scope,note}:
+  .agents/pm/features/pm-todos-7l60.toon,project,Reachable historical absolute-path test command
+  .agents/pm/history/pm-todos-7l60.jsonl,project,Append-only stream retaining historical absolute-path values
+  .agents/pm/tasks/pm-todos-kgjf.toon,project,Readiness note retaining historical absolute paths
+  .agents/pm/history/pm-todos-kgjf.jsonl,project,Append-only stream retaining readiness-note path values
+tests[1]{command,scope,timeout_seconds,note}:
+  git log --all -p --full-history -- .agents/pm,project,60,Value-redacted absolute-home history audit
+docs[1]{path,scope,note}:
+  "https://github.com/unbraind/pm-todos/issues/54",global,Public value-redacted privacy clearance blocker
+body: Do not print the personal address or username in public issue text. This blocker is independent of pm-todos-x5my implementation correctness and pm-todos-qpst coverage.

@@ -1,141 +1,107 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { assertListAllComplete, readItemsFromListAll } from "../index.ts";
+import { assertListAllComplete, COMPLETE_LIST_COMMAND_ARGUMENTS, readItemsFromListAll } from "../index.ts";
 
-/**
- * The non-row half of a real `pm list-all --json` envelope, captured verbatim
- * from pm-cli 2026.8.15 against a live two-item workspace.
- *
- * Captured rather than hand-written on purpose: an invented envelope only proves
- * the code agrees with the test author, and the shape of this receipt is exactly
- * what the assertions depend on.
- *
- * @param overrides - Fields to replace, one per incompleteness signal under test.
- * @returns An envelope object suitable for {@link assertListAllComplete}.
- */
-function realListAllEnvelope(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+/** Current complete `pm list --all --json` envelope, with caller overrides. */
+function completeEnvelope(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    count: 2,
-    total: 2,
+    items: [{ id: "fixture-1", title: "Fixture", status: "open", tags: ["agent"] }],
+    count: 1,
+    total: 1,
     has_more: false,
     truncated: false,
     next_cursor: null,
+    filters: { status: "all", include_body: true, no_truncate: true, strict_read: true, runtime_filters: {} },
+    limit: null,
+    requested_limit: null,
+    effective_limit: null,
+    source: null,
     completeness: { status: "complete", unreadable_item_count: 0, unreadable_directory_count: 0 },
-    filters: { status: "all", include_body: true, runtime_filters: {} },
     projection: { mode: "full", fields: null },
-    sorting: { sort: "default", order: "asc" },
-    now: "2026-08-15T11:48:21.518Z",
     omission_receipt: { has_omissions: false, omitted_field_group_count: 0, omitted_field_groups: [] },
+    read_output: {
+      contract_version: 1,
+      command: "list",
+      requested_dimensions: ["include", "amount", "cost"],
+      within_budget: true,
+      strings_compacted: false,
+      rows_compacted: false,
+      result_omitted: false,
+    },
     ...overrides,
   };
 }
 
-test("a complete envelope is accepted", () => {
-  assert.doesNotThrow(() => assertListAllComplete(realListAllEnvelope(), "the TODO export"));
+test("a complete canonical envelope is decoded", () => {
+  const items = readItemsFromListAll(completeEnvelope(), "the TODO export");
+  assert.deepEqual(items, [{ id: "fixture-1", title: "Fixture", status: "open", tags: ["agent"] }]);
+  assert.doesNotThrow(() => assertListAllComplete(completeEnvelope(), "the TODO export"));
 });
 
-test("a truncated row list is refused, naming the signal and the scale", () => {
-  assert.throws(
-    () => assertListAllComplete(realListAllEnvelope({ truncated: true, count: 10, total: 682 }), "the TODO export"),
-    (err: Error) => /truncated/.test(err.message) && /10 of 682/.test(err.message) && /the TODO export/.test(err.message),
-  );
+test("both runtime consumers share one exact canonical complete-list argv", () => {
+  assert.deepEqual(COMPLETE_LIST_COMMAND_ARGUMENTS, [
+    "list", "--all", "--json", "--include-body", "--strict-read", "--no-truncate",
+    "--output-budget", "unbounded", "--output-limit", "unbounded", "--output-include", "full",
+  ]);
 });
 
-test("rows past the returned page are refused", () => {
-  assert.throws(
-    () => assertListAllComplete(realListAllEnvelope({ has_more: true }), "the --upsert key index"),
-    /more rows exist/,
-  );
+test("shared SDK policy rejects malformed corpus, paging, projection, count, and identity evidence", () => {
+  const cases: Array<[string, unknown, RegExp]> = [
+    ["bare array", [], /invalid_envelope/],
+    ["null", null, /invalid_envelope/],
+    ["non-array items", completeEnvelope({ items: {} }), /invalid_envelope/],
+    ["truncated", completeEnvelope({ truncated: true }), /page_incomplete/],
+    ["paginated", completeEnvelope({ has_more: true }), /page_incomplete/],
+    ["cursor", completeEnvelope({ next_cursor: "more" }), /page_incomplete/],
+    ["partial source", completeEnvelope({ completeness: { status: "partial", unreadable_item_count: 1, unreadable_directory_count: 0 } }), /source_incomplete/],
+    ["missing source", (() => { const value = completeEnvelope(); delete value.completeness; return value; })(), /source_unchecked/],
+    ["filtered", completeEnvelope({ filters: { status: "open", include_body: true, no_truncate: true, strict_read: true } }), /filtered_corpus/],
+    ["not strict", completeEnvelope({ filters: { status: "all", include_body: true, no_truncate: true, strict_read: false } }), /strict_read_unproven/],
+    ["compact", completeEnvelope({ projection: { mode: "brief", fields: ["id"] } }), /projection_incomplete/],
+    ["count mismatch", completeEnvelope({ count: 2, total: 2 }), /count_mismatch/],
+    ["duplicate id", completeEnvelope({ items: [{ id: "same", title: "A", status: "open" }, { id: "same", title: "B", status: "open" }], count: 2, total: 2 }), /duplicate_item_id/],
+    ["empty id", completeEnvelope({ items: [{ id: " ", title: "A", status: "open" }] }), /invalid_item_id/],
+  ];
+  for (const [name, value, pattern] of cases) assert.throws(() => readItemsFromListAll(value, "the --upsert key index"), pattern, name);
 });
 
-test("a partial completeness status is refused", () => {
-  assert.throws(
-    () => assertListAllComplete(
-      realListAllEnvelope({ completeness: { status: "partial", unreadable_item_count: 3 } }),
-      "the TODO export",
-    ),
-    /partial/,
-  );
+test("supplemental policy rejects every pm-cli 2026.8.21 SDK receipt gap", () => {
+  const readOutput = completeEnvelope().read_output as Record<string, unknown>;
+  const cases: Array<[string, Record<string, unknown>, RegExp]> = [
+    ["unreadable item", completeEnvelope({ completeness: { status: "complete", unreadable_item_count: 1, unreadable_directory_count: 0 } }), /unreadable_item_count=1/],
+    ["unreadable directory", completeEnvelope({ completeness: { status: "complete", unreadable_item_count: 0, unreadable_directory_count: 1 } }), /unreadable_directory_count=1/],
+    ["missing omission", (() => { const value = completeEnvelope(); delete value.omission_receipt; return value; })(), /omission_receipt=<missing>/],
+    ["omission count", completeEnvelope({ omission_receipt: { has_omissions: false, omitted_field_group_count: 1, omitted_field_groups: [] } }), /omitted_field_group_count=1/],
+    ["omission rows", completeEnvelope({ omission_receipt: { has_omissions: false, omitted_field_group_count: 0, omitted_field_groups: ["body"] } }), /omitted_field_groups=\["body"\]/],
+    ["missing read", (() => { const value = completeEnvelope(); delete value.read_output; return value; })(), /read_output=<missing>/],
+    ["wrong read type", completeEnvelope({ read_output: "bad" }), /read_output="bad"/],
+    ["unknown contract", completeEnvelope({ read_output: { ...readOutput, contract_version: 2 } }), /contract_version=2/],
+    ["wrong command", completeEnvelope({ read_output: { ...readOutput, command: "list-all" } }), /command="list-all"/],
+    ["strings compacted", completeEnvelope({ read_output: { ...readOutput, strings_compacted: true } }), /strings_compacted=true/],
+    ["rows compacted", completeEnvelope({ read_output: { ...readOutput, rows_compacted: true } }), /rows_compacted=true/],
+    ["result omitted", completeEnvelope({ read_output: { ...readOutput, result_omitted: true } }), /result_omitted=true/],
+    ["outside budget", completeEnvelope({ read_output: { ...readOutput, within_budget: false } }), /within_budget=false/],
+    ["missing dimensions", completeEnvelope({ read_output: (() => { const value = { ...readOutput }; delete value.requested_dimensions; return value; })() }), /requested_dimensions=<missing>/],
+    ["wrong dimensions", completeEnvelope({ read_output: { ...readOutput, requested_dimensions: "amount,cost" } }), /requested_dimensions="amount,cost"/],
+    ["null dimensions", completeEnvelope({ read_output: { ...readOutput, requested_dimensions: null } }), /requested_dimensions=null/],
+    ["missing include", completeEnvelope({ read_output: { ...readOutput, requested_dimensions: ["amount", "cost"] } }), /missing include/],
+    ["missing amount", completeEnvelope({ read_output: { ...readOutput, requested_dimensions: ["include", "cost"] } }), /missing amount/],
+    ["missing cost", completeEnvelope({ read_output: { ...readOutput, requested_dimensions: ["include", "amount"] } }), /missing cost/],
+    ["budget truncation", completeEnvelope({ output_budget_truncation: { reason: "reached" } }), /output_budget_truncation=<present>/],
+    ["budget omission", completeEnvelope({ output_budget_exceeded: { omitted_result: true } }), /output_budget_exceeded=<present>/],
+  ];
+  for (const [name, value, pattern] of cases) assert.throws(() => readItemsFromListAll(value, "the TODO export"), pattern, name);
 });
 
-test("an absent completeness receipt is refused rather than assumed complete", () => {
-  const envelope = realListAllEnvelope();
-  delete envelope.completeness;
-  assert.throws(() => assertListAllComplete(envelope, "the TODO export"), /absent/);
-});
-
-test("omitted field groups are refused", () => {
-  assert.throws(
-    () => assertListAllComplete(
-      realListAllEnvelope({ omission_receipt: { has_omissions: true, omitted_field_group_count: 1 } }),
-      "the TODO export",
-    ),
-    /omitted/,
-  );
-});
-
-test("a bare array is accepted, since it carries no receipt to contradict", () => {
-  assert.doesNotThrow(() => assertListAllComplete([{ id: "a-1" }], "the TODO export"));
-});
-
-// --- regressions from the first review round ------------------------------
-
-test("the upsert refusal reaches the caller instead of being replaced by a parse error", () => {
-  // The gate used to run inside the parse try/catch, whose bare `catch` replaced
-  // the CommandError with "Could not parse". The refusal survived as a failure
-  // but lost the signal name and the count-versus-total scale, which is the only
-  // reason the gate produces a message at all.
-  const truncated = realListAllEnvelope({ truncated: true, count: 10, total: 682 });
-  assert.throws(
-    () => assertListAllComplete(truncated, "the --upsert key index"),
-    (err: Error) => /truncated/.test(err.message)
-      && /10 of 682/.test(err.message)
-      && !/Could not parse/.test(err.message),
-  );
-});
-
-test("a bare array is read as the item list rather than yielding an empty export", () => {
-  // A bare array is exempt from the gate, so the READER must handle that shape.
-  // Reading `.items` off an array yields undefined and exported an EMPTY file
-  // while reporting success — the silent-partial failure this change removes,
-  // reintroduced one line below the gate that prevents it. Both readers now go
-  // through readItemsFromListAll, so this asserts the real function.
-  const bare = [{ id: "a-1", title: "A", status: "open" }];
-  assert.doesNotThrow(() => assertListAllComplete(bare, "the TODO export"));
-  assert.equal(readItemsFromListAll(bare).length, 1, "a bare array is the item list");
-});
-
-test("readItemsFromListAll handles every shape the readers can receive", () => {
-  assert.deepEqual(readItemsFromListAll({ items: [{ id: "i-1" }] }).map((i) => i.id), ["i-1"]);
-  assert.deepEqual(readItemsFromListAll({ results: [{ id: "r-1" }] }).map((i) => i.id), ["r-1"]);
-  assert.deepEqual(readItemsFromListAll({}), [], "an envelope with neither key yields no rows");
-  assert.deepEqual(readItemsFromListAll(null), [], "a null response yields no rows");
-  assert.deepEqual(readItemsFromListAll("nonsense"), [], "a scalar response yields no rows");
-  // A non-array under `items` must not be handed on as if it were rows: the
-  // downstream code calls .filter/.map on it and would throw far from the cause.
-  assert.deepEqual(readItemsFromListAll({ items: {} }), [], "a non-array items field yields no rows");
-});
-
-test("the manifest host floor matches the package peer floor", () => {
-  // Two files tell two different audiences the same fact: package.json's
-  // peerDependencies floor is read by npm, manifest.json's pm_min_version is
-  // read by the pm host at install time. They drifted once already across this
-  // fleet — a manifest still advertising 2026.7.28 while the code depended on a
-  // receipt introduced in 2026.8.15 — and nothing detected it, because each file
-  // is internally consistent. This binds them.
-  const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")) as {
-    pm_min_version?: string;
-  };
-  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
-    peerDependencies?: Record<string, string>;
-  };
-  const peer = pkg.peerDependencies?.["@unbrained/pm-cli"] ?? "";
-  assert.match(peer, /^>=\d+\.\d+\.\d+$/, "the peer declaration must be a concrete >= floor");
-  assert.equal(
-    manifest.pm_min_version,
-    peer.replace(/^>=/, ""),
-    "manifest.json pm_min_version must equal the package.json peer floor: they are the same claim to two different installers",
-  );
+test("item fields are validated before import indexing or export", () => {
+  const cases: Array<[string, Record<string, unknown>, RegExp]> = [
+    ["title", { id: "fixture-1", title: 1, status: "open" }, /string title and status/],
+    ["status", { id: "fixture-1", title: "Fixture", status: 1 }, /string title and status/],
+    ["deadline", { id: "fixture-1", title: "Fixture", status: "open", deadline: 1 }, /field deadline must be a string/],
+    ["priority", { id: "fixture-1", title: "Fixture", status: "open", priority: "high" }, /priority must be a number/],
+    ["tags", { id: "fixture-1", title: "Fixture", status: "open", tags: [1] }, /tags must be strings/],
+    ["kv", { id: "fixture-1", title: "Fixture", status: "open", todos_kv: { recurrence: 1 } }, /must contain string values/],
+  ];
+  for (const [name, item, pattern] of cases) assert.throws(() => readItemsFromListAll(completeEnvelope({ items: [item] }), "the TODO export"), pattern, name);
 });

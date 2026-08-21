@@ -17,7 +17,7 @@ jobs:
       matrix:
         # 22 is the floor declared in `engines` and the first line that strips
         # TypeScript without a flag; 26 is what the fleet develops against.
-        node-version: [22, 26]
+        node-version: [22.18.0, 26]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -55,23 +55,5 @@ jobs:
           # still exiting successfully.
           ./node_modules/.bin/pm health --strict-exit
 
-      - name: Type check
-        run: npm run check
-
-      - name: Verify complete docstring coverage
-        run: npm run docstring
-
-      - name: Test with coverage gate
-        run: npm run coverage
-
-      - name: Production dependency audit
-        run: npm run audit:prod
-
-      - name: Verify npm package contents
-        run: npm run pack:dry-run
-
-      - name: Verify generated changelog
-        run: npm run changelog:check
-
-      - name: Verify Bun can install the package graph
-        run: bun install --no-save
+      - name: Run mandatory release gate
+        run: npm run release:check
