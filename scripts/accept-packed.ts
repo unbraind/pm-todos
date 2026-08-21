@@ -1,5 +1,5 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -90,25 +90,20 @@ const temporaryRoot = mkdtempSync(join(tmpdir(), "pm-todos-packed-acceptance-"))
 try {
   const packRoot = join(temporaryRoot, "pack");
   mkdirSync(packRoot);
-  // release:check runs a lifecycle-enabled pack dry-run immediately before this
-  // gate. Set both npm's CLI flag and environment controls because the npm
-  // bundled with Node 22 otherwise allowed prepare stdout to corrupt --json in
-  // GitHub Actions despite the subcommand flag being present.
-  const packed = run(
+  // npm 10 can emit lifecycle output on stdout during pack even when its
+  // ignore-scripts controls are present. The fresh destination directory is a
+  // stronger receipt than parsing that mixed human/machine output.
+  run(
     npmCommand,
-    ["pack", "--json", "--ignore-scripts", "--pack-destination", packRoot],
+    ["pack", "--ignore-scripts", "--pack-destination", packRoot],
     repoRoot,
     { ...cleanEnvironment, npm_config_ignore_scripts: "true", NPM_CONFIG_IGNORE_SCRIPTS: "true" },
   );
-  const packedEntries: unknown = JSON.parse(packed.stdout);
-  const packedEntry = Array.isArray(packedEntries) && packedEntries.length === 1 ? packedEntries[0] : undefined;
-  const packedName = packedEntry !== null && typeof packedEntry === "object"
-    ? (packedEntry as Record<string, unknown>).filename
-    : undefined;
-  if (typeof packedName !== "string" || packedName.length === 0) {
-    throw new Error(`npm pack must report exactly one tarball filename, got ${packed.stdout.trim()}`);
+  const packedNames = readdirSync(packRoot).filter((name) => name.endsWith(".tgz"));
+  if (packedNames.length !== 1) {
+    throw new Error(`npm pack must create exactly one tarball, got ${String(packedNames.length)}`);
   }
-  const tarball = join(packRoot, packedName);
+  const tarball = join(packRoot, packedNames[0]!);
   const scenarios: AcceptanceScenario[] = [
     { name: "npm-current", manager: "npm", hostVersion: developmentVersion },
     { name: "bun-current", manager: "bun", hostVersion: developmentVersion },
