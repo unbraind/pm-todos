@@ -231,6 +231,15 @@ pm todos export --sort priority --reverse --output backlog.md
 | `--priority-map <scheme>` | string | Priority token scheme for markdown/tasklist `--metadata`: `number` (default, `(p0)`..`(p4)`) or `letter` (`(A)`..`(E)`) |
 | `--reverse` | boolean | Reverse the final export order; without `--sort` this flips pm's native order, while `--sort priority --reverse` yields lowest priority first |
 
+Upsert indexing and export both read the whole tracker through the canonical
+`pm list --all --json` contract with bodies, strict reads, full projection, no
+truncation, and both universal output bounds disabled. The public pm SDK
+certifies source, filter, pagination, projection, count, and row-identity
+evidence; pm-todos additionally refuses missing or contradictory unreadable,
+omission, read-output, dimension, and budget-disclosure receipts. An
+unverifiable tracker read fails before it can create duplicate imports or write
+a partial TODO export.
+
 The default `markdown` export (no `--group-by`, or `--group-by status`) is unchanged: a
 `# TODO` document with `## Open` / `## Done` sections. `--group-by sprint`/`type` emits a
 `## <value>` section per group. The `todotxt` exporter maps priority→letter, tags→`+project`,
@@ -384,7 +393,19 @@ MIT
 
 ## Release Automation
 
-This package is release-ready for GitHub, npm, and Bun-compatible installs. CI runs type checking, build, production dependency audit, package packing, Bun install verification, and pm-changelog validation. The daily release workflow publishes only when commits exist after the latest release tag and uses pm-changelog to generate CHANGELOG.md and GitHub release notes.
+The release gate runs type checking, build, docstring and configured coverage
+checks, production dependency audit, package packing, deterministic
+pm-changelog validation, a canonical-reader integration acceptance, and a fresh
+packed-extension matrix. The integration acceptance proves that upsert and
+export each issue one exact complete-corpus read. The packed matrix uses
+npm/npx and Bun/bunx against the current development pm host plus npm/npx
+against the declared minimum host, creates real tracker data, exercises upsert
+import and complete JSONL export, and rejects deprecated-command diagnostics.
+Independent honest all-source coverage and reachable-history privacy items
+remain authoritative readiness gates; passing the packed matrix alone is not
+publication approval. The daily release workflow runs only when commits
+exist after the latest release tag and generates both `CHANGELOG.md` and GitHub
+release notes with pm-changelog.
 
 ## Multi-agent merge safety
 

@@ -17,7 +17,7 @@ jobs:
       matrix:
         # 22 is the floor declared in `engines` and the first line that strips
         # TypeScript without a flag; 26 is what the fleet develops against.
-        node-version: [22, 26]
+        node-version: [22.18.0, 26]
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -20,6 +20,11 @@
 
 ## 2026.8.10 - 2026-08-10
 
+### Fixed
+
+- Fix release publish ordering before protected main push ([pm-todos-ja6k](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ja6k.toon))
+- Propagate the docstring gate entry guard fix ([pm-todos-irjt](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-irjt.toon))
+
 ### Other
 
 - Adopt the mandatory docstring gate ([pm-todos-g8m7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-g8m7.toon))
