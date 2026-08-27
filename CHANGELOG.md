@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- The identity gate deadlocks the one remediation its own failure message prescribes ([pm-todos-3a03](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-3a03.toon))
+
 ## 2026.8.16 - 2026-08-16
 
 ### Fixed
