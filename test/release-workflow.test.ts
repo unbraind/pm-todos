@@ -197,7 +197,11 @@ test("no run script in the release job interpolates workflow context", () => {
   const offenders: string[] = [];
   let inRunBlock = false;
   for (const line of executable(workflow.slice(jobs)).split("\n")) {
-    if (/^ {8}run: \|/.test(line)) {
+    // Every block-scalar spelling, not just `run: |`. YAML also folds with `>`,
+    // and both take the `-`/`+` chomping and an explicit indentation digit. A
+    // guard that knew only `|` treated `run: >` as a one-line script, checked
+    // that line alone, and never looked at the body it introduced.
+    if (/^ {8}run: [|>][-+]?\d*\s*$/.test(line)) {
       inRunBlock = true;
       continue;
     }
@@ -239,17 +243,32 @@ test("no registry credential is configured, under any name or mechanism", () => 
   // value with a space rather than `=`, which the key-plus-`=` checks miss.
   assert.doesNotMatch(source, /:(?:_authToken|_auth|username|_password|certfile|keyfile)\s+\S/i);
 
-  // A GLOBAL credential needs no registry scope and no `=`:
-  // `npm config set _auth <value>` configures legacy authentication that npm
-  // honours, while every scoped and delimited check above passes.
-  // `(?:--\S+\s+)*` matters: `npm config set --global _auth <value>` and
-  // `--location=global` both put a flag between `set` and the key, and a
-  // global credential is written OUTSIDE the userconfig the publish step
-  // scrubs - so without this the guard passes and the scrub cannot reach it.
-  assert.doesNotMatch(
-    source,
-    /npm\s+(?:config\s+)?set\s+(?:--\S+\s+)*["']?(?:\/\/\S*?[:/])?(?:_authToken|_auth|username|_password|certfile|keyfile|email)\b/i
-  );
+  // Enumerating what can sit BETWEEN `npm config set` and the credential key
+  // has now been wrong three times: first no flags were allowed at all, then
+  // `--global`, then `--location=global`; and `--registry <url> --location=project`
+  // defeats all three, because the flag's value is a separate token that is not
+  // itself flag-shaped. The axis was never the prefix - it is that a credential
+  // key must not appear ANYWHERE in an npm command that writes configuration.
+  //
+  // So stop pattern-matching the prefix and inspect the tokens. A credential
+  // written to the project location matters as much as a global one: the
+  // publish step scrubs the user and global files, and reaches neither.
+  const CREDENTIAL_KEYS = ["_authtoken", "_auth", "username", "_password", "certfile", "keyfile", "email"];
+  for (const command of source.split(/[\n;&|]+/)) {
+    if (!/\bnpm\b[^\n]*\bset\b/i.test(command)) continue;
+    for (const token of command.trim().split(/\s+/)) {
+      // Reduce a token to the config key it would set: strip quotes and a
+      // leading `--`, take the part before any `=`, and take the part after the
+      // last `:` so a registry-scoped key is judged by its key.
+      const bare = token.replace(/^["']|["']$/g, "").replace(/^--/, "");
+      const key = bare.includes("=") ? bare.slice(0, bare.indexOf("=")) : bare;
+      const tail = key.includes(":") ? key.slice(key.lastIndexOf(":") + 1) : key;
+      assert.ok(
+        !CREDENTIAL_KEYS.includes(tail.toLowerCase()),
+        `release workflow must not configure the npm credential '${tail}' (in: ${command.trim().slice(0, 120)})`
+      );
+    }
+  }
 
   // The same credentials can arrive as environment overrides rather than as
   // .npmrc lines. NPM_CONFIG_USERCONFIG is the one legitimate member of that
