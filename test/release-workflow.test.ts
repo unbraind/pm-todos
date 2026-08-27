@@ -273,7 +273,12 @@ test("no registry credential is configured, under any name or mechanism", () => 
   // written to the project location matters as much as a global one: the
   // publish step scrubs the user and global files, and reaches neither.
   const CREDENTIAL_KEYS = ["_authtoken", "_auth", "username", "_password", "certfile", "keyfile", "email"];
-  for (const command of source.split(/[\n;&|]+/)) {
+  // Continuations are joined FIRST. A backslash-newline is one command to the
+  // shell but two lines to a newline split, and the half holding the credential
+  // key then carries no `npm ... set` for the filter to match -- so a guard that
+  // splits before joining reports clean on a command it never inspected.
+  const executableSource = source.replace(/\\\r?\n\s*/g, " ");
+  for (const command of executableSource.split(/[\n;&|]+/)) {
     if (!/\bnpm\b[^\n]*\bset\b/i.test(command)) continue;
     for (const token of command.trim().split(/\s+/)) {
       // Reduce a token to the config key it would set: strip quotes and a
