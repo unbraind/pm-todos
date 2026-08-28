@@ -4,8 +4,6 @@
 
 ### Fixed
 
-- A failed provenance publish silently falls back to an unattested one ([pm-todos-im13](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-im13.toon))
-- A failed provenance publish silently falls back to an unattested one ([pm-todos-f6t6](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-f6t6.toon))
 - A failed provenance publish silently falls back to an unattested one ([pm-todos-oml1](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-oml1.toon))
 
 ### Security
