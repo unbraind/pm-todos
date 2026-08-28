@@ -1,6 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Other
+
+- Pilot pm-github issue sync for pm-todos ([pm-todos-9hgh](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-9hgh.toon))
+
 ## 2026.8.28 - 2026-08-28
+
+### Fixed
+
+- A failed provenance publish silently falls back to an unattested one ([pm-todos-oml1](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-oml1.toon))
+- Reachable history privacy clearance is required before further release ([pm-todos-oz1n](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-oz1n.toon))
 
 ### Security
 
@@ -16,7 +27,7 @@
 
 ### Fixed
 
-- Supply a close reason on todos import so completed items land and report partial imports ([pm-todos-mq3x](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-mq3x.toon))
+- todos import silently drops every completed item and exits 0, because it closes without a reason and require_close_reason is on by default ([pm-todos-mq3x](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-mq3x.toon))
 
 ## 2026.8.11 - 2026-08-11
 

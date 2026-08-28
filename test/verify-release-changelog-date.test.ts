@@ -17,19 +17,21 @@ import {
   VERSION_INPUTS,
   auditHeadings,
   auditInvocations,
-  bashArrays,
   stripComment,
-  expandArrays,
   invocationsIn,
-  joinContinuations,
   generateHeading,
-  isMainInvocation,
   main,
   runIfMain,
   report,
   resolveGenerator,
   verify,
 } from "../scripts/verify-release-changelog-date.ts";
+import {
+  bashArrays,
+  expandArrays,
+  joinContinuations,
+} from "../scripts/shell-command-scan.ts";
+import { isMainInvocation } from "../scripts/main-invocation.ts";
 
 const FLAGGED = `pm-changelog --pm-root .agents/pm --release-version-from-package ${DATE_FLAG}`;
 
@@ -50,40 +52,6 @@ test("an invocation naming the pending tag is caught, not skipped", () => {
   }]);
   assert.equal(result.failures.length, 1);
   assert.match(result.failures[0], /carries a version input but not --date-from-version/);
-});
-
-test("a shared bash options array is expanded into each invocation that uses it", () => {
-  // Declared once so the invocations cannot drift, with the effect that the
-  // invocation line itself carries almost no flags.
-  const text = [
-    'common=(',
-    '  --pm-root .agents/pm',
-    `  --version "$RELEASE_TAG"`,
-    `  ${DATE_FLAG}`,
-    ')',
-    './node_modules/.bin/pm-changelog "${common[@]}" --mode replace',
-  ].join("\n");
-  assert.deepEqual(auditInvocations([{ file: ".github/workflows/release.yml", text }]).failures, []);
-
-  const withoutFlag = text.replace(`  ${DATE_FLAG}\n`, "");
-  assert.equal(auditInvocations([{ file: ".github/workflows/release.yml", text: withoutFlag }]).failures.length, 1);
-});
-
-test("an unknown array reference is left in place rather than erased", () => {
-  // Erasing it would turn "this scan does not understand the command" into
-  // "this command carries no flags", which reads as a pass.
-  assert.equal(expandArrays('cmd "${missing[@]}"', new Map()), 'cmd "${missing[@]}"');
-  assert.equal(expandArrays('cmd "${known[@]}"', new Map([["known", "--a --b"]])), "cmd --a --b");
-});
-
-test("bashArrays collapses whitespace so a multi-line declaration is one flag string", () => {
-  assert.equal(bashArrays("common=(\n  --a\n  --b\n)").get("common"), "--a --b");
-});
-
-test("a backslash continuation is one logical command, not fragments", () => {
-  const text = `pm-changelog \\\n  --release-version-from-package \\\n  ${DATE_FLAG}`;
-  assert.equal(joinContinuations(text).split("\n").length, 1);
-  assert.deepEqual(auditInvocations([{ file: "package.json", text }]).failures, []);
 });
 
 test("one line holding two invocations is judged per invocation, spaced or not", () => {
@@ -227,14 +195,6 @@ test("a generator that cannot run is reported as a failed run, not as a missing 
   assert.deepEqual(good, { ok: true, text: "## 1.2.3 - 2026-01-02" });
 });
 
-test("the main-invocation guard answers both ways", () => {
-  const self = fileURLToPath(import.meta.resolve("../scripts/verify-release-changelog-date.ts"));
-  const url = import.meta.resolve("../scripts/verify-release-changelog-date.ts");
-  assert.equal(isMainInvocation(["node", self], url), true);
-  assert.equal(isMainInvocation(["node", fileURLToPath(import.meta.url)], url), false);
-  assert.equal(isMainInvocation(["node"], url), false);
-});
-
 test("runIfMain runs only when argv names this module, and refuses otherwise", () => {
   const url = import.meta.resolve("../scripts/verify-release-changelog-date.ts");
   assert.equal(runIfMain(["node", fileURLToPath(import.meta.url)], url, ".", "2026-01-01"), false,
@@ -281,4 +241,27 @@ test("an unquoted trailing comment cannot supply the flag the command is missing
   assert.equal(stripComment("cmd --flag 'a # b'"), "cmd --flag 'a # b'");
   assert.equal(stripComment("cmd --flag\\# not-a-comment"), "cmd --flag\\# not-a-comment");
   assert.equal(stripComment("#leading"), "");
+});
+
+test("a shared bash options array is expanded into each invocation that uses it", () => {
+  // Declared once so the invocations cannot drift, with the effect that the
+  // invocation line itself carries almost no flags.
+  const text = [
+    'common=(',
+    '  --pm-root .agents/pm',
+    `  --version "$RELEASE_TAG"`,
+    `  ${DATE_FLAG}`,
+    ')',
+    './node_modules/.bin/pm-changelog "${common[@]}" --mode replace',
+  ].join("\n");
+  assert.deepEqual(auditInvocations([{ file: ".github/workflows/release.yml", text }]).failures, []);
+
+  const withoutFlag = text.replace(`  ${DATE_FLAG}\n`, "");
+  assert.equal(auditInvocations([{ file: ".github/workflows/release.yml", text: withoutFlag }]).failures.length, 1);
+});
+
+test("a backslash continuation is one logical command, not fragments", () => {
+  const text = `pm-changelog \\\n  --release-version-from-package \\\n  ${DATE_FLAG}`;
+  assert.equal(joinContinuations(text).split("\n").length, 1);
+  assert.deepEqual(auditInvocations([{ file: "package.json", text }]).failures, []);
 });

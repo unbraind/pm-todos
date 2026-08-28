@@ -20,6 +20,14 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  bashArrays,
+  expandArrays,
+  joinContinuations,
+  type SourceFile,
+  type VerifierResult,
+} from "./shell-command-scan.ts";
+import { isMainInvocation } from "./main-invocation.ts";
 
 /** Every spelling that tells the generator which version it is rendering.
  *
@@ -39,62 +47,6 @@ export interface Invocation {
   file: string;
   /** The logical command, with continuations joined and arrays expanded. */
   command: string;
-}
-
-/** A tracked file's path and contents. */
-export interface SourceFile {
-  /** Repository-relative path. */
-  file: string;
-  /** File contents. */
-  text: string;
-}
-
-/**
- * Collapse shell and YAML line continuations so one logical command is one string.
- *
- * A backslash at end of line joins the next line; without this every multi-line
- * invocation looks like a set of fragments, none of which carries both the
- * version input and the date flag.
- *
- * @param text - Raw file contents.
- * @returns The same text with continuations joined.
- */
-export function joinContinuations(text: string): string {
-  return text.replace(/\\\r?\n\s*/g, " ");
-}
-
-/**
- * Index bash array assignments so a shared options array can be expanded.
- *
- * The release workflows declare `common=( ... )` once and pass `"${common[@]}"`
- * to each invocation, precisely so the invocations cannot drift. A scan that
- * reads only the invocation line therefore sees none of the shared flags.
- *
- * @param text - File contents with continuations already joined.
- * @returns Array name mapped to the flag text it holds.
- */
-export function bashArrays(text: string): Map<string, string> {
-  const arrays = new Map<string, string>();
-  for (const match of text.matchAll(/(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=\(([\s\S]*?)\)/g)) {
-    arrays.set(match[1], match[2].replace(/\s+/g, " ").trim());
-  }
-  return arrays;
-}
-
-/**
- * Expand `"${name[@]}"` references against the file's array declarations.
- *
- * An unknown name is left untouched rather than erased: silently dropping it
- * would turn "this scan does not understand the command" into "this command has
- * no flags", which reads as a pass.
- *
- * @param line - One logical command.
- * @param arrays - Array declarations from the same file.
- * @returns The command with referenced array contents inlined.
- */
-export function expandArrays(line: string, arrays: Map<string, string>): string {
-  return line.replace(/"?\$\{([A-Za-z_][A-Za-z0-9_]*)\[@\]\}"?/g, (whole, name: string) =>
-    arrays.get(name) ?? whole);
 }
 
 /**
@@ -163,14 +115,6 @@ export function invocationsIn(source: SourceFile): Invocation[] {
     }
   }
   return found;
-}
-
-/** The outcome of one verifier run. */
-export interface VerifierResult {
-  /** Reasons the run failed; empty means it passed. */
-  failures: string[];
-  /** Lines describing what was checked, for the operator. */
-  notes: string[];
 }
 
 /**
@@ -361,22 +305,6 @@ export function report(result: VerifierResult): void {
   for (const note of result.notes) process.stdout.write(`${note}\n`);
   for (const failure of result.failures) process.stderr.write(`FAIL: ${failure}\n`);
   process.exitCode = result.failures.length === 0 ? 0 : 1;
-}
-
-/**
- * Whether this module is the process entry point.
- *
- * Kept as a named function rather than an inline comparison so the suite can
- * execute both answers; a guard nothing exercises is how an entry point stops
- * running and nobody notices.
- *
- * @param argv - The process argv to judge.
- * @param moduleUrl - The module's own `import.meta.url`.
- * @returns True when argv names this module as the script being run.
- */
-export function isMainInvocation(argv: string[], moduleUrl: string): boolean {
-  const script = argv[1];
-  return script !== undefined && moduleUrl === pathToFileURL(resolve(script)).href;
 }
 
 /**

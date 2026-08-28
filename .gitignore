@@ -4,7 +4,9 @@ dist-test/
 *.local
 *.tgz
 RELEASE_NOTES.md
-.agents/pm/extensions/
+# The managed project extension registry is tracked; package artifacts are restored by the workflow.
+.agents/pm/extensions/*
+!.agents/pm/extensions/.managed-extensions.json
 .agents/pm/locks/
 .agents/pm/runtime/
 .agents/pm/search/

@@ -1,15 +1,17 @@
 id: pm-todos-mq3x
-title: Supply a close reason on todos import so completed items land and report partial imports
-description: ""
+title: "todos import silently drops every completed item and exits 0, because it closes without a reason and require_close_reason is on by default"
+description: "GH issue #49: https://github.com/unbraind/pm-todos/issues/49 · author @unbraind · state reason completed · created 2026-08-11T21:22:55Z · updated 2026-08-14T02:11:23Z"
 type: Issue
 status: closed
 priority: 2
-tags: []
+tags[2]: "gh:unbraind/pm-todos#49","github_author:unbraind"
 created_at: "2026-08-13T22:12:06.034Z"
-updated_at: "2026-08-13T22:28:21.359Z"
+updated_at: "2026-08-28T20:07:53.168Z"
 closed_at: "2026-08-13T22:21:57.199Z"
 completed_at: "2026-08-13T22:21:57.199Z"
 author: pi-agent
+comments[1]{created_at,author,text}:
+  "2026-08-28T20:06:21.919Z",pi-agent,"GitHub issue link established during the pm-github pilot: https://github.com/unbraind/pm-todos/issues/49. Existing item covered the issue; import must update this item rather than create another."
 files[3]{path,scope,note}:
   index.ts,project,supply a traceable close reason on import create/update of terminal statuses; track dropped lines; route all three handlers through withDroppedReport for partial-import reporting and non-zero exit
   test/import-close-reason.test.ts,project,"end-to-end regression for issue 49 via real pm subprocess: completed items land with a traceable close reason; partial imports report dropped lines on stdout and exit non-zero; sync refuses to overwrite on drop"
@@ -26,4 +28,10 @@ tests[8]{command,scope,note}:
 docs[1]{path,scope,note}:
   "https://github.com/unbraind/pm-todos/issues/49",project,Import silently drops every completed item and exits 0 because it closes without a reason while require_close_reason is on by default
 close_reason: "Fixed: runTodoImport now attaches a traceable close reason (Imported as <status> from <file> line <n>) whenever it creates or upserts an item into a terminal status, so checked [x] lines land in the tracker instead of being rejected by the default governance.require_close_reason policy. Partial-import contract chosen: import what it can, then report every dropped line in a structured 'dropped' array on the normal output path (stdout JSON) and set a non-zero process exit code via withDroppedReport (used by the todos importer, todos-import legacy importer, and todos sync). sync refuses to overwrite the source file when the import half dropped a line, preserving the original bytes. Verified by 8 tests (4 end-to-end via real pm subprocess, 4 in-process unit) all run green through pm test --run; release:check passes."
-body: ""
+github_author: unbraind
+github_created_at: "2026-08-11T21:22:55Z"
+github_number: 49
+github_state: closed
+github_updated_at: "2026-08-14T02:11:23Z"
+github_url: "https://github.com/unbraind/pm-todos/issues/49"
+body: "**Found by running the command against a real TODO file in a fresh, default workspace** — no unusual configuration involved.\n\n## Reproduction\n\n```bash\npm init td && pm install pm-todos\nprintf \"# TODO\\n\\n- [x] Finished work that must not be lost\\n- [ ] Pending work\\n\" > TODO.md\n\npm todos import TODO.md; echo \"EXIT=$?\"\npm list --status all\n```\n\nResult:\n\n```\nEXIT=0\nimported: 1\n - open | Pending work\n```\n\nThe completed item is **gone**. `Finished work that must not be lost` was never created, and the command reported success.\n\n## What happens\n\nstderr carries the cause, once per completed line:\n\n```\nTODO.md:3: create failed — Error: Close reason text is required because\ngovernance.require_close_reason is enabled\n```\n\nThe importer creates each item and, for a checked box, closes it — without supplying a close reason. `governance.require_close_reason` is a **built-in default**: it does not appear in a freshly written `.agents/pm/settings.json`, so this is the out-of-the-box path, not an opted-in strict mode.\n\n## Why this is worse than a failed import\n\nThree properties compound:\n\n1. **It is the normal case.** A TODO file exists to track work; some of it is done. A file with no `[x]` lines is the unusual one.\n2. **The import is partial, not refused.** Pending items are created, completed ones are dropped, and the workspace is left half-converted — the tracker and the file now disagree, and nothing records which lines were lost.\n3. **Exit code 0.** Any agent or script that runs the import and checks the exit status sees success. The failure exists only in stderr text next to output that otherwise reads as a normal run.\n\nThe item dropped is specifically the record of **finished work**, which is the part a user cannot reconstruct by looking at what is left.\n\n## Suggested fix\n\nThe close needs a reason. The natural one is available at the call site — the source line — so something like:\n\n```ts\nawait client.close(id, \"closed\", {\n  message: \"Import completed TODO item\",\n  resolution: `Imported as completed from ${file}:${lineNumber}`,\n});\n```\n\nWhatever text is chosen, two things matter beyond it:\n\n- **Do not exit 0 on a partial import.** Either refuse the whole file before writing anything, or exit non-zero and name the lines that were dropped. A partial write reported as success is the part that turns a fixable bug into lost data.\n- Worth checking `todos sync` for the same path, since it also reconciles completed state, and `todos export` for the inverse.\n\n## Environment\n\n`pm-todos` current `main`, `@unbrained/pm-cli` 2026.8.6/2026.8.7, fresh `pm init` workspace, Linux."
