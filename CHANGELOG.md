@@ -2,6 +2,10 @@
 
 ## 2026.8.28 - 2026-08-28
 
+### Fixed
+
+- A failed provenance publish silently falls back to an unattested one ([pm-todos-oml1](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-oml1.toon))
+
 ### Security
 
 - The identity gate deadlocks the one remediation its own failure message prescribes ([pm-todos-3a03](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-3a03.toon))

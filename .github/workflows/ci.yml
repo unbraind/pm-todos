@@ -57,3 +57,6 @@ jobs:
 
       - name: Run mandatory release gate
         run: npm run release:check
+
+      - name: Verify every publish invocation is attested
+        run: npm run verify:release-publish-attestation
