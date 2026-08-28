@@ -1,0 +1,31 @@
+id: pm-todos-9hgh
+title: Pilot pm-github issue sync for pm-todos
+description: Pilot installation and scheduled pull request synchronization for the package GitHub issue tracker; preserve existing pm records and verify no duplicates.
+type: Task
+status: closed
+priority: 1
+tags: []
+created_at: "2026-08-28T20:06:52.881Z"
+updated_at: "2026-08-28T20:40:39.161Z"
+closed_at: "2026-08-28T20:40:38.572Z"
+completed_at: "2026-08-28T20:40:38.572Z"
+author: pi-agent
+resolution: Scheduled project-scoped pm-github sync is installed and opens or updates a PR from a branch.
+comments[1]{created_at,author,text}:
+  "2026-08-28T20:16:23.521Z",pi-agent,"Duplicate audit found GitHub issues 49 and 54. Existing items pm-todos-mq3x and pm-todos-oz1n cover them, so the dry-run planned 0 new items and 2 updates; the atomic import applied 0 new items and 2 updates."
+notes[1]{created_at,author,text}:
+  "2026-08-28T20:16:24.387Z",pi-agent,"The first documented install attempt failed under pinned pm 2026.8.21 because npm 12 emits object-shaped npm pack JSON and the installer treated the final } as a tarball name. Pinning @unbrained/pm-cli to 2026.8.28 did not remove the npm-client mismatch, so the verified install uses a temporary npm 10.9.3 path. The published pm-github 2026.8.18 manifest also carried an obsolete pm key and floor 2026.8.3; the workflow removes that key and restores the source floor 2026.8.20 before strict health."
+files[6]{path,scope,note}:
+  .agents/pm/extensions/.managed-extensions.json,project,Declare pm-github as a project-scoped managed extension.
+  .github/workflows/ci.yml,project,CI installs and normalizes the project pm-github extension before health.
+  .github/workflows/pm-github-sync.yml,project,Scheduled import runs on automation/pm-github-sync and opens or updates a PR.
+  .gitignore,project,Track the managed project extension registry while ignoring extracted artifacts.
+  package-lock.json,project,Lock the verified pm CLI version.
+  package.json,project,Pin the pm CLI used by the integration.
+tests[2]{command,path,scope,provenance{author,created_at,source_kind,source_ref},note}:
+  ./node_modules/.bin/pm github import unbraind/pm-todos --state all --atomic --dry-run,.github/workflows/pm-github-sync.yml,project,pi-agent,"2026-08-28T20:16:27.319Z",local_mutation,fix/refuse-unattested-publish-fallback,Dry-run must report 0 creates and 2 updates.
+  ./node_modules/.bin/pm health --strict-exit,.github/workflows/pm-github-sync.yml,project,pi-agent,"2026-08-28T20:16:27.319Z",local_mutation,fix/refuse-unattested-publish-fallback,Strict health verdict used by the sync workflow.
+docs[1]{path,scope,note}:
+  README.md,project,Package documentation context for project-scoped pm installation.
+close_reason: "Pilot verified: GitHub issues 49 and 54 were linked to existing items, the atomic dry-run planned 0 creates and 2 updates, the real import applied 0 creates and 2 updates, duplicates remained at zero, YAML and shell checks passed, and npm run release:check plus ./node_modules/.bin/pm health --strict-exit passed."
+body: ""

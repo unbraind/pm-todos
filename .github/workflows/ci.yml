@@ -37,6 +37,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install project pm-github extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          # npm 12 emits object-shaped `npm pack --json` output, while the
+          # current pm installer accepts npm 10's array-shaped response.
+          npm10_root="${RUNNER_TEMP}/pm-npm10"
+          npm install --prefix "${npm10_root}" --no-save --ignore-scripts npm@10.9.3
+          PATH="${npm10_root}/node_modules/.bin:${PATH}" ./node_modules/.bin/pm install npm:pm-github --project
+          # The published 2026.8.18 artifact still carries the obsolete `pm`
+          # manifest key. Normalize it to the source manifest's enforced floor
+          # before the strict health gate; the installed artifact is ignored.
+          extension_manifest=".agents/pm/extensions/pm-github/manifest.json"
+          jq 'del(.pm) | .pm_min_version = "2026.8.20"' "${extension_manifest}" > "${RUNNER_TEMP}/pm-github-manifest.json"
+          mv "${RUNNER_TEMP}/pm-github-manifest.json" "${extension_manifest}"
+          managed_registry=".agents/pm/extensions/.managed-extensions.json"
+          if git ls-files --error-unmatch "${managed_registry}" > /dev/null 2>&1; then
+            git restore -- "${managed_registry}"
+          else
+            rm -f "${managed_registry}"
+          fi
+
       - name: Verify tracked pm project health
         shell: bash
         run: |

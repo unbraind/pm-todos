@@ -1,12 +1,14 @@
 id: pm-todos-oz1n
-title: Reachable history contains personal identities and absolute host-path evidence
-description: "A full reachable-history audit found package-owned PM patches containing absolute home paths and commit metadata containing non-noreply personal identity domains. Current tracked source has no absolute home paths, private IPs, or private keys, and current credential-pattern hits are benign variable/control names, but current cleanliness does not remove reachable historical disclosure."
+title: Reachable history privacy clearance is required before further release
+description: "GH issue #54: https://github.com/unbraind/pm-todos/issues/54 · author @unbraind · state reason completed · created 2026-08-21T09:18:21Z · updated 2026-08-27T04:12:52Z"
 type: Issue
-status: open
+status: closed
 priority: 1
-tags[4]: git-history,privacy,public-repo,release-blocker
+tags[2]: "gh:unbraind/pm-todos#54","github_author:unbraind"
 created_at: "2026-08-21T09:18:09.879Z"
-updated_at: "2026-08-21T09:18:38.530Z"
+updated_at: "2026-08-28T20:07:53.510Z"
+closed_at: "2026-08-28T20:07:53.498Z"
+completed_at: "2026-08-27T04:12:52.000Z"
 author: codex
 estimated_minutes: 240
 acceptance_criteria: "Produce a value-redacted path/commit inventory; obtain explicit maintainer authorization for retain versus coordinated rewrite; if rewriting, preserve PM semantic history and retag/review every affected release; rerun current tracked, full patch, full blob, author-identity, npm tarball, and GitHub secret scans; record exact post-remediation counts and external coordination; prohibit merge/publication while unresolved"
@@ -17,6 +19,8 @@ actual_result: "Two package-owned PM records retain absolute home-path evidence 
 affected_version: all published pm-todos releases through 2026.8.16
 component: reachable git history
 customer_impact: "Publishing or republishing from the current graph continues distributing avoidable personal identity and host-layout metadata; rewriting without authorization could instead break tags, forks, and consumers."
+comments[1]{created_at,author,text}:
+  "2026-08-28T20:06:18.956Z",pi-agent,"GitHub issue link established during the pm-github pilot: https://github.com/unbraind/pm-todos/issues/54. Existing item covered the issue; import must update this item rather than create another."
 files[4]{path,scope,note}:
   .agents/pm/features/pm-todos-7l60.toon,project,Reachable historical absolute-path test command
   .agents/pm/history/pm-todos-7l60.jsonl,project,Append-only stream retaining historical absolute-path values
@@ -26,4 +30,11 @@ tests[1]{command,scope,timeout_seconds,note}:
   git log --all -p --full-history -- .agents/pm,project,60,Value-redacted absolute-home history audit
 docs[1]{path,scope,note}:
   "https://github.com/unbraind/pm-todos/issues/54",global,Public value-redacted privacy clearance blocker
-body: Do not print the personal address or username in public issue text. This blocker is independent of pm-todos-x5my implementation correctness and pm-todos-qpst coverage.
+close_reason: GitHub issue #54 closed
+github_author: unbraind
+github_created_at: "2026-08-21T09:18:21Z"
+github_number: 54
+github_state: closed
+github_updated_at: "2026-08-27T04:12:52Z"
+github_url: "https://github.com/unbraind/pm-todos/issues/54"
+body: "## Finding\n\nA value-redacted full-history audit found package-owned PM evidence containing absolute home-path values in 12 reachable commits / 32 patch lines, plus 97 commits with a non-noreply personal-domain author identity and one localhost identity. Historical vendored dependencies also contain generic private-IP/email fixtures. No private-key pattern was found, and current tracked source contains no absolute home path or private IP.\n\nThe actual personal address, username, and host path are intentionally omitted from this public issue.\n\n## Required decision\n\n- review the value-redacted inventory\n- explicitly authorize retention or a coordinated history rewrite\n- if rewriting, preserve PM semantic history and coordinate tags/forks/releases\n- rerun current-file, full patch/blob, author-identity, tarball, and GitHub secret scans\n- do not merge or publish the current hardening PR while this remains unresolved\n\n## PM evidence\n\n- [pm-todos-oz1n](https://github.com/unbraind/pm-todos/blob/fix/canonical-certified-list-reader-2026-8-21/.agents/pm/issues/pm-todos-oz1n.toon)\n- [canonical reader delivery item](https://github.com/unbraind/pm-todos/blob/fix/canonical-certified-list-reader-2026-8-21/.agents/pm/issues/pm-todos-x5my.toon)\n\nThis issue does not authorize a rewrite, tag move, merge, or publication."
