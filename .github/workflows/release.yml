@@ -32,15 +32,15 @@ jobs:
       RELEASE_TIMEZONE: Europe/Vienna
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 22.18.0
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
@@ -270,14 +270,7 @@ jobs:
         run: |
           set -euo pipefail
           npm version "${NPM_VERSION}" --no-git-tag-version --allow-same-version
-          node -e "const fs=require('node:fs');const version=JSON.parse(fs.readFileSync('package.json','utf8')).version;for(const file of ['manifest.json']){if(!fs.existsSync(file))continue;const json=JSON.parse(fs.readFileSync(file,'utf8'));json.version=version;fs.writeFileSync(file,JSON.stringify(json,null,2)+'\n');}if(fs.existsSync('index.ts')){const source=fs.readFileSync('index.ts','utf8');const next=source.replace(/version:\s*[\"'][^\"']+[\"']/,'version: \"'+version+'\"');if(next!==source)fs.writeFileSync('index.ts',next);}"
-          # Clean before building, for the same reason CI does: tsc never removes
-          # output for a source that was deleted or renamed, so an orphaned artifact
-          # survives a plain rebuild. Without this the release stages the orphan,
-          # publishes it, and commits it to main - where CI's clean-rebuild
-          # comparison then fails, so a release would break the branch it just
-          # landed on. Caught in review on pm-graph#48.
-          rm -rf dist
+          npm run release:update-version
           npm run build
 
       - name: Generate changelog and release notes
@@ -285,9 +278,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx pm-changelog --pm-root .agents/pm --mode replace --output CHANGELOG.md --all-release-tags --release-version-from-package --item-url-base https://github.com/unbraind/pm-slack/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm --github-step-summary --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded
-          npx pm-changelog --pm-root .agents/pm --mode replace --output CHANGELOG.md --all-release-tags --release-version-from-package --item-url-base https://github.com/unbraind/pm-slack/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm --check --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded
-          npx pm-changelog --pm-root .agents/pm --stdout --all-release-tags --release-version-from-package --item-url-base https://github.com/unbraind/pm-slack/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm > RELEASE_NOTES.md --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded
+          npx pm-changelog --pm-root .agents/pm --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded --mode replace --output CHANGELOG.md --all-release-tags --release-version-from-package --date-from-version --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm --github-step-summary
+          npx pm-changelog --pm-root .agents/pm --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded --mode replace --output CHANGELOG.md --all-release-tags --release-version-from-package --date-from-version --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm --check
+          npx pm-changelog --pm-root .agents/pm --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded --stdout --all-release-tags --release-version-from-package --date-from-version --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm > RELEASE_NOTES.md
 
       - name: Run release checks
         if: steps.decide.outputs.should_release == 'true'
@@ -306,7 +299,6 @@ jobs:
           paths=(package.json package-lock.json manifest.json CHANGELOG.md)
           [[ -f index.ts ]] && paths+=(index.ts)
           [[ -d src ]] && paths+=(src)
-          git ls-files --error-unmatch 'dist/' > /dev/null 2>&1 && paths+=(dist)
           git add "${paths[@]}"
           if git diff --cached --quiet; then
             echo "Release files are already current; tagging existing commit."
@@ -367,8 +359,8 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --base main \
               --head "$release_branch" \
-              --title "Release pm-slack ${RELEASE_TAG}" \
-              --body "Automated daily release metadata for \`${RELEASE_TAG}\`. The release gate passed before this PR was created; npm publication and tagging remain blocked until this protected PR is merged. Tracking: [pm-slack-1aeu](https://github.com/unbraind/pm-slack/blob/main/.agents/pm/issues/pm-slack-1aeu.toon).")"
+              --title "Release pm-todos ${RELEASE_TAG}" \
+              --body "Automated daily release metadata for \`${RELEASE_TAG}\`. The release gate passed before this PR was created; npm publication and tagging remain blocked until this protected PR is merged. Tracking: [pm-todos-ja6k](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ja6k.toon).")"
             pr_number="${pr_url##*/}"
           fi
 
@@ -511,6 +503,7 @@ jobs:
       # base SHA is checked immediately before creation. Re-check the exact
       # merged main commit anyway so npm always receives byte-for-byte validated
       # repository state, and fail safely before publication if main moved.
+      # dist/ is gitignored in this repo and is NOT included in the verify diff.
       - name: Verify merged release
         if: steps.decide.outputs.should_release == 'true'
         shell: bash
@@ -539,11 +532,11 @@ jobs:
           [[ -f index.ts ]] && diff_paths+=(index.ts)
           [[ -d src ]] && diff_paths+=(src)
           git diff --exit-code -- "${diff_paths[@]}"
-          # `git diff` here compared dist against itself - nothing rebuilds
-          # before this point, so the old check passed unconditionally, and
-          # it could not see untracked or orphaned artifacts at all. Rebuild
-          # and use `git status` so a stale committed dist cannot ship.
-          if git ls-files --error-unmatch 'dist/' > /dev/null 2>&1; then
+          # `git diff` above compares dist against itself - nothing
+          # rebuilds before this point, so it passes unconditionally and
+          # cannot see untracked or ignored artifacts. Rebuild from clean
+          # so a stale committed dist cannot ship.
+          if git ls-files --error-unmatch 'dist' > /dev/null 2>&1; then
             rm -rf dist
             npm run build
             dist_status="$(git status --porcelain=v1 --untracked-files=all --ignored=matching -- 'dist/')"
@@ -560,7 +553,7 @@ jobs:
       # that expired and silently stopped every fleet package publishing between
       # 2026-08-17 and 2026-08-26 while main kept bumping the version. Trusted
       # publishing must be configured for this package on npmjs.com against
-      # unbraind/pm-slack and this workflow filename, or publish fails closed.
+      # unbraind/pm-todos and this workflow filename, or publish fails closed.
       - name: Publish npm package
         if: steps.decide.outputs.should_release == 'true'
         shell: bash
@@ -647,6 +640,11 @@ jobs:
             exit 1
           }
 
+          # Idempotence guard: if this exact version is already published AND
+          # attested, treat the publish as done. This is what lets an
+          # already-published release (e.g. 2026.8.10, which landed on npm while
+          # main was still at 2026.8.7) reconcile instead of failing with a 403
+          # when the workflow catches up and re-runs the transaction.
           if reconcile_or_refuse; then
             echo "::notice::${pkg_name}@${NPM_VERSION} already published and attested; skipping publish step."
             exit 0
