@@ -615,7 +615,11 @@ export function shellScalars(text: string): Map<string, string> {
     // Single quotes make a backslash literal, so only the other two forms are
     // unescaped. Unescaping a single-quoted value turned `'npm publish
     // \\--provenance'` into an attested-looking command the shell never runs.
-    const value = assignment[3] === undefined ? raw.replace(/\\(.)/g, "$1") : raw;
+    const value = assignment[3] !== undefined
+      ? raw
+      : assignment[2] !== undefined
+        ? raw.replace(/\\([$`"\\])/g, "$1")
+        : raw.replace(/\\(.)/g, "$1");
     if (/[$`"'()]/.test(value)) continue;
     scalars.set(assignment[1]!, value);
   }
@@ -636,7 +640,10 @@ export function shellScalars(text: string): Map<string, string> {
 export function expandScalars(line: string, scalars: Map<string, string>): string {
   // One of the two alternatives always captures the name, so there is no
   // nameless match to guard against.
-  return line.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole, braced?: string, bare?: string) => scalars.get(braced ?? bare!) ?? whole);
+  return line.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole, braced?: string, bare?: string) => {
+    const value = scalars.get(braced ?? bare!);
+    return value?.replace(/\\/g, "\\\\") ?? whole;
+  });
 }
 
 /**

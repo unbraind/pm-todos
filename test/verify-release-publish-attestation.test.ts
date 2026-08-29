@@ -842,6 +842,14 @@ test("a scalar is taken only from a line that is exactly one literal assignment"
   // an unattested publish exactly as being too loose does.
   assert.equal(shellScalars("CMD='npm publish \\--provenance'\n").get("CMD"), "npm publish \\--provenance",
     "single quotes make a backslash literal, so the value is not unescaped");
+  assert.equal(shellScalars('FLAG="--provenance\\ "\n').get("FLAG"), "--provenance\\ ",
+    "double quotes preserve a backslash before a space");
+  const escapedDoubleQuote = auditPublishAttestation([{
+    file: "release.yml",
+    text: 'FLAG="--provenance\\ "\nnpm publish $FLAG\nnpm publish --provenance\n',
+  }]);
+  assert.equal(escapedDoubleQuote.failures.length, 1,
+    "a preserved double-quoted backslash cannot invent an exact attestation flag");
   assert.equal(shellScalars("# a; FLAG=--provenance\n").get("FLAG"), undefined,
     "a semicolon inside a comment does not expose an assignment");
 

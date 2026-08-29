@@ -14,6 +14,10 @@
 
 ## 2026.8.29 - 2026-08-29
 
+### Fixed
+
+- Preserve double-quoted scalar backslashes ([pm-todos-ynqt](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ynqt.toon))
+
 ### Other
 
 - Pilot pm-github issue sync for pm-todos ([pm-todos-9hgh](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-9hgh.toon))
