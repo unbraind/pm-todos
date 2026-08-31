@@ -859,6 +859,35 @@ test("a scalar is taken only from a line that is exactly one literal assignment"
   }]);
   assert.equal(heredoc.failures.length, 1, "assignment-shaped heredoc data is not a binding");
 
+  // `<<\EOF` quotes the delimiter with a backslash the way `<<'EOF'` quotes it with
+  // single quotes, and the shell strips it before matching the terminator. Keeping the
+  // backslash left the delimiter as `\EOF`, which the real `EOF` line never matched, so
+  // the heredoc stayed open for the rest of the file, `CMD=npm` was swallowed as body
+  // text, and `$CMD publish` was never recognised as a publish at all. The attested
+  // sibling then satisfied the non-vacuity guard and the gate reported clean.
+  for (const opener of ["cat <<\\EOF", "cat <<-\\EOF"]) {
+    const backslashQuoted = auditPublishAttestation([{
+      file: "release.yml",
+      text: `${opener}\ninside\nEOF\nCMD=npm\n$CMD publish\nnpm publish --provenance\n`,
+    }]);
+    assert.equal(backslashQuoted.failures.length, 1,
+      `a backslash-quoted heredoc delimiter (${opener}) must close on its unquoted terminator`);
+  }
+
+  // A completed command substitution inside double quotes, followed by a heredoc on
+  // the same line. This pins the behaviour rather than guarding a reproduced bug:
+  // both the current scan and the earlier one that recursed past the closing
+  // parenthesis agree on every shape probed, because the text after a substitution
+  // inside double quotes always opens with the closing quote, which leaves the
+  // recursion quoted and blind to a later `<<EOF`. Kept because the assignment
+  // binding after a heredoc on such a line is what keeps `$CMD publish` auditable.
+  const substitutionThenHeredoc = auditPublishAttestation([{
+    file: "release.yml",
+    text: 'cat "$(echo hi)" <<EOF\ninside\nEOF\nCMD=npm\n$CMD publish\nnpm publish --provenance\n',
+  }]);
+  assert.equal(substitutionThenHeredoc.failures.length, 1,
+    "a heredoc opened after a command substitution is queued once, so later assignments still bind");
+
   // The shell runs this publish with $FLAG unset, because the assignment is
   // below it. Resolving against a file-wide map would report it as attested.
   const laterAssignment = auditPublishAttestation([{

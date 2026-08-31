@@ -574,7 +574,27 @@ function heredocTerminators(line: string): Array<{ delimiter: string; stripTabs:
       continue;
     }
     if (double && char === "$" && line[index + 1] === "(") {
-      found.push(...heredocTerminators(line.slice(index + 2)));
+      // Scan the substitution's own text and resume after it. Reading past the
+      // closing parenthesis would record a heredoc opened later on the line here
+      // AND again in this loop, queueing one delimiter twice. The real terminator
+      // line then clears only one entry, so every following line stays misread as
+      // heredoc body — including an assignment that routes a command, which leaves
+      // `$CMD publish` unresolved and the publish never audited at all.
+      let depth = 1;
+      let cursor = index + 2;
+      let quoted = false;
+      while (cursor < line.length && depth > 0) {
+        const inner = line[cursor]!;
+        if (inner === "\\") { cursor += 2; continue; }
+        if (inner === "'") quoted = !quoted;
+        else if (!quoted && inner === "(") depth += 1;
+        else if (!quoted && inner === ")") depth -= 1;
+        cursor += 1;
+      }
+      const closed = depth === 0;
+      found.push(...heredocTerminators(line.slice(index + 2, closed ? cursor - 1 : line.length)));
+      index = closed ? cursor - 1 : line.length;
+      continue;
     }
     if (char === '"' && !single) { double = !double; continue; }
     if (single || double) continue;
@@ -589,7 +609,14 @@ function heredocTerminators(line: string): Array<{ delimiter: string; stripTabs:
     if (quote !== undefined) while (cursor < line.length && line[cursor] !== quote) cursor += 1;
     else while (cursor < line.length && /[^\s;&|<>()]/.test(line[cursor]!)) cursor += 1;
     if (cursor > start && (quote === undefined || line[cursor] === quote)) {
-      found.push({ delimiter: line.slice(start, cursor), stripTabs });
+      const word = line.slice(start, cursor);
+      // `<<\EOF` quotes the delimiter with a backslash exactly as `<<'EOF'` quotes it
+      // with single quotes, and the shell strips the backslash before matching the
+      // terminator line. Keeping it would leave the delimiter as `\EOF`, which the
+      // real `EOF` line never matches, so the heredoc would stay open for the rest of
+      // the file and every later assignment would be discarded as body text — leaving
+      // a scalar-routed publish unresolved and never audited.
+      found.push({ delimiter: quote === undefined ? word.replace(/\\(.)/gu, "$1") : word, stripTabs });
       index = cursor;
     }
   }
