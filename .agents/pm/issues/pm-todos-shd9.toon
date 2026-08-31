@@ -1,0 +1,16 @@
+id: pm-todos-shd9
+title: "pm-todos runs CodeQL but received no dependency updates, because it had no Dependabot configuration"
+description: "pm-todos runs a codeql workflow but had no .github/dependabot.yml at all, so it received no dependency updates of any kind: no npm bumps, and no bumps for the pinned github/codeql-action commits its own scanner depends on. Those two actions are pinned to db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 and nothing was ever going to move them. Worse, the first time Dependabot did arrive it would have arrived as the fleet-wide split-pair deadlock: init and analyze are opened as two separate pull requests and must carry the same version, so each one alone fails the codeql check and neither can go green. Measured 2026-08-31 in unbraind/pm-gantt-chart 87 and 88. This adds the npm and github-actions ecosystems on a weekly schedule with a codeql-action group, so updates start arriving and arrive in a shape that can pass."
+type: Issue
+status: closed
+priority: 2
+tags: []
+created_at: "2026-08-31T10:43:08.490Z"
+updated_at: "2026-08-31T10:43:09.690Z"
+closed_at: "2026-08-31T10:43:09.671Z"
+completed_at: "2026-08-31T10:43:09.671Z"
+author: claude-orchestrator
+files[1]{path,scope}:
+  .github/dependabot.yml,project
+close_reason: "Resolved by adding a Dependabot configuration covering npm and github-actions, with codeql-action bumps grouped into one pull request."
+body: ""
