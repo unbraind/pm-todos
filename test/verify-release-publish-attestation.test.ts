@@ -859,6 +859,43 @@ test("a scalar is taken only from a line that is exactly one literal assignment"
   }]);
   assert.equal(heredoc.failures.length, 1, "assignment-shaped heredoc data is not a binding");
 
+  // A binding made inside a block the shell may never enter cannot attest a
+  // publish outside it. `if false; then FLAG=--provenance; fi` runs the publish
+  // below it with $FLAG unset, and an uncalled function body or a subshell are
+  // the same shape. Each case pairs the unattested publish with an attested
+  // sibling, so a scan that simply stopped finding publishes would fail the
+  // non-vacuity guard rather than pass this.
+  const outOfScope: ReadonlyArray<readonly [string, string]> = [
+    ["an untaken if branch", "if false; then\nFLAG=--provenance\nfi\n"],
+    ["an uncalled function body", "deploy() {\nFLAG=--provenance\n}\n"],
+    ["a subshell", "(\nFLAG=--provenance\n)\n"],
+    ["an else branch", "if true; then\n:\nelse\nFLAG=--provenance\nfi\n"],
+  ];
+  for (const [label, prelude] of outOfScope) {
+    const scoped = auditPublishAttestation([{
+      file: "release.yml",
+      text: `${prelude}npm publish $FLAG\nnpm publish --provenance\n`,
+    }]);
+    assert.equal(scoped.failures.length, 1,
+      `a binding confined to ${label} cannot attest a publish outside it`);
+  }
+
+  // The mirror direction: narrowing scope must not stop the scan finding
+  // publishes it could see before. An enclosing binding still reaches a nested
+  // command, and a binding shares scope with the command on its own line.
+  const inScope: ReadonlyArray<readonly [string, string, number]> = [
+    ["a binding in the same block still resolves the command",
+      "if true; then\nCMD=npm\n$CMD publish\nfi\nnpm publish --provenance\n", 1],
+    ["an outer binding attests a publish nested below it",
+      "FLAG=--provenance\nif true; then\nnpm publish $FLAG\nfi\n", 0],
+    ["a binding two blocks up still attests",
+      "if true; then\nFLAG=--provenance\nif true; then\nnpm publish $FLAG\nfi\nfi\n", 0],
+  ];
+  for (const [label, text, expected] of inScope) {
+    const resolved = auditPublishAttestation([{ file: "release.yml", text }]);
+    assert.equal(resolved.failures.length, expected, label);
+  }
+
   // `<<\EOF` quotes the delimiter with a backslash the way `<<'EOF'` quotes it with
   // single quotes, and the shell strips it before matching the terminator. Keeping the
   // backslash left the delimiter as `\EOF`, which the real `EOF` line never matched, so

@@ -683,6 +683,52 @@ export interface ScalarAssignment {
   readonly value: string;
   /** Zero-based index of the line that makes the assignment. */
   readonly line: number;
+  /**
+   * Shell block nesting the assignment sits inside; 0 is the file's own scope.
+   *
+   * An assignment inside `if`/`for`/`while`/`case`, a function body, or a
+   * subshell may never run. Crediting it to a command in an outer scope lets an
+   * untaken branch supply `--provenance` to a publish the shell runs without it.
+   */
+  readonly depth: number;
+}
+
+/** Block openers and closers, matched as words outside quotes. */
+const BLOCK_OPENERS = /(?:^|[\s;&|(])(?:if|for|while|until|case|select)(?=[\s;&|]|$)/gu;
+const BLOCK_CLOSERS = /(?:^|[\s;&|])(?:fi|done|esac)(?=[\s;&|)]|$)/gu;
+
+/**
+ * Net change in block nesting contributed by one line.
+ *
+ * Counts shell keywords and brace/parenthesis groups outside quotes. This is a
+ * nesting count, not a parse: it exists to tell "this assignment is inside
+ * something conditional" from "this assignment is the file's own scope", which
+ * is the distinction attestation depends on.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns Positive when the line opens more blocks than it closes.
+ */
+export function blockDepthChange(line: string): number {
+  let bare = "";
+  let single = false;
+  let double = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (char === "\\" && !single) { index += 1; continue; }
+    if (char === "'" && !double) { single = !single; continue; }
+    if (char === '"' && !single) { double = !double; continue; }
+    if (single || double) continue;
+    if (char === "#" && (index === 0 || /\s/u.test(line[index - 1]!))) break;
+    bare += char;
+  }
+  let depth = 0;
+  for (const char of bare) {
+    if (char === "{" || char === "(") depth += 1;
+    else if (char === "}" || char === ")") depth -= 1;
+  }
+  depth += (bare.match(BLOCK_OPENERS) ?? []).length;
+  depth -= (bare.match(BLOCK_CLOSERS) ?? []).length;
+  return depth;
 }
 
 /**
@@ -704,6 +750,7 @@ export function scalarAssignments(text: string): ScalarAssignment[] {
   const assignments: ScalarAssignment[] = [];
   const heredocs: Array<{ delimiter: string; stripTabs: boolean }> = [];
   let lineNumber = -1;
+  let depth = 0;
   for (const line of text.split("\n")) {
     lineNumber += 1;
     const heredoc = heredocs[0];
@@ -713,8 +760,16 @@ export function scalarAssignments(text: string): ScalarAssignment[] {
       continue;
     }
     heredocs.push(...heredocTerminators(line));
+    // A closer returns to the outer scope on its own line, so apply it before
+    // recording; an opener takes effect after, so an assignment written on the
+    // same line as `if ...; then` is recorded inside the block it opens.
+    const change = blockDepthChange(line);
+    if (change < 0) depth = Math.max(0, depth + change);
     const assignment = STANDALONE_ASSIGNMENT.exec(line);
-    if (assignment === null) continue;
+    if (assignment === null) {
+      if (change > 0) depth += change;
+      continue;
+    }
     // Exactly one of the three value alternatives matches, so the last is the
     // only case left rather than a fallback that could be undefined.
     const raw = assignment[2] ?? assignment[3] ?? assignment[4]!;
@@ -726,8 +781,9 @@ export function scalarAssignments(text: string): ScalarAssignment[] {
       : assignment[2] !== undefined
         ? raw.replace(/\\([$`"\\])/g, "$1")
         : raw.replace(/\\(.)/g, "$1");
-    if (/[\$`"'(){};&|<>#]/.test(value)) continue;
-    assignments.push({ name: assignment[1]!, value, line: lineNumber });
+    if (/[\$`"'(){};&|<>#]/.test(value)) { if (change > 0) depth += change; continue; }
+    assignments.push({ name: assignment[1]!, value, line: lineNumber, depth });
+    if (change > 0) depth += change;
   }
   return assignments;
 }
