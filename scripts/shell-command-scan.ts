@@ -558,6 +558,44 @@ export function bashArrays(text: string): Map<string, string> {
 const STANDALONE_ASSIGNMENT =
   /^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=(?:"((?:\\.|[^"\\$`])*)"|'([^']*)'|((?:\\.|[^\s;&|"'`$()\\])+))[ \t]*(?:[;#]|\r?$)/;
 
+/** Return every syntactic, unquoted heredoc terminator opened on a line. */
+function heredocTerminators(line: string): Array<{ delimiter: string; stripTabs: boolean }> {
+  const found: Array<{ delimiter: string; stripTabs: boolean }> = [];
+  let single = false;
+  let double = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (char === "\\" && !single) { index += 1; continue; }
+    if (char === "'" && !double) { single = !single; continue; }
+    if (!single && ((char === "$" && line[index + 1] === "(" && line[index + 2] === "(") ||
+      (!double && char === "(" && line[index + 1] === "("))) {
+      const close = line.indexOf("))", index + (char === "$" ? 3 : 2));
+      if (close !== -1) index = close + 1;
+      continue;
+    }
+    if (double && char === "$" && line[index + 1] === "(") {
+      found.push(...heredocTerminators(line.slice(index + 2)));
+    }
+    if (char === '"' && !single) { double = !double; continue; }
+    if (single || double) continue;
+    if (char === "#" && (index === 0 || /\s/.test(line[index - 1]!))) return found;
+    if (char !== "<" || line[index + 1] !== "<" || line[index + 2] === "<") continue;
+    let cursor = index + 2;
+    const stripTabs = line[cursor] === "-";
+    if (stripTabs) cursor += 1;
+    while (line[cursor] === " " || line[cursor] === "\t") cursor += 1;
+    const quote = line[cursor] === "'" || line[cursor] === '"' ? line[cursor++] : undefined;
+    const start = cursor;
+    if (quote !== undefined) while (cursor < line.length && line[cursor] !== quote) cursor += 1;
+    else while (cursor < line.length && /[^\s;&|<>()]/.test(line[cursor]!)) cursor += 1;
+    if (cursor > start && (quote === undefined || line[cursor] === quote)) {
+      found.push({ delimiter: line.slice(start, cursor), stripTabs });
+      index = cursor;
+    }
+  }
+  return found;
+}
+
 /**
  * Index scalar assignments so a command held in a variable can be audited.
  *
@@ -606,7 +644,48 @@ const STANDALONE_ASSIGNMENT =
  */
 export function shellScalars(text: string): Map<string, string> {
   const scalars = new Map<string, string>();
+  for (const assignment of scalarAssignments(text)) scalars.set(assignment.name, assignment.value);
+  return scalars;
+}
+
+/** A scalar binding and the zero-based line whose text established it. */
+export interface ScalarAssignment {
+  /** Variable name the line assigns. */
+  readonly name: string;
+  /** Literal value the shell would bind, after decoding escapes. */
+  readonly value: string;
+  /** Zero-based index of the line that makes the assignment. */
+  readonly line: number;
+}
+
+/**
+ * Collect every scalar assignment in file order, each tagged with its line.
+ *
+ * Position is load-bearing. A file-wide map lets an assignment resolve a
+ * command written above it, so `npm publish $FLAG` followed later by
+ * `FLAG=--provenance` would read as attested even though the shell runs the
+ * publish with `$FLAG` unset. Callers auditing a command must use only the
+ * assignments that precede it.
+ *
+ * Heredoc bodies are skipped: their lines are data the shell never evaluates,
+ * so an assignment-shaped line inside one establishes no binding.
+ *
+ * @param text - Whole file contents, with line continuations already joined.
+ * @returns Every assignment the shell would make, in file order.
+ */
+export function scalarAssignments(text: string): ScalarAssignment[] {
+  const assignments: ScalarAssignment[] = [];
+  const heredocs: Array<{ delimiter: string; stripTabs: boolean }> = [];
+  let lineNumber = -1;
   for (const line of text.split("\n")) {
+    lineNumber += 1;
+    const heredoc = heredocs[0];
+    if (heredoc !== undefined) {
+      const candidate = heredoc.stripTabs ? line.replace(/^\t+/, "") : line;
+      if (candidate.replace(/\r$/, "") === heredoc.delimiter) heredocs.shift();
+      continue;
+    }
+    heredocs.push(...heredocTerminators(line));
     const assignment = STANDALONE_ASSIGNMENT.exec(line);
     if (assignment === null) continue;
     // Exactly one of the three value alternatives matches, so the last is the
@@ -620,10 +699,10 @@ export function shellScalars(text: string): Map<string, string> {
       : assignment[2] !== undefined
         ? raw.replace(/\\([$`"\\])/g, "$1")
         : raw.replace(/\\(.)/g, "$1");
-    if (/[$`"'()]/.test(value)) continue;
-    scalars.set(assignment[1]!, value);
+    if (/[\$`"'(){};&|<>#]/.test(value)) continue;
+    assignments.push({ name: assignment[1]!, value, line: lineNumber });
   }
-  return scalars;
+  return assignments;
 }
 
 /**

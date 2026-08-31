@@ -16,6 +16,12 @@
 
 ### Fixed
 
+- The publish-attestation gate misses a publish routed through an unquoted shell variable ([pm-todos-9clr](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9clr.toon))
+
+## 2026.8.29 - 2026-08-29
+
+### Fixed
+
 - Preserve double-quoted scalar backslashes ([pm-todos-ynqt](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ynqt.toon))
 
 ### Other

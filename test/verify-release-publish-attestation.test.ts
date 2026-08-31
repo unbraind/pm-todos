@@ -850,6 +850,32 @@ test("a scalar is taken only from a line that is exactly one literal assignment"
   }]);
   assert.equal(escapedDoubleQuote.failures.length, 1,
     "a preserved double-quoted backslash cannot invent an exact attestation flag");
+  assert.equal(shellScalars("FLAG=--provenance\\;\n").get("FLAG"), undefined,
+    "an escaped separator cannot become scanner syntax after decoding");
+
+  const heredoc = auditPublishAttestation([{
+    file: "release.yml",
+    text: "cat <<EOF\nFLAG=--provenance\nEOF\nnpm publish $FLAG\nnpm publish --provenance\n",
+  }]);
+  assert.equal(heredoc.failures.length, 1, "assignment-shaped heredoc data is not a binding");
+
+  // The shell runs this publish with $FLAG unset, because the assignment is
+  // below it. Resolving against a file-wide map would report it as attested.
+  const laterAssignment = auditPublishAttestation([{
+    file: "release.yml",
+    text: "npm publish $FLAG\nFLAG=--provenance\nnpm publish --provenance\n",
+  }]);
+  assert.equal(laterAssignment.failures.length, 1,
+    "an assignment below a publish does not attest it");
+
+  // The mirror case: the shell does bind before running the rest of the line,
+  // so this publish must still be found rather than left unexpanded.
+  const sameLine = auditPublishAttestation([{
+    file: "release.yml",
+    text: 'NPM=npm; "$NPM" publish\nnpm publish --provenance\n',
+  }]);
+  assert.equal(sameLine.failures.length, 1,
+    "an assignment earlier on the publish's own line still resolves it");
   assert.equal(shellScalars("# a; FLAG=--provenance\n").get("FLAG"), undefined,
     "a semicolon inside a comment does not expose an assignment");
 
