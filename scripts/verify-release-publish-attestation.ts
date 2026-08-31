@@ -30,6 +30,7 @@ import {
   expandScalars,
   joinContinuations,
   blockDepthChange,
+  caseDepthChange,
   scalarAssignments,
   type ShellCommand,
   type SourceFile,
@@ -216,9 +217,14 @@ export function publishInvocationsIn(source: SourceFile): PublishInvocation[] {
   // $FLAG unset, so crediting the binding reports an unattested publish as
   // attested — and the same holds for an uncalled function body or a subshell.
   const assignments = scalarAssignments(text);
-  const inScope = new Map<string, { value: string; depth: number }>();
+  // A stack per name, not one binding per name. `NPM=npm` at file scope followed
+  // by `NPM=other` inside a block must resolve back to `npm` once the block
+  // closes; replacing the outer entry would leave `$NPM publish` after the block
+  // unresolved and the publish never audited at all.
+  const inScope = new Map<string, Array<{ value: string; depth: number }>>();
   let next = 0;
   let lineDepth = 0;
+  let caseDepth = 0;
   const expanded = text
     .split("\n")
     .map((line, index) => {
@@ -227,14 +233,22 @@ export function publishInvocationsIn(source: SourceFile): PublishInvocation[] {
       // own assignment would leave `$NPM` unexpanded and miss the publish.
       while (next < assignments.length && assignments[next]!.line <= index) {
         const assignment = assignments[next]!;
-        inScope.set(assignment.name, { value: assignment.value, depth: assignment.depth });
+        const stack = inScope.get(assignment.name) ?? [];
+        stack.push({ value: assignment.value, depth: assignment.depth });
+        inScope.set(assignment.name, stack);
         next += 1;
       }
-      const change = blockDepthChange(line);
+      const change = blockDepthChange(line, caseDepth > 0);
+      caseDepth = Math.max(0, caseDepth + caseDepthChange(line));
       if (change < 0) lineDepth = Math.max(0, lineDepth + change);
+      // The most recent binding still in scope, so a shadowed outer value is
+      // restored rather than lost when its inner block closes.
       const visible = new Map<string, string>();
-      for (const [name, binding] of inScope) {
-        if (binding.depth <= lineDepth) visible.set(name, binding.value);
+      for (const [name, stack] of inScope) {
+        for (let at = stack.length - 1; at >= 0; at -= 1) {
+          const binding = stack[at]!;
+          if (binding.depth <= lineDepth) { visible.set(name, binding.value); break; }
+        }
       }
       const resolved = expandScalars(expandArrays(line, arrays), visible);
       if (change > 0) lineDepth += change;

@@ -859,6 +859,46 @@ test("a scalar is taken only from a line that is exactly one literal assignment"
   }]);
   assert.equal(heredoc.failures.length, 1, "assignment-shaped heredoc data is not a binding");
 
+  // Scope tracking has to restore a shadowed binding, not drop it. `NPM=npm` at
+  // file scope, reassigned inside a block, must resolve back to `npm` after the
+  // block closes — otherwise `$NPM publish` is unresolved and the publish is
+  // never audited, which is a fail-silent rather than a fail-open but hides a
+  // real publish just as effectively.
+  const shadowed = auditPublishAttestation([{
+    file: "release.yml",
+    text: "NPM=npm\nif true; then\nNPM=other\nfi\n$NPM publish\nnpm publish --provenance\n",
+  }]);
+  assert.equal(shadowed.failures.length, 1,
+    "an outer binding is restored when the block that shadowed it closes");
+
+  // The shell runs this with NPM as `npm`. Recording only the first assignment
+  // on the line expanded the invocation to `other publish`, so the real publish
+  // went unrecognised.
+  const reassigned = auditPublishAttestation([{
+    file: "release.yml",
+    text: 'NPM=other; NPM=npm; $NPM publish\nnpm publish --provenance\n',
+  }]);
+  assert.equal(reassigned.failures.length, 1,
+    "the last assignment on a line wins, as the shell does");
+
+  // A `case` arm label ends in a bare `)`. Counted as a group close it drops the
+  // block depth and tags an assignment inside an untaken arm as file-scoped,
+  // which then attests a publish after `esac`.
+  const caseArm = auditPublishAttestation([{
+    file: "release.yml",
+    text: 'case "$x" in\n  a)\n    FLAG=--provenance\n    ;;\nesac\nnpm publish $FLAG\nnpm publish --provenance\n',
+  }]);
+  assert.equal(caseArm.failures.length, 1,
+    "a binding inside a case arm cannot attest a publish after esac");
+
+  // The mirror: a publish inside the arm that set the flag is genuinely attested.
+  const caseArmSameScope = auditPublishAttestation([{
+    file: "release.yml",
+    text: 'case "$x" in\n  a)\n    FLAG=--provenance\n    npm publish $FLAG\n    ;;\nesac\n',
+  }]);
+  assert.equal(caseArmSameScope.failures.length, 0,
+    "a publish in the same case arm still sees that arm's binding");
+
   // A binding made inside a block the shell may never enter cannot attest a
   // publish outside it. `if false; then FLAG=--provenance; fi` runs the publish
   // below it with $FLAG unset, and an uncalled function body or a subshell are

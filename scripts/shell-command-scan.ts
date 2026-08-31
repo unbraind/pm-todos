@@ -693,22 +693,13 @@ export interface ScalarAssignment {
   readonly depth: number;
 }
 
-/** Block openers and closers, matched as words outside quotes. */
-const BLOCK_OPENERS = /(?:^|[\s;&|(])(?:if|for|while|until|case|select)(?=[\s;&|]|$)/gu;
-const BLOCK_CLOSERS = /(?:^|[\s;&|])(?:fi|done|esac)(?=[\s;&|)]|$)/gu;
-
 /**
- * Net change in block nesting contributed by one line.
- *
- * Counts shell keywords and brace/parenthesis groups outside quotes. This is a
- * nesting count, not a parse: it exists to tell "this assignment is inside
- * something conditional" from "this assignment is the file's own scope", which
- * is the distinction attestation depends on.
+ * Strip quoted spans and a trailing comment, leaving the line's shell syntax.
  *
  * @param line - One already-continuation-joined source line.
- * @returns Positive when the line opens more blocks than it closes.
+ * @returns The line's unquoted characters, comment removed.
  */
-export function blockDepthChange(line: string): number {
+function unquotedText(line: string): string {
   let bare = "";
   let single = false;
   let double = false;
@@ -721,10 +712,56 @@ export function blockDepthChange(line: string): number {
     if (char === "#" && (index === 0 || /\s/u.test(line[index - 1]!))) break;
     bare += char;
   }
+  return bare;
+}
+
+/** Block openers and closers, matched as words outside quotes. */
+const BLOCK_OPENERS = /(?:^|[\s;&|(])(?:if|for|while|until|case|select)(?=[\s;&|]|$)/gu;
+const BLOCK_CLOSERS = /(?:^|[\s;&|])(?:fi|done|esac)(?=[\s;&|)]|$)/gu;
+
+/**
+ * Net change in `case` nesting contributed by one line.
+ *
+ * Tracked separately from block depth because a `case` arm label ends in a bare
+ * `)` that is not a parenthesis close. Without knowing a `case` is open, that
+ * `)` decrements the depth counter and tags an assignment inside an untaken arm
+ * as file-scoped, which then attests a publish after `esac`.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns +1 for each `case` opened, -1 for each `esac` closed.
+ */
+export function caseDepthChange(line: string): number {
+  const bare = unquotedText(line);
+  return (bare.match(/(?:^|[\s;&|(])case(?=[\s;&|]|$)/gu) ?? []).length
+    - (bare.match(/(?:^|[\s;&|])esac(?=[\s;&|)]|$)/gu) ?? []).length;
+}
+
+/**
+ * Net change in block nesting contributed by one line.
+ *
+ * Counts shell keywords and brace/parenthesis groups outside quotes. This is a
+ * nesting count, not a parse: it exists to tell "this assignment is inside
+ * something conditional" from "this assignment is the file's own scope", which
+ * is the distinction attestation depends on.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @param insideCase - Whether a `case` is open, so a bare `)` is an arm label
+ *   rather than a group close.
+ * @returns Positive when the line opens more blocks than it closes.
+ */
+export function blockDepthChange(line: string, insideCase = false): number {
+  const bare = unquotedText(line);
   let depth = 0;
+  let open = 0;
   for (const char of bare) {
-    if (char === "{" || char === "(") depth += 1;
-    else if (char === "}" || char === ")") depth -= 1;
+    if (char === "{" || char === "(") { depth += 1; open += 1; continue; }
+    if (char !== "}" && char !== ")") continue;
+    // Inside a `case`, a `)` with nothing open on this line is an arm label, not
+    // a group close. Counting it would tag an assignment in an untaken arm as
+    // file-scoped and let it attest a publish after `esac`.
+    if (insideCase && open === 0) continue;
+    depth -= 1;
+    open -= 1;
   }
   depth += (bare.match(BLOCK_OPENERS) ?? []).length;
   depth -= (bare.match(BLOCK_CLOSERS) ?? []).length;
@@ -751,6 +788,7 @@ export function scalarAssignments(text: string): ScalarAssignment[] {
   const heredocs: Array<{ delimiter: string; stripTabs: boolean }> = [];
   let lineNumber = -1;
   let depth = 0;
+  let caseDepth = 0;
   for (const line of text.split("\n")) {
     lineNumber += 1;
     const heredoc = heredocs[0];
@@ -763,26 +801,38 @@ export function scalarAssignments(text: string): ScalarAssignment[] {
     // A closer returns to the outer scope on its own line, so apply it before
     // recording; an opener takes effect after, so an assignment written on the
     // same line as `if ...; then` is recorded inside the block it opens.
-    const change = blockDepthChange(line);
+    const change = blockDepthChange(line, caseDepth > 0);
+    caseDepth = Math.max(0, caseDepth + caseDepthChange(line));
     if (change < 0) depth = Math.max(0, depth + change);
-    const assignment = STANDALONE_ASSIGNMENT.exec(line);
-    if (assignment === null) {
-      if (change > 0) depth += change;
-      continue;
+    // A line can hold several assignments before its command: the shell runs
+    // `NPM=other; NPM=npm; $NPM publish` with NPM as `npm`. Recording only the
+    // first expanded the invocation to `other publish`, so the real publish was
+    // never recognised and an attested sibling satisfied the non-vacuity guard.
+    let remainder = line;
+    while (remainder.length > 0) {
+      const assignment = STANDALONE_ASSIGNMENT.exec(remainder);
+      if (assignment === null) break;
+      // Exactly one of the three value alternatives matches, so the last is the
+      // only case left rather than a fallback that could be undefined.
+      const raw = assignment[2] ?? assignment[3] ?? assignment[4]!;
+      // Single quotes make a backslash literal, so only the other two forms are
+      // unescaped. Unescaping a single-quoted value turned `'npm publish
+      // \\--provenance'` into an attested-looking command the shell never runs.
+      const value = assignment[3] !== undefined
+        ? raw
+        : assignment[2] !== undefined
+          ? raw.replace(/\\([$`"\\])/g, "$1")
+          : raw.replace(/\\(.)/g, "$1");
+      if (!/[\$`"'(){};&|<>#]/.test(value)) {
+        assignments.push({ name: assignment[1]!, value, line: lineNumber, depth });
+      }
+      // Continue only past an assignment the shell keeps, which is one ended by
+      // `;`. An assignment ending at end-of-line has nothing after it, and a
+      // prefix assignment (`FLAG=x cmd`) never matches this pattern at all.
+      const consumed = assignment[0]!;
+      if (!consumed.trimEnd().endsWith(";")) break;
+      remainder = remainder.slice(consumed.length);
     }
-    // Exactly one of the three value alternatives matches, so the last is the
-    // only case left rather than a fallback that could be undefined.
-    const raw = assignment[2] ?? assignment[3] ?? assignment[4]!;
-    // Single quotes make a backslash literal, so only the other two forms are
-    // unescaped. Unescaping a single-quoted value turned `'npm publish
-    // \\--provenance'` into an attested-looking command the shell never runs.
-    const value = assignment[3] !== undefined
-      ? raw
-      : assignment[2] !== undefined
-        ? raw.replace(/\\([$`"\\])/g, "$1")
-        : raw.replace(/\\(.)/g, "$1");
-    if (/[\$`"'(){};&|<>#]/.test(value)) { if (change > 0) depth += change; continue; }
-    assignments.push({ name: assignment[1]!, value, line: lineNumber, depth });
     if (change > 0) depth += change;
   }
   return assignments;
