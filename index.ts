@@ -129,8 +129,11 @@ type PriorityMapScheme = "number" | "letter";
 // nested sub-tasks.
 const TODO_RE = /^(\s*)[-*+] \[([ xX])\] (.+)$/;
 // A markdown section header (`## Title`, any level). We treat the heading text
-// as a tag for every TODO that follows it (until the next heading).
-const HEADER_RE = /^(#{1,6})\s+(.+?)\s*#*$/;
+// as a tag for every TODO that follows it (until the next heading). The heading
+// capture is greedy and always succeeds when the prefix matches, avoiding the
+// polynomial backtracking of `(.+?)\s*#*$` on long adversarial inputs. Trailing
+// `#` closures (ATX style: `## Title ##`) are stripped in code after matching.
+const HEADER_RE = /^(#{1,6})\s+(.+)$/;
 
 /**
  * Read a boolean option honoring both the kebab-case long flag and the
@@ -643,7 +646,10 @@ function extractTrailing(text: string, regex: RegExp): { text: string; value?: s
 // hand-written line is never mistaken for provenance — which would otherwise
 // set a bogus `pmId` AND, via the type-tag gate below, strip a legitimate
 // trailing `[WIP]` from the title.
-const PM_ID_COMMENT_RE = /\s*<!--\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)\s*-->\s*$/;
+// NOTE: no leading `\s*` — the `.trim()` in `extractTrailing` already cleans the
+// text before the match, and a leading `\s*` causes polynomial backtracking
+// because the engine retries it at every position in a long whitespace run.
+const PM_ID_COMMENT_RE = /<!--\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)\s*-->\s*$/;
 
 /**
  * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
@@ -673,7 +679,9 @@ const PM_ITEM_TYPES = [
 // (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). Only
 // the LAST such group is consumed, so an item titled `Deploy to [Staging]` keeps
 // that bracket and sheds only the real type tag the exporter appended after it.
-const TYPE_TAG_RE = new RegExp(`\\s*\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
+// No leading `\s*`: `.trim()` in `extractTrailing` handles the whitespace, and a
+// leading `\s*` causes polynomial backtracking on long whitespace runs.
+const TYPE_TAG_RE = new RegExp(`\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
 
 /**
  * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and
@@ -755,7 +763,9 @@ export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
 
     const header = HEADER_RE.exec(line);
     if (header) {
-      currentSection = header[2].trim();
+      // Strip ATX closing `#`s (e.g. `## Title ##`) and trim whitespace.
+      // Done in code rather than the regex to keep the match linear.
+      currentSection = header[2].replace(/#*$/, "").trim();
       continue;
     }
 

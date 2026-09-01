@@ -975,3 +975,42 @@ test("extractCreatedTodoId reads the id out of pm --json create output (several 
   assert.equal(extractCreatedTodoId('{"result":{"id":"pm-11"}}'), "pm-11");
   assert.equal(extractCreatedTodoId("not json"), undefined);
 });
+
+// ---------------------------------------------------------------------------
+// Polynomial-redos regression tests — assert the fixed regexes stay linear
+// on adversarial inputs that previously caused O(n²) backtracking.
+// Threshold is generous (250 ms) but the old regex took seconds at n=64000.
+
+test("extractPmIdComment stays linear on adversarial whitespace input", () => {
+  // Old regex `/\s*<!--\s*(...)\s*-->\s*$/` retried `\s*` at every position in
+  // a long whitespace run, causing O(n²) backtracking. The leading `\s*` was
+  // removed; `.trim()` in `extractTrailing` handles the whitespace.
+  const n = 64000;
+  const input = "<!--" + " ".repeat(n) + "X";
+  const start = process.hrtime.bigint();
+  extractPmIdComment(input);
+  const ms = Number(process.hrtime.bigint() - start) / 1e6;
+  assert.ok(ms < 250, `extractPmIdComment took ${ms.toFixed(1)} ms (expected < 250 ms)`);
+});
+
+test("extractTypeTag stays linear on adversarial whitespace input", () => {
+  // Old regex `/\s*\[(...)\]\s*$/` retried `\s*` at every position.
+  const n = 64000;
+  const input = "[Task]" + " ".repeat(n) + "!";
+  const start = process.hrtime.bigint();
+  extractTypeTag(input);
+  const ms = Number(process.hrtime.bigint() - start) / 1e6;
+  assert.ok(ms < 250, `extractTypeTag took ${ms.toFixed(1)} ms (expected < 250 ms)`);
+});
+
+test("parseMarkdownTodos HEADER_RE stays linear on adversarial input", () => {
+  // Old regex `^(#{1,6})\s+(.+?)\s*#*$` caused O(n²) when `(.+?)` lazily
+  // extended through a long `## … # … !` input. Fixed to `(.+)$` with
+  // trailing `#` stripping in code.
+  const n = 64000;
+  const md = "## " + "  ".repeat(n) + "#" + "  ".repeat(n) + "!\n- [ ] item\n";
+  const start = process.hrtime.bigint();
+  parseMarkdownTodos(md);
+  const ms = Number(process.hrtime.bigint() - start) / 1e6;
+  assert.ok(ms < 250, `parseMarkdownTodos took ${ms.toFixed(1)} ms (expected < 250 ms)`);
+});
