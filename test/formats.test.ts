@@ -1014,3 +1014,25 @@ test("parseMarkdownTodos HEADER_RE stays linear on adversarial input", () => {
   const ms = Number(process.hrtime.bigint() - start) / 1e6;
   assert.ok(ms < 250, `parseMarkdownTodos took ${ms.toFixed(1)} ms (expected < 250 ms)`);
 });
+
+test("parseMarkdownTodos stays linear on a heading carrying a long run of hashes", () => {
+  // The first fix for HEADER_RE moved trailing-`#` stripping out of the regex
+  // and into `header[2].replace(/#*$/, "")`, which is itself quadratic: the
+  // engine retries the unanchored `#*` at every start position. Measured at
+  // 5366 ms for 64000 hashes, worse than the defect it replaced. Stripping is
+  // now a backward scan, which needs no backtracking.
+  // The hash run must be followed by a non-hash character. With the run at the
+  // very end, `#*$` succeeds on its first real attempt and the quadratic path
+  // is never taken - an earlier version of this test made exactly that mistake
+  // and passed against both implementations.
+  const md = `## Title ${"#".repeat(64_000)}x\n- [ ] item\n`;
+  const startedAt = process.hrtime.bigint();
+  const parsed = parseMarkdownTodos(md);
+  const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]!.section, `Title ${"#".repeat(64_000)}x`);
+  assert.ok(
+    elapsedMs < 250,
+    `parseMarkdownTodos took ${elapsedMs.toFixed(1)} ms (expected < 250 ms)`
+  );
+});
