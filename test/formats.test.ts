@@ -1146,9 +1146,19 @@ test("validation sees the same tasks a CRLF import does", () => {
   const validated = validateTodoFile(crlf, "markdown");
   assert.equal(parsed.length, 1);
   assert.equal(validated.taskCount, parsed.length, "the validator must count the tasks the parser finds");
+  // The count alone only detects drift. What the preflight exists to do is
+  // REJECT the malformed value, so assert the finding itself - otherwise this
+  // still passes if the validator sees the line and says nothing about it.
+  assert.deepEqual(
+    validated.issues.map((issue) => issue.message),
+    ["Invalid due date 'not-a-date' (expected YYYY-MM-DD)"],
+    "the malformed due date must still be rejected on a CRLF document",
+  );
 
   // And the two agree on a LF document as well, so the fix did not simply move
   // the divergence to the other line ending.
   const lf = "## Section\n- [ ] a task due:not-a-date\n";
-  assert.equal(validateTodoFile(lf, "markdown").taskCount, parseMarkdownTodos(lf).length);
+  const lfValidated = validateTodoFile(lf, "markdown");
+  assert.equal(lfValidated.taskCount, parseMarkdownTodos(lf).length);
+  assert.deepEqual(lfValidated.issues.map((issue) => issue.message), validated.issues.map((issue) => issue.message));
 });
