@@ -129,11 +129,36 @@ type PriorityMapScheme = "number" | "letter";
 // nested sub-tasks.
 const TODO_RE = /^(\s*)[-*+] \[([ xX])\] (.+)$/;
 // A markdown section header (`## Title`, any level). We treat the heading text
-// as a tag for every TODO that follows it (until the next heading). The heading
-// capture is greedy and always succeeds when the prefix matches, avoiding the
-// polynomial backtracking of `(.+?)\s*#*$` on long adversarial inputs. Trailing
-// `#` closures (ATX style: `## Title ##`) are stripped in code after matching.
-const HEADER_RE = /^(#{1,6})\s+(.+)$/;
+// as a tag for every TODO that follows it (until the next heading).
+//
+// The separator `[ \t]+` and the capture `\S.*` are built from DISJOINT character
+// sets and are separated by the single (non-quantified) `\S`, so any input splits
+// in exactly one way and the match is provably linear. The earlier `\s+(.+)` form
+// was flagged by CodeQL as polynomial: `\s` and `.` both match a space, so on an
+// input containing an interior newline (`#` + many spaces + `a` + `\n`) the `.+`
+// cannot reach `$` and the engine retries the `\s+`/`.+` split at every position
+// — measured 280 ms at n=16000 and 1106 ms at n=32000 (a ~4x doubling). The
+// disjoint form measures < 1 ms at n=64000.
+//
+// Trailing `#` closures (ATX style: `## Title ##`) are stripped in code after
+// matching. Exported so the linear-time regression test can exercise the regex
+// directly on newline-bearing input (parseMarkdownTodos splits on `\n` first, so
+// the slow path is only reachable through uncontrolled input to the regex).
+//
+// Accepted-language note: a header whose text is whitespace-only (`#  `) no
+// longer matches — `\S` requires the heading to start with a non-space. Such a
+// header has no title and was previously captured as a lone space; pinning test
+// below. All titled headers (including `## Title ##`) match exactly as before.
+/**
+ * A markdown ATX section header (`## Title`, any level 1–6). Capture group 1 is
+ * the leading `#` run; capture group 2 is the heading text (with any trailing
+ * ATX closing `#`s still attached — those are stripped in code after matching).
+ *
+ * The separator and capture are disjoint (space/tab vs. a non-space first char)
+ * so the match is linear; see the line comments above for the polynomial-redos
+ * rationale and the regression test in `test/formats.test.ts`.
+ */
+export const HEADER_RE = /^(#{1,6})[ \t]+(\S.*)$/;
 
 /**
  * Read a boolean option honoring both the kebab-case long flag and the

@@ -34,6 +34,7 @@ import {
   extractMarkdownDue,
   sortItemsForContext,
   buildTodoContextSnapshot,
+  HEADER_RE,
 } from "../index.ts";
 
 // ---------------------------------------------------------------------------
@@ -1035,4 +1036,50 @@ test("parseMarkdownTodos stays linear on a heading carrying a long run of hashes
     elapsedMs < 250,
     `parseMarkdownTodos took ${elapsedMs.toFixed(1)} ms (expected < 250 ms)`
   );
+});
+
+// ---------------------------------------------------------------------------
+// HEADER_RE disjoint-rewrite regression: the `\s+(.+)` overlap (the CURRENT
+// CodeQL alert on line 764) is only reachable when the regex sees an interior
+// newline, because `parseMarkdownTodos` splits on `\n` first. These tests call
+// the exported regex directly on newline-bearing adversarial input.
+// ---------------------------------------------------------------------------
+
+test("HEADER_RE growth is linear, not quadratic, on newline-bearing input (n vs 2n doubling)", () => {
+  // The flagged regex `^(#{1,6})\s+(.+)$` is quadratic on `#` + many spaces +
+  // `a` + `\n`: `.+` cannot cross the newline to reach `$`, so the engine
+  // retries the `\s+`/`.+` split at every position. Measured 280 ms at n=16000
+  // and 1106 ms at n=32000 (~4x doubling) for the old regex. The disjoint
+  // `^(#{1,6})[ \t]+(\S.*)$` form measures < 1 ms at n=64000: the single `\S`
+  // breaks the adjacency between the two quantifiers and fails fast.
+  // Asserts time(2N) < max(3·time(N), 100 ms): the 100 ms floor absorbs
+  // sub-millisecond noise so the linear regex never flakes, while a quadratic
+  // regex blows past both clauses. Verified RED on revert to `\s+(.+)$`.
+  const n = 16000;
+  const inputN = "#" + " ".repeat(n) + "a\n";
+  const input2N = "#" + " ".repeat(n * 2) + "a\n";
+  const s1 = process.hrtime.bigint();
+  HEADER_RE.exec(inputN);
+  const msN = Number(process.hrtime.bigint() - s1) / 1e6;
+  const s2 = process.hrtime.bigint();
+  HEADER_RE.exec(input2N);
+  const ms2N = Number(process.hrtime.bigint() - s2) / 1e6;
+  const bound = Math.max(3 * msN, 100);
+  assert.ok(
+    ms2N < bound,
+    `HEADER_RE not linear: N=${msN.toFixed(3)} ms, 2N=${ms2N.toFixed(3)} ms, bound=${bound.toFixed(3)} ms (ratio ${(ms2N / msN).toFixed(2)}x)`
+  );
+});
+
+test("HEADER_RE disjoint rewrite: titled headers match, whitespace-only does not (behaviour pin)", () => {
+  // The `\S` first char means a header with no title text (`#  `, only spaces)
+  // no longer matches — it was previously captured as a lone space. A header
+  // must have a non-space title. ATX closing `#`s are still captured and stripped
+  // in code, so `## Title ##` round-trips unchanged.
+  assert.equal(HEADER_RE.exec("## Title ##")?.[2], "Title ##");
+  assert.equal(HEADER_RE.exec("# hello world")?.[2], "hello world");
+  assert.equal(HEADER_RE.exec("###### A")?.[2], "A");
+  // Space-only heading text no longer matches (behaviour change vs `\s+(.+)`).
+  assert.equal(HEADER_RE.exec("#  "), null);
+  assert.equal(HEADER_RE.exec("#" + " ".repeat(1000)), null);
 });
