@@ -983,33 +983,70 @@ test("extractCreatedTodoId reads the id out of pm --json create output (several 
 // Threshold is generous (250 ms) but the old regex took seconds at n=64000.
 
 /**
- * Assert a call's cost grows linearly, by measuring it at N and at 2N.
+ * Time a call over a prepared input, reporting the fastest of several rounds.
+ *
+ * Three details make this a measurement rather than a coin toss.
+ *
+ * The input is built by the caller, never inside the timed loop: constructing a
+ * 32000-character string is itself linear work, and including it measured
+ * allocation rather than the pattern - enough to make a correct implementation
+ * read as 5.4x superlinear.
+ *
+ * The call is repeated until the total is comfortably above timer granularity,
+ * since a ratio taken from a sub-millisecond sample is mostly noise. The loop
+ * is self-limiting: an implementation slow enough to matter reaches the target
+ * on its first iteration.
+ *
+ * The MINIMUM across rounds is reported, after a warm-up round. Scheduling
+ * noise and garbage collection only ever add time, so the fastest round is the
+ * closest estimate of the real cost - taking a single sample instead made this
+ * assertion pass alone and fail when run beside its neighbours.
+ *
+ * @param call - The call to time.
+ * @param input - The prepared input to pass it.
+ * @param iterations - Fixed iteration count, or `undefined` to choose one.
+ * @returns The fastest elapsed milliseconds and the iteration count used.
+ */
+function measure<TInput>(call: (input: TInput) => void, input: TInput, iterations?: number): { ms: number; iterations: number } {
+  let count = iterations ?? 1;
+  const time = (): number => {
+    const started = process.hrtime.bigint();
+    for (let index = 0; index < count; index += 1) call(input);
+    return Number(process.hrtime.bigint() - started) / 1e6;
+  };
+  while (iterations === undefined && count < 4096 && time() < 5) count *= 2;
+  time(); // warm-up, discarded: the first pass pays JIT and page-fault costs.
+  return { ms: Math.min(time(), time(), time()), iterations: count };
+}
+
+/**
+ * Assert that a call's cost grows linearly, by measuring it at N and at 2N.
  *
  * An absolute deadline cannot tell a quadratic implementation from a loaded
- * runner. The fixed paths here run in well under a millisecond, so the only way
- * a 250 ms ceiling fires is CI scheduling or coverage overhead - it fails for a
- * reason unrelated to the behaviour it guards. A generous ceiling also cannot
- * catch a partial regression: a hundredfold slowdown still lands under it.
+ * runner, and a generous one cannot catch a partial regression either: a
+ * hundredfold slowdown still lands under 250 ms. A ratio catches both.
  *
- * A ratio is scheduling-independent, because both halves absorb the same load,
- * and it fails on a partial regression too. The floor absorbs sub-millisecond
- * timer granularity, where a ratio is meaningless.
+ * The ratio is the only constraint - there is no absolute floor. An earlier
+ * version floored the bound at 100 ms, which for these sub-millisecond paths
+ * meant the floor always won and a thousandfold regression would have passed.
  *
  * @param label - Name of the call under measurement, for the failure message.
- * @param run - Invokes the call with an adversarial input of the given size.
+ * @param build - Builds the adversarial input for a given size.
+ * @param call - Invokes the call under measurement on that input.
  */
-function assertLinearGrowth(label: string, run: (size: number) => void): void {
-  const n = 16_000;
-  const first = process.hrtime.bigint();
-  run(n);
-  const msN = Number(process.hrtime.bigint() - first) / 1e6;
-  const second = process.hrtime.bigint();
-  run(n * 2);
-  const ms2N = Number(process.hrtime.bigint() - second) / 1e6;
-  const bound = Math.max(3 * msN, 100);
+function assertLinearGrowth<TInput>(label: string, build: (size: number) => TInput, call: (input: TInput) => void): void {
+  const n = 8_000;
+  const factor = 4;
+  const base = measure(call, build(n), undefined);
+  const grown = measure(call, build(n * factor), base.iterations);
+  // Quadrupling the input separates the two shapes with headroom on each side:
+  // linear work grows 4x and quadratic 16x, so a bound of 8x is twice the
+  // linear expectation and half the quadratic one. A 2x step with a 3x bound
+  // left no such margin and flaked when the suite ran under load.
+  const bound = base.ms * 8;
   assert.ok(
-    ms2N < bound,
-    `${label} is not linear: N=${msN.toFixed(3)} ms, 2N=${ms2N.toFixed(3)} ms, bound=${bound.toFixed(3)} ms (ratio ${(ms2N / msN).toFixed(2)}x)`
+    grown.ms < bound,
+    `${label} is not linear: N=${base.ms.toFixed(3)} ms, ${factor}N=${grown.ms.toFixed(3)} ms over ${base.iterations} iteration(s), bound=${bound.toFixed(3)} ms (ratio ${(grown.ms / base.ms).toFixed(2)}x, linear would be ~${factor}x)`
   );
 }
 
@@ -1017,10 +1054,9 @@ test("every fixed regex stays linear on adversarial whitespace input", () => {
   // The old patterns led with `\s*`, which the engine retried at every position
   // in a long whitespace run. The leading `\s*` is gone; the caller trims before
   // `extractTrailing` runs the pattern, so it was never needed.
-  assertLinearGrowth("extractPmIdComment", (size) => void extractPmIdComment("<!--" + " ".repeat(size) + "X"));
-  assertLinearGrowth("extractTypeTag", (size) => void extractTypeTag("[Task]" + " ".repeat(size) + "!"));
-  assertLinearGrowth("parseMarkdownTodos", (size) =>
-    void parseMarkdownTodos("## " + "  ".repeat(size) + "#" + "  ".repeat(size) + "!\n- [ ] item\n"));
+  assertLinearGrowth("extractPmIdComment", (size) => "<!--" + " ".repeat(size) + "X", (input) => void extractPmIdComment(input));
+  assertLinearGrowth("extractTypeTag", (size) => "[Task]" + " ".repeat(size) + "!", (input) => void extractTypeTag(input));
+  assertLinearGrowth("parseMarkdownTodos", (size) => "## " + "  ".repeat(size) + "#" + "  ".repeat(size) + "!\n- [ ] item\n", (input) => void parseMarkdownTodos(input));
 });
 
 test("a heading carrying a long run of hashes stays linear, and keeps its text", () => {
@@ -1034,8 +1070,7 @@ test("a heading carrying a long run of hashes stays linear, and keeps its text",
   // very end, `#*$` succeeds on its first real attempt and the quadratic path
   // is never taken - an earlier version of this test made exactly that mistake
   // and passed against both implementations.
-  assertLinearGrowth("parseMarkdownTodos (hash run)", (size) =>
-    void parseMarkdownTodos(`## Title ${"#".repeat(size)}x\n- [ ] item\n`));
+  assertLinearGrowth("parseMarkdownTodos (hash run)", (size) => `## Title ${"#".repeat(size)}x\n- [ ] item\n`, (input) => void parseMarkdownTodos(input));
 
   // The behaviour the speed fix must not change: a trailing `#` run that is not
   // a closing sequence stays part of the heading text.
@@ -1073,30 +1108,18 @@ test("a heading whose only content is a closing sequence has no section text", (
 // the exported regex directly on newline-bearing adversarial input.
 // ---------------------------------------------------------------------------
 
-test("HEADER_RE growth is linear, not quadratic, on newline-bearing input (n vs 2n doubling)", () => {
+test("HEADER_RE growth is linear, not quadratic, on newline-bearing input", () => {
   // The flagged regex `^(#{1,6})\s+(.+)$` is quadratic on `#` + many spaces +
   // `a` + `\n`: `.+` cannot cross the newline to reach `$`, so the engine
-  // retries the `\s+`/`.+` split at every position. Measured 280 ms at n=16000
-  // and 1106 ms at n=32000 (~4x doubling) for the old regex. The disjoint
-  // `^(#{1,6})[ \t]+(\S.*)$` form measures < 1 ms at n=64000: the single `\S`
-  // breaks the adjacency between the two quantifiers and fails fast.
-  // Asserts time(2N) < max(3·time(N), 100 ms): the 100 ms floor absorbs
-  // sub-millisecond noise so the linear regex never flakes, while a quadratic
-  // regex blows past both clauses. Verified RED on revert to `\s+(.+)$`.
-  const n = 16000;
-  const inputN = "#" + " ".repeat(n) + "a\n";
-  const input2N = "#" + " ".repeat(n * 2) + "a\n";
-  const s1 = process.hrtime.bigint();
-  HEADER_RE.exec(inputN);
-  const msN = Number(process.hrtime.bigint() - s1) / 1e6;
-  const s2 = process.hrtime.bigint();
-  HEADER_RE.exec(input2N);
-  const ms2N = Number(process.hrtime.bigint() - s2) / 1e6;
-  const bound = Math.max(3 * msN, 100);
-  assert.ok(
-    ms2N < bound,
-    `HEADER_RE not linear: N=${msN.toFixed(3)} ms, 2N=${ms2N.toFixed(3)} ms, bound=${bound.toFixed(3)} ms (ratio ${(ms2N / msN).toFixed(2)}x)`
-  );
+  // retries the `\s+`/`.+` split at every position. The disjoint
+  // `^(#{1,6})[ \t]+(\S.*)$` form breaks the adjacency between the two
+  // quantifiers with a single `\S` and fails fast.
+  //
+  // This is the guard that actually covers the alert. The parser-level growth
+  // tests cannot: `parseMarkdownTodos` splits on newlines before the pattern
+  // ever sees one, so they stay green on a revert. Verified RED here, at
+  // roughly 1460 ms.
+  assertLinearGrowth("HEADER_RE", (size) => "#" + " ".repeat(size) + "a\n", (input) => void HEADER_RE.exec(input));
 });
 
 test("HEADER_RE disjoint rewrite: titled headers match, whitespace-only does not (behaviour pin)", () => {
