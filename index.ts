@@ -788,7 +788,7 @@ export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
   // matches nothing at all. Normalising here fixes headings and TODO lines
   // together, rather than teaching each pattern about `\r` separately and
   // leaving the next one to rediscover it.
-  const lines = md.split(/\r?\n/u);
+  const lines = splitContentLines(md);
   const todos: TodoItem[] = [];
   let currentSection: string | undefined;
 
@@ -1108,11 +1108,29 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
 }
 
 /**
+ * Split document text into lines, accepting either line ending.
+ *
+ * Shared deliberately. Every pattern this file matches lines against ends in
+ * `$` and is built from `.`, and neither accepts the carriage return a CRLF
+ * document leaves on each line - so a splitter that only knows `\n` hands those
+ * patterns text they cannot match. When the parser learned about CRLF and the
+ * validator did not, a malformed record parsed cleanly on import while the
+ * validator failed to see the line at all, so it evaded the preflight it exists
+ * to pass through. One splitter is what stops the two drifting apart again.
+ *
+ * @param content - The document text.
+ * @returns The lines, without their terminators.
+ */
+export function splitContentLines(content: string): string[] {
+  return content.split(/\r?\n/u);
+}
+
+/**
  * Parse a whole todo.txt document into structured items (blank lines skipped).
  */
 export function parseTodoTxt(content: string): TodoTxtItem[] {
   const out: TodoTxtItem[] = [];
-  for (const line of content.split("\n")) {
+  for (const line of splitContentLines(content)) {
     const item = parseTodoTxtLine(line);
     if (item) out.push(item);
   }
@@ -1582,7 +1600,7 @@ export function validateTodoFile(
 ): { issues: ValidationIssue[]; taskCount: number } {
   const issues: ValidationIssue[] = [];
   let taskCount = 0;
-  const lines = content.split("\n");
+  const lines = splitContentLines(content);
 
   if (format === "todojson") {
     try {
@@ -1932,7 +1950,7 @@ function parseFileToNormalized(
   }
 
   if (format === "todotxt") {
-    const lines = md.split("\n");
+    const lines = splitContentLines(md);
     const out: NormalizedTodo[] = [];
     for (let i = 0; i < lines.length; i++) {
       const item = parseTodoTxtLine(lines[i]);

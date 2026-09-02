@@ -1020,7 +1020,7 @@ function measure<TInput>(call: (input: TInput) => void, input: TInput, iteration
 }
 
 /**
- * Assert that a call's cost grows linearly, by measuring it at N and at 2N.
+ * Assert that a call's cost grows linearly, by measuring it at N and at 4N.
  *
  * An absolute deadline cannot tell a quadratic implementation from a loaded
  * runner, and a generous one cannot catch a partial regression either: a
@@ -1133,4 +1133,22 @@ test("HEADER_RE disjoint rewrite: titled headers match, whitespace-only does not
   // Space-only heading text no longer matches (behaviour change vs `\s+(.+)`).
   assert.equal(HEADER_RE.exec("#  "), null);
   assert.equal(HEADER_RE.exec("#" + " ".repeat(1000)), null);
+});
+
+test("validation sees the same tasks a CRLF import does", () => {
+  // The validator and the parser must agree about what a document contains.
+  // When the parser learned to accept either line ending and the validator did
+  // not, a CRLF document parsed cleanly on import while the validator matched
+  // no lines at all - so a malformed record passed straight through the
+  // preflight it exists to be caught by, and the reported task count was wrong.
+  const crlf = "## Section\r\n- [ ] a task due:not-a-date\r\n";
+  const parsed = parseMarkdownTodos(crlf);
+  const validated = validateTodoFile(crlf, "markdown");
+  assert.equal(parsed.length, 1);
+  assert.equal(validated.taskCount, parsed.length, "the validator must count the tasks the parser finds");
+
+  // And the two agree on a LF document as well, so the fix did not simply move
+  // the divergence to the other line ending.
+  const lf = "## Section\n- [ ] a task due:not-a-date\n";
+  assert.equal(validateTodoFile(lf, "markdown").taskCount, parseMarkdownTodos(lf).length);
 });
