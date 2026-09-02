@@ -671,9 +671,11 @@ function extractTrailing(text: string, regex: RegExp): { text: string; value?: s
 // hand-written line is never mistaken for provenance — which would otherwise
 // set a bogus `pmId` AND, via the type-tag gate below, strip a legitimate
 // trailing `[WIP]` from the title.
-// NOTE: no leading `\s*` — the `.trim()` in `extractTrailing` already cleans the
-// text before the match, and a leading `\s*` causes polynomial backtracking
-// because the engine retries it at every position in a long whitespace run.
+// NOTE: no leading `\s*`. `extractTrailing` runs this pattern BEFORE it trims
+// anything - it trims the match's prefix afterwards - so the reason a leading
+// `\s*` is unnecessary is that the caller passes text it has already trimmed.
+// Adding one anyway causes polynomial backtracking, because the engine retries
+// it at every position in a long whitespace run.
 const PM_ID_COMMENT_RE = /<!--\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)\s*-->\s*$/;
 
 /**
@@ -704,8 +706,9 @@ const PM_ITEM_TYPES = [
 // (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). Only
 // the LAST such group is consumed, so an item titled `Deploy to [Staging]` keeps
 // that bracket and sheds only the real type tag the exporter appended after it.
-// No leading `\s*`: `.trim()` in `extractTrailing` handles the whitespace, and a
-// leading `\s*` causes polynomial backtracking on long whitespace runs.
+// No leading `\s*`: the caller trims before `extractTrailing` runs this pattern
+// (`extractTrailing` itself trims only after the match), and a leading `\s*`
+// causes polynomial backtracking on long whitespace runs.
 const TYPE_TAG_RE = new RegExp(`\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
 
 /**
@@ -779,7 +782,13 @@ function sectionToTag(section: string): string {
  * @param file  absolute source path recorded on each item (for provenance)
  */
 export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
-  const lines = md.split("\n");
+  // Split on either line ending. Both HEADER_RE and TODO_RE end in `$` with
+  // patterns built from `.`, and neither `.` nor `$` accepts the `\r` a CRLF
+  // file leaves at the end of every line - so a CRLF document parsed as `\n`
+  // matches nothing at all. Normalising here fixes headings and TODO lines
+  // together, rather than teaching each pattern about `\r` separately and
+  // leaving the next one to rediscover it.
+  const lines = md.split(/\r?\n/u);
   const todos: TodoItem[] = [];
   let currentSection: string | undefined;
 

@@ -982,60 +982,88 @@ test("extractCreatedTodoId reads the id out of pm --json create output (several 
 // on adversarial inputs that previously caused O(n²) backtracking.
 // Threshold is generous (250 ms) but the old regex took seconds at n=64000.
 
-test("extractPmIdComment stays linear on adversarial whitespace input", () => {
-  // Old regex `/\s*<!--\s*(...)\s*-->\s*$/` retried `\s*` at every position in
-  // a long whitespace run, causing O(n²) backtracking. The leading `\s*` was
-  // removed; `.trim()` in `extractTrailing` handles the whitespace.
-  const n = 64000;
-  const input = "<!--" + " ".repeat(n) + "X";
-  const start = process.hrtime.bigint();
-  extractPmIdComment(input);
-  const ms = Number(process.hrtime.bigint() - start) / 1e6;
-  assert.ok(ms < 250, `extractPmIdComment took ${ms.toFixed(1)} ms (expected < 250 ms)`);
+/**
+ * Assert a call's cost grows linearly, by measuring it at N and at 2N.
+ *
+ * An absolute deadline cannot tell a quadratic implementation from a loaded
+ * runner. The fixed paths here run in well under a millisecond, so the only way
+ * a 250 ms ceiling fires is CI scheduling or coverage overhead - it fails for a
+ * reason unrelated to the behaviour it guards. A generous ceiling also cannot
+ * catch a partial regression: a hundredfold slowdown still lands under it.
+ *
+ * A ratio is scheduling-independent, because both halves absorb the same load,
+ * and it fails on a partial regression too. The floor absorbs sub-millisecond
+ * timer granularity, where a ratio is meaningless.
+ *
+ * @param label - Name of the call under measurement, for the failure message.
+ * @param run - Invokes the call with an adversarial input of the given size.
+ */
+function assertLinearGrowth(label: string, run: (size: number) => void): void {
+  const n = 16_000;
+  const first = process.hrtime.bigint();
+  run(n);
+  const msN = Number(process.hrtime.bigint() - first) / 1e6;
+  const second = process.hrtime.bigint();
+  run(n * 2);
+  const ms2N = Number(process.hrtime.bigint() - second) / 1e6;
+  const bound = Math.max(3 * msN, 100);
+  assert.ok(
+    ms2N < bound,
+    `${label} is not linear: N=${msN.toFixed(3)} ms, 2N=${ms2N.toFixed(3)} ms, bound=${bound.toFixed(3)} ms (ratio ${(ms2N / msN).toFixed(2)}x)`
+  );
+}
+
+test("every fixed regex stays linear on adversarial whitespace input", () => {
+  // The old patterns led with `\s*`, which the engine retried at every position
+  // in a long whitespace run. The leading `\s*` is gone; the caller trims before
+  // `extractTrailing` runs the pattern, so it was never needed.
+  assertLinearGrowth("extractPmIdComment", (size) => void extractPmIdComment("<!--" + " ".repeat(size) + "X"));
+  assertLinearGrowth("extractTypeTag", (size) => void extractTypeTag("[Task]" + " ".repeat(size) + "!"));
+  assertLinearGrowth("parseMarkdownTodos", (size) =>
+    void parseMarkdownTodos("## " + "  ".repeat(size) + "#" + "  ".repeat(size) + "!\n- [ ] item\n"));
 });
 
-test("extractTypeTag stays linear on adversarial whitespace input", () => {
-  // Old regex `/\s*\[(...)\]\s*$/` retried `\s*` at every position.
-  const n = 64000;
-  const input = "[Task]" + " ".repeat(n) + "!";
-  const start = process.hrtime.bigint();
-  extractTypeTag(input);
-  const ms = Number(process.hrtime.bigint() - start) / 1e6;
-  assert.ok(ms < 250, `extractTypeTag took ${ms.toFixed(1)} ms (expected < 250 ms)`);
-});
-
-test("parseMarkdownTodos HEADER_RE stays linear on adversarial input", () => {
-  // Old regex `^(#{1,6})\s+(.+?)\s*#*$` caused O(n²) when `(.+?)` lazily
-  // extended through a long `## … # … !` input. Fixed to `(.+)$` with
-  // trailing `#` stripping in code.
-  const n = 64000;
-  const md = "## " + "  ".repeat(n) + "#" + "  ".repeat(n) + "!\n- [ ] item\n";
-  const start = process.hrtime.bigint();
-  parseMarkdownTodos(md);
-  const ms = Number(process.hrtime.bigint() - start) / 1e6;
-  assert.ok(ms < 250, `parseMarkdownTodos took ${ms.toFixed(1)} ms (expected < 250 ms)`);
-});
-
-test("parseMarkdownTodos stays linear on a heading carrying a long run of hashes", () => {
+test("a heading carrying a long run of hashes stays linear, and keeps its text", () => {
   // The first fix for HEADER_RE moved trailing-`#` stripping out of the regex
   // and into `header[2].replace(/#*$/, "")`, which is itself quadratic: the
   // engine retries the unanchored `#*` at every start position. Measured at
   // 5366 ms for 64000 hashes, worse than the defect it replaced. Stripping is
   // now a backward scan, which needs no backtracking.
+  //
   // The hash run must be followed by a non-hash character. With the run at the
   // very end, `#*$` succeeds on its first real attempt and the quadratic path
   // is never taken - an earlier version of this test made exactly that mistake
   // and passed against both implementations.
-  const md = `## Title ${"#".repeat(64_000)}x\n- [ ] item\n`;
-  const startedAt = process.hrtime.bigint();
-  const parsed = parseMarkdownTodos(md);
-  const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+  assertLinearGrowth("parseMarkdownTodos (hash run)", (size) =>
+    void parseMarkdownTodos(`## Title ${"#".repeat(size)}x\n- [ ] item\n`));
+
+  // The behaviour the speed fix must not change: a trailing `#` run that is not
+  // a closing sequence stays part of the heading text.
+  const parsed = parseMarkdownTodos(`## Title ${"#".repeat(64_000)}x\n- [ ] item\n`);
   assert.equal(parsed.length, 1);
   assert.equal(parsed[0]!.section, `Title ${"#".repeat(64_000)}x`);
-  assert.ok(
-    elapsedMs < 250,
-    `parseMarkdownTodos took ${elapsedMs.toFixed(1)} ms (expected < 250 ms)`
-  );
+});
+
+test("a CRLF document parses its headings and its TODO lines", () => {
+  // Both patterns end in `$` and are built from `.`, and neither accepts the
+  // `\r` a CRLF file leaves at the end of every line - so splitting on `\n`
+  // alone matched nothing at all. Headings additionally regressed here: the
+  // pattern this branch replaced ended in `\s*#*$`, which absorbed the `\r`.
+  const parsed = parseMarkdownTodos("## Section\r\n- [ ] a task\r\n");
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]!.section, "Section");
+  assert.equal(parsed[0]!.text, "a task");
+});
+
+test("a heading whose only content is a closing sequence has no section text", () => {
+  // `## #` is a heading with an empty title under CommonMark: the trailing `#`
+  // is a closing sequence, not content. The pattern this branch replaced
+  // captured it as the literal text "#", so this is a correction rather than a
+  // regression - pinned here so it is a decision on the record and not an
+  // accident of how the strip was rewritten.
+  const parsed = parseMarkdownTodos("## #\n- [ ] a task\n");
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]!.section, "");
 });
 
 // ---------------------------------------------------------------------------
