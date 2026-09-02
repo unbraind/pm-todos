@@ -34,6 +34,7 @@ import {
   extractMarkdownDue,
   sortItemsForContext,
   buildTodoContextSnapshot,
+  HEADER_RE,
 } from "../index.ts";
 
 // ---------------------------------------------------------------------------
@@ -974,4 +975,190 @@ test("extractCreatedTodoId reads the id out of pm --json create output (several 
   assert.equal(extractCreatedTodoId('{"item":{"id":"pm-10"}}'), "pm-10");
   assert.equal(extractCreatedTodoId('{"result":{"id":"pm-11"}}'), "pm-11");
   assert.equal(extractCreatedTodoId("not json"), undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Polynomial-redos regression tests — assert the fixed regexes stay linear
+// on adversarial inputs that previously caused O(n²) backtracking.
+// Threshold is generous (250 ms) but the old regex took seconds at n=64000.
+
+/**
+ * Time a call over a prepared input, reporting the fastest of several rounds.
+ *
+ * Three details make this a measurement rather than a coin toss.
+ *
+ * The input is built by the caller, never inside the timed loop: constructing a
+ * 32000-character string is itself linear work, and including it measured
+ * allocation rather than the pattern - enough to make a correct implementation
+ * read as 5.4x superlinear.
+ *
+ * The call is repeated until the total is comfortably above timer granularity,
+ * since a ratio taken from a sub-millisecond sample is mostly noise. The loop
+ * is self-limiting: an implementation slow enough to matter reaches the target
+ * on its first iteration.
+ *
+ * The MINIMUM across rounds is reported, after a warm-up round. Scheduling
+ * noise and garbage collection only ever add time, so the fastest round is the
+ * closest estimate of the real cost - taking a single sample instead made this
+ * assertion pass alone and fail when run beside its neighbours.
+ *
+ * @param call - The call to time.
+ * @param input - The prepared input to pass it.
+ * @param iterations - Fixed iteration count, or `undefined` to choose one.
+ * @returns The fastest elapsed milliseconds and the iteration count used.
+ */
+function measure<TInput>(call: (input: TInput) => void, input: TInput, iterations?: number): { ms: number; iterations: number } {
+  let count = iterations ?? 1;
+  const time = (): number => {
+    const started = process.hrtime.bigint();
+    for (let index = 0; index < count; index += 1) call(input);
+    return Number(process.hrtime.bigint() - started) / 1e6;
+  };
+  while (iterations === undefined && count < 4096 && time() < 5) count *= 2;
+  time(); // warm-up, discarded: the first pass pays JIT and page-fault costs.
+  return { ms: Math.min(time(), time(), time()), iterations: count };
+}
+
+/**
+ * Assert that a call's cost grows linearly, by measuring it at N and at 4N.
+ *
+ * An absolute deadline cannot tell a quadratic implementation from a loaded
+ * runner, and a generous one cannot catch a partial regression either: a
+ * hundredfold slowdown still lands under 250 ms. A ratio catches both.
+ *
+ * The ratio is the only constraint - there is no absolute floor. An earlier
+ * version floored the bound at 100 ms, which for these sub-millisecond paths
+ * meant the floor always won and a thousandfold regression would have passed.
+ *
+ * @param label - Name of the call under measurement, for the failure message.
+ * @param build - Builds the adversarial input for a given size.
+ * @param call - Invokes the call under measurement on that input.
+ */
+function assertLinearGrowth<TInput>(label: string, build: (size: number) => TInput, call: (input: TInput) => void): void {
+  const n = 8_000;
+  const factor = 4;
+  const base = measure(call, build(n), undefined);
+  const grown = measure(call, build(n * factor), base.iterations);
+  // Quadrupling the input separates the two shapes with headroom on each side:
+  // linear work grows 4x and quadratic 16x, so a bound of 8x is twice the
+  // linear expectation and half the quadratic one. A 2x step with a 3x bound
+  // left no such margin and flaked when the suite ran under load.
+  const bound = base.ms * 8;
+  assert.ok(
+    grown.ms < bound,
+    `${label} is not linear: N=${base.ms.toFixed(3)} ms, ${factor}N=${grown.ms.toFixed(3)} ms over ${base.iterations} iteration(s), bound=${bound.toFixed(3)} ms (ratio ${(grown.ms / base.ms).toFixed(2)}x, linear would be ~${factor}x)`
+  );
+}
+
+test("every fixed regex stays linear on adversarial whitespace input", () => {
+  // The old patterns led with `\s*`, which the engine retried at every position
+  // in a long whitespace run. The leading `\s*` is gone; the caller trims before
+  // `extractTrailing` runs the pattern, so it was never needed.
+  assertLinearGrowth("extractPmIdComment", (size) => "<!--" + " ".repeat(size) + "X", (input) => void extractPmIdComment(input));
+  assertLinearGrowth("extractTypeTag", (size) => "[Task]" + " ".repeat(size) + "!", (input) => void extractTypeTag(input));
+  assertLinearGrowth("parseMarkdownTodos", (size) => "## " + "  ".repeat(size) + "#" + "  ".repeat(size) + "!\n- [ ] item\n", (input) => void parseMarkdownTodos(input));
+});
+
+test("a heading carrying a long run of hashes stays linear, and keeps its text", () => {
+  // The first fix for HEADER_RE moved trailing-`#` stripping out of the regex
+  // and into `header[2].replace(/#*$/, "")`, which is itself quadratic: the
+  // engine retries the unanchored `#*` at every start position. Measured at
+  // 5366 ms for 64000 hashes, worse than the defect it replaced. Stripping is
+  // now a backward scan, which needs no backtracking.
+  //
+  // The hash run must be followed by a non-hash character. With the run at the
+  // very end, `#*$` succeeds on its first real attempt and the quadratic path
+  // is never taken - an earlier version of this test made exactly that mistake
+  // and passed against both implementations.
+  assertLinearGrowth("parseMarkdownTodos (hash run)", (size) => `## Title ${"#".repeat(size)}x\n- [ ] item\n`, (input) => void parseMarkdownTodos(input));
+
+  // The behaviour the speed fix must not change: a trailing `#` run that is not
+  // a closing sequence stays part of the heading text.
+  const parsed = parseMarkdownTodos(`## Title ${"#".repeat(64_000)}x\n- [ ] item\n`);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]!.section, `Title ${"#".repeat(64_000)}x`);
+});
+
+test("a CRLF document parses its headings and its TODO lines", () => {
+  // Both patterns end in `$` and are built from `.`, and neither accepts the
+  // `\r` a CRLF file leaves at the end of every line - so splitting on `\n`
+  // alone matched nothing at all. Headings additionally regressed here: the
+  // pattern this branch replaced ended in `\s*#*$`, which absorbed the `\r`.
+  const parsed = parseMarkdownTodos("## Section\r\n- [ ] a task\r\n");
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]!.section, "Section");
+  assert.equal(parsed[0]!.text, "a task");
+});
+
+test("a heading whose only content is a closing sequence has no section text", () => {
+  // `## #` is a heading with an empty title under CommonMark: the trailing `#`
+  // is a closing sequence, not content. The pattern this branch replaced
+  // captured it as the literal text "#", so this is a correction rather than a
+  // regression - pinned here so it is a decision on the record and not an
+  // accident of how the strip was rewritten.
+  const parsed = parseMarkdownTodos("## #\n- [ ] a task\n");
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]!.section, "");
+});
+
+// ---------------------------------------------------------------------------
+// HEADER_RE disjoint-rewrite regression: the `\s+(.+)` overlap (the CURRENT
+// CodeQL alert on line 764) is only reachable when the regex sees an interior
+// newline, because `parseMarkdownTodos` splits on `\n` first. These tests call
+// the exported regex directly on newline-bearing adversarial input.
+// ---------------------------------------------------------------------------
+
+test("HEADER_RE growth is linear, not quadratic, on newline-bearing input", () => {
+  // The flagged regex `^(#{1,6})\s+(.+)$` is quadratic on `#` + many spaces +
+  // `a` + `\n`: `.+` cannot cross the newline to reach `$`, so the engine
+  // retries the `\s+`/`.+` split at every position. The disjoint
+  // `^(#{1,6})[ \t]+(\S.*)$` form breaks the adjacency between the two
+  // quantifiers with a single `\S` and fails fast.
+  //
+  // This is the guard that actually covers the alert. The parser-level growth
+  // tests cannot: `parseMarkdownTodos` splits on newlines before the pattern
+  // ever sees one, so they stay green on a revert. Verified RED here, at
+  // roughly 1460 ms.
+  assertLinearGrowth("HEADER_RE", (size) => "#" + " ".repeat(size) + "a\n", (input) => void HEADER_RE.exec(input));
+});
+
+test("HEADER_RE disjoint rewrite: titled headers match, whitespace-only does not (behaviour pin)", () => {
+  // The `\S` first char means a header with no title text (`#  `, only spaces)
+  // no longer matches — it was previously captured as a lone space. A header
+  // must have a non-space title. ATX closing `#`s are still captured and stripped
+  // in code, so `## Title ##` round-trips unchanged.
+  assert.equal(HEADER_RE.exec("## Title ##")?.[2], "Title ##");
+  assert.equal(HEADER_RE.exec("# hello world")?.[2], "hello world");
+  assert.equal(HEADER_RE.exec("###### A")?.[2], "A");
+  // Space-only heading text no longer matches (behaviour change vs `\s+(.+)`).
+  assert.equal(HEADER_RE.exec("#  "), null);
+  assert.equal(HEADER_RE.exec("#" + " ".repeat(1000)), null);
+});
+
+test("validation sees the same tasks a CRLF import does", () => {
+  // The validator and the parser must agree about what a document contains.
+  // When the parser learned to accept either line ending and the validator did
+  // not, a CRLF document parsed cleanly on import while the validator matched
+  // no lines at all - so a malformed record passed straight through the
+  // preflight it exists to be caught by, and the reported task count was wrong.
+  const crlf = "## Section\r\n- [ ] a task due:not-a-date\r\n";
+  const parsed = parseMarkdownTodos(crlf);
+  const validated = validateTodoFile(crlf, "markdown");
+  assert.equal(parsed.length, 1);
+  assert.equal(validated.taskCount, parsed.length, "the validator must count the tasks the parser finds");
+  // The count alone only detects drift. What the preflight exists to do is
+  // REJECT the malformed value, so assert the finding itself - otherwise this
+  // still passes if the validator sees the line and says nothing about it.
+  assert.deepEqual(
+    validated.issues.map((issue) => issue.message),
+    ["Invalid due date 'not-a-date' (expected YYYY-MM-DD)"],
+    "the malformed due date must still be rejected on a CRLF document",
+  );
+
+  // And the two agree on a LF document as well, so the fix did not simply move
+  // the divergence to the other line ending.
+  const lf = "## Section\n- [ ] a task due:not-a-date\n";
+  const lfValidated = validateTodoFile(lf, "markdown");
+  assert.equal(lfValidated.taskCount, parseMarkdownTodos(lf).length);
+  assert.deepEqual(lfValidated.issues.map((issue) => issue.message), validated.issues.map((issue) => issue.message));
 });

@@ -130,7 +130,35 @@ type PriorityMapScheme = "number" | "letter";
 const TODO_RE = /^(\s*)[-*+] \[([ xX])\] (.+)$/;
 // A markdown section header (`## Title`, any level). We treat the heading text
 // as a tag for every TODO that follows it (until the next heading).
-const HEADER_RE = /^(#{1,6})\s+(.+?)\s*#*$/;
+//
+// The separator `[ \t]+` and the capture `\S.*` are built from DISJOINT character
+// sets and are separated by the single (non-quantified) `\S`, so any input splits
+// in exactly one way and the match is provably linear. The earlier `\s+(.+)` form
+// was flagged by CodeQL as polynomial: `\s` and `.` both match a space, so on an
+// input containing an interior newline (`#` + many spaces + `a` + `\n`) the `.+`
+// cannot reach `$` and the engine retries the `\s+`/`.+` split at every position
+// — measured 280 ms at n=16000 and 1106 ms at n=32000 (a ~4x doubling). The
+// disjoint form measures < 1 ms at n=64000.
+//
+// Trailing `#` closures (ATX style: `## Title ##`) are stripped in code after
+// matching. Exported so the linear-time regression test can exercise the regex
+// directly on newline-bearing input (parseMarkdownTodos splits on `\n` first, so
+// the slow path is only reachable through uncontrolled input to the regex).
+//
+// Accepted-language note: a header whose text is whitespace-only (`#  `) no
+// longer matches — `\S` requires the heading to start with a non-space. Such a
+// header has no title and was previously captured as a lone space; pinning test
+// below. All titled headers (including `## Title ##`) match exactly as before.
+/**
+ * A markdown ATX section header (`## Title`, any level 1–6). Capture group 1 is
+ * the leading `#` run; capture group 2 is the heading text (with any trailing
+ * ATX closing `#`s still attached — those are stripped in code after matching).
+ *
+ * The separator and capture are disjoint (space/tab vs. a non-space first char)
+ * so the match is linear; see the line comments above for the polynomial-redos
+ * rationale and the regression test in `test/formats.test.ts`.
+ */
+export const HEADER_RE = /^(#{1,6})[ \t]+(\S.*)$/;
 
 /**
  * Read a boolean option honoring both the kebab-case long flag and the
@@ -643,7 +671,12 @@ function extractTrailing(text: string, regex: RegExp): { text: string; value?: s
 // hand-written line is never mistaken for provenance — which would otherwise
 // set a bogus `pmId` AND, via the type-tag gate below, strip a legitimate
 // trailing `[WIP]` from the title.
-const PM_ID_COMMENT_RE = /\s*<!--\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)\s*-->\s*$/;
+// NOTE: no leading `\s*`. `extractTrailing` runs this pattern BEFORE it trims
+// anything - it trims the match's prefix afterwards - so the reason a leading
+// `\s*` is unnecessary is that the caller passes text it has already trimmed.
+// Adding one anyway causes polynomial backtracking, because the engine retries
+// it at every position in a long whitespace run.
+const PM_ID_COMMENT_RE = /<!--\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)\s*-->\s*$/;
 
 /**
  * Strip a trailing `<!-- pm-id -->` comment from a TODO's text and return the
@@ -673,7 +706,10 @@ const PM_ITEM_TYPES = [
 // (see `renderDefaultMarkdown`: `- [ ] ${title} [${type}] <!-- ${id} -->`). Only
 // the LAST such group is consumed, so an item titled `Deploy to [Staging]` keeps
 // that bracket and sheds only the real type tag the exporter appended after it.
-const TYPE_TAG_RE = new RegExp(`\\s*\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
+// No leading `\s*`: the caller trims before `extractTrailing` runs this pattern
+// (`extractTrailing` itself trims only after the match), and a leading `\s*`
+// causes polynomial backtracking on long whitespace runs.
+const TYPE_TAG_RE = new RegExp(`\\[(${PM_ITEM_TYPES.join("|")})\\]\\s*$`);
 
 /**
  * Strip the exporter's trailing ` [Type]` annotation from a TODO's text and
@@ -746,7 +782,13 @@ function sectionToTag(section: string): string {
  * @param file  absolute source path recorded on each item (for provenance)
  */
 export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
-  const lines = md.split("\n");
+  // Split on either line ending. Both HEADER_RE and TODO_RE end in `$` with
+  // patterns built from `.`, and neither `.` nor `$` accepts the `\r` a CRLF
+  // file leaves at the end of every line - so a CRLF document parsed as `\n`
+  // matches nothing at all. Normalising here fixes headings and TODO lines
+  // together, rather than teaching each pattern about `\r` separately and
+  // leaving the next one to rediscover it.
+  const lines = splitContentLines(md);
   const todos: TodoItem[] = [];
   let currentSection: string | undefined;
 
@@ -755,7 +797,15 @@ export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
 
     const header = HEADER_RE.exec(line);
     if (header) {
-      currentSection = header[2].trim();
+      // Strip ATX closing `#`s (e.g. `## Title ##`) and trim whitespace.
+      // Scanned backwards rather than with `/#*$/`: an unanchored `#*` that the
+      // engine retries at every start position is quadratic on a long run of
+      // `#`, measured here at 5.4 seconds for 64000 of them. A backward scan is
+      // linear and needs no backtracking.
+      const heading = header[2];
+      let end = heading.length;
+      while (end > 0 && heading[end - 1] === "#") end -= 1;
+      currentSection = heading.slice(0, end).trim();
       continue;
     }
 
@@ -1058,11 +1108,29 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
 }
 
 /**
+ * Split document text into lines, accepting either line ending.
+ *
+ * Shared deliberately. Every pattern this file matches lines against ends in
+ * `$` and is built from `.`, and neither accepts the carriage return a CRLF
+ * document leaves on each line - so a splitter that only knows `\n` hands those
+ * patterns text they cannot match. When the parser learned about CRLF and the
+ * validator did not, a malformed record parsed cleanly on import while the
+ * validator failed to see the line at all, so it evaded the preflight it exists
+ * to pass through. One splitter is what stops the two drifting apart again.
+ *
+ * @param content - The document text.
+ * @returns The lines, without their terminators.
+ */
+export function splitContentLines(content: string): string[] {
+  return content.split(/\r?\n/u);
+}
+
+/**
  * Parse a whole todo.txt document into structured items (blank lines skipped).
  */
 export function parseTodoTxt(content: string): TodoTxtItem[] {
   const out: TodoTxtItem[] = [];
-  for (const line of content.split("\n")) {
+  for (const line of splitContentLines(content)) {
     const item = parseTodoTxtLine(line);
     if (item) out.push(item);
   }
@@ -1532,7 +1600,7 @@ export function validateTodoFile(
 ): { issues: ValidationIssue[]; taskCount: number } {
   const issues: ValidationIssue[] = [];
   let taskCount = 0;
-  const lines = content.split("\n");
+  const lines = splitContentLines(content);
 
   if (format === "todojson") {
     try {
@@ -1882,7 +1950,7 @@ function parseFileToNormalized(
   }
 
   if (format === "todotxt") {
-    const lines = md.split("\n");
+    const lines = splitContentLines(md);
     const out: NormalizedTodo[] = [];
     for (let i = 0; i < lines.length; i++) {
       const item = parseTodoTxtLine(lines[i]);

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Resolve polynomial-redos code-scanning alerts by measurement ([pm-todos-5vxe](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-5vxe.toon))
+
 ## 2026.9.1 - 2026-09-01
 
 ### Fixed
