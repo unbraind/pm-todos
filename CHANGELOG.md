@@ -6,6 +6,10 @@
 
 - The publish-attestation gate misses a publish routed through an unquoted shell variable ([pm-todos-9clr](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9clr.toon))
 
+### Security
+
+- Close three P1 security findings on PR \#67: closed-block binding leakage, same-line assignment ordering, one-line branch scope ([pm-todos-bil9](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-bil9.toon))
+
 ### Other
 
 - Round 4 on PR 67: land the compound-line, sibling-branch and case-arm scope fixes in this vendored scanner and clear all four review threads ([pm-todos-m48u](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-m48u.toon))

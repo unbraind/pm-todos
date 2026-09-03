@@ -558,8 +558,18 @@ export function bashArrays(text: string): Map<string, string> {
 const STANDALONE_ASSIGNMENT =
   /^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=(?:"((?:\\.|[^"\\$`])*)"|'([^']*)'|((?:\\.|[^\s;&|"'`$()\\])+))[ \t]*(?:[;#]|\r?$)/;
 
+/** One `;`- or `;;`-separated segment of a line, with its position and separator. */
+export interface LineSegment {
+  /** The segment's text, without the trailing `;` or `;;` separator. */
+  readonly text: string;
+  /** True when the segment is followed by `;;` (a case-arm end), not a single `;`. */
+  readonly caseArmEnd: boolean;
+  /** Zero-based character offset of the segment's start within its line. */
+  readonly start: number;
+}
+
 /**
- * Split a line on semicolons that are outside quotes.
+ * Split a line on semicolons that are outside quotes, tracking `;;` and position.
  *
  * A compound one-line command such as `if true; then NPM=npm; $NPM publish; fi`
  * holds its assignment after a keyword and a `;` separator. The start-anchored
@@ -567,12 +577,21 @@ const STANDALONE_ASSIGNMENT =
  * `;`-separated segments first and each segment is tried after stripping a
  * leading `then`/`else`/`elif`/`do` keyword.
  *
+ * `;;` (a case-arm end) is treated as one separator distinct from `;`, so a
+ * binding made in one arm can be popped before the next arm's text is expanded.
+ *
+ * Each segment carries its zero-based character offset within the line, so
+ * callers can match same-line assignments to the segment they belong to and
+ * load them in order — an assignment after a publish on the same line
+ * (`npm publish $FLAG; FLAG=--provenance`) must not be visible to that publish.
+ *
  * @param line - One already-continuation-joined source line.
  * @returns The line's segments, with quoted semicolons preserved in their segment.
  */
-function splitUnquotedSemicolons(line: string): string[] {
-  const segments: string[] = [];
+export function splitLineSegments(line: string): LineSegment[] {
+  const segments: LineSegment[] = [];
   let current = "";
+  let start = 0;
   let single = false;
   let double = false;
   for (let index = 0; index < line.length; index += 1) {
@@ -590,10 +609,19 @@ function splitUnquotedSemicolons(line: string): string[] {
       current += line.slice(index);
       break;
     }
-    if (char === ";" && !single && !double) { segments.push(current); current = ""; continue; }
+    if (char === ";" && !single && !double) {
+      const isDouble = line[index + 1] === ";";
+      segments.push({ text: current, caseArmEnd: isDouble, start });
+      current = "";
+      start = index + (isDouble ? 2 : 1);
+      if (isDouble) index += 1;
+      continue;
+    }
     current += char;
   }
-  if (current.length > 0 || segments.length === 0) segments.push(current);
+  if (current.length > 0 || segments.length === 0) {
+    segments.push({ text: current, caseArmEnd: false, start });
+  }
   return segments;
 }
 
@@ -759,6 +787,14 @@ export interface ScalarAssignment {
    * untaken branch supply `--provenance` to a publish the shell runs without it.
    */
   readonly depth: number;
+  /**
+   * Zero-based character offset of the `;`-segment that contains the
+   * assignment, within its line. Position within the line is load-bearing: an
+   * assignment after a publish on the same line (`npm publish $FLAG;
+   * FLAG=--provenance`) must not be visible to that publish, so callers load
+   * same-line assignments per segment rather than all at once before expansion.
+   */
+  readonly offset: number;
 }
 
 /**
@@ -866,44 +902,46 @@ export function scalarAssignments(text: string): ScalarAssignment[] {
       continue;
     }
     heredocs.push(...heredocTerminators(line));
-    // A closer returns to the outer scope on its own line, so apply it before
-    // recording; an opener takes effect after, so an assignment written on the
-    // same line as `if ...; then` is recorded inside the block it opens.
-    const change = blockDepthChange(line, caseDepth > 0);
-    caseDepth = Math.max(0, caseDepth + caseDepthChange(line));
-    if (change < 0) depth = Math.max(0, depth + change);
-    // A line can hold several assignments before its command: the shell runs
-    // `NPM=other; NPM=npm; $NPM publish` with NPM as `npm`. Recording only the
-    // first expanded the invocation to `other publish`, so the real publish was
-    // never recognised and an attested sibling satisfied the non-vacuity guard.
+    // A line can hold several assignments before its command, and the depth at
+    // each assignment's position depends on the openers and closers that
+    // precede it on the same line. `if false; then FLAG=--provenance; fi` opens
+    // and closes on one line: the net change is zero, but the assignment is
+    // inside the block and must be recorded at the inner depth, not the outer.
+    // Splitting on `;` and tracking depth per segment gives each assignment the
+    // depth the shell would have at that point.
     //
-    // The line is split on unquoted `;` first, and each segment is tried after
-    // stripping a leading `then`/`else`/`elif`/`do` keyword. Without the split,
-    // a one-line compound such as `if true; then NPM=npm; $NPM publish; fi`
-    // never reaches the assignment because the start-anchored regex stops at
-    // the `if` keyword. With it, `then NPM=npm` strips to `NPM=npm` and binds,
-    // so `$NPM publish` is expanded and the publish is audited rather than
-    // left invisible while an attested sibling satisfies the non-vacuity guard.
-    for (const segment of splitUnquotedSemicolons(line)) {
-      const stripped = segment.replace(/^[ \t]*(?:(?:then|else|elif|do)[ \t]+)?/, "");
+    // The line is split on unquoted `;` and `;;` first, and each segment is
+    // tried after stripping a leading `then`/`else`/`elif`/`do` keyword.
+    // Without the split, a one-line compound such as
+    // `if true; then NPM=npm; $NPM publish; fi` never reaches the assignment
+    // because the start-anchored regex stops at the `if` keyword. With it,
+    // `then NPM=npm` strips to `NPM=npm` and binds, so `$NPM publish` is
+    // expanded and the publish is audited rather than left invisible while an
+    // attested sibling satisfies the non-vacuity guard.
+    for (const segment of splitLineSegments(line)) {
+      const segChange = blockDepthChange(segment.text, caseDepth > 0);
+      caseDepth = Math.max(0, caseDepth + caseDepthChange(segment.text));
+      if (segChange < 0) depth = Math.max(0, depth + segChange);
+      const stripped = segment.text.replace(/^[ \t]*(?:(?:then|else|elif|do)[ \t]+)?/, "");
       const assignment = STANDALONE_ASSIGNMENT.exec(stripped);
-      if (assignment === null) continue;
-      // Exactly one of the three value alternatives matches, so the last is the
-      // only case left rather than a fallback that could be undefined.
-      const raw = assignment[2] ?? assignment[3] ?? assignment[4]!;
-      // Single quotes make a backslash literal, so only the other two forms are
-      // unescaped. Unescaping a single-quoted value turned `'npm publish
-      // \\--provenance'` into an attested-looking command the shell never runs.
-      const value = assignment[3] !== undefined
-        ? raw
-        : assignment[2] !== undefined
-          ? raw.replace(/\\([$`"\\])/g, "$1")
-          : raw.replace(/\\(.)/g, "$1");
-      if (!/[\$`"'(){};&|<>#]/.test(value)) {
-        assignments.push({ name: assignment[1]!, value, line: lineNumber, depth });
+      if (assignment !== null) {
+        // Exactly one of the three value alternatives matches, so the last is the
+        // only case left rather than a fallback that could be undefined.
+        const raw = assignment[2] ?? assignment[3] ?? assignment[4]!;
+        // Single quotes make a backslash literal, so only the other two forms are
+        // unescaped. Unescaping a single-quoted value turned `'npm publish
+        // \\--provenance'` into an attested-looking command the shell never runs.
+        const value = assignment[3] !== undefined
+          ? raw
+          : assignment[2] !== undefined
+            ? raw.replace(/\\([$`"\\])/g, "$1")
+            : raw.replace(/\\(.)/g, "$1");
+        if (!/[\$`"'(){};&|<>#]/.test(value)) {
+          assignments.push({ name: assignment[1]!, value, line: lineNumber, depth, offset: segment.start });
+        }
       }
+      if (segChange > 0) depth += segChange;
     }
-    if (change > 0) depth += change;
   }
   return assignments;
 }

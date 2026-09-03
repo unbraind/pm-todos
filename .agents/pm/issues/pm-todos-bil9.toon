@@ -1,0 +1,24 @@
+id: pm-todos-bil9
+title: "Close three P1 security findings on PR #67: closed-block binding leakage, same-line assignment ordering, one-line branch scope"
+description: ""
+type: Issue
+status: closed
+priority: 2
+tags: []
+created_at: "2026-09-03T19:55:13.207Z"
+updated_at: "2026-09-03T19:55:48.043Z"
+closed_at: "2026-09-03T19:55:48.030Z"
+completed_at: "2026-09-03T19:55:48.030Z"
+claim_principal: pi-agent
+author: pi-agent
+resolution: All three P1 findings fixed with paired witness tests and revert verification
+expected_result: Three new tests fail on unpatched code and pass on patched code; 261 pre-existing tests remain green throughout; all gates pass
+actual_result: "264/264 tests pass (261 pre-existing + 3 new). Each fix verified by isolated revert: 263 pass / 1 fail per revert. Build, typecheck, lint, coverage, pm health all pass."
+comments[1]{created_at,author,text}:
+  "2026-09-03T19:55:26.563Z",pi-agent,"Three P1 findings closed on scripts/shell-command-scan.ts and scripts/verify-release-publish-attestation.ts:\n\nFinding 1 (Closed-block bindings become visible again): Block closers lowered lineDepth without removing bindings from the scope stack. A later independent block reopening at the same depth satisfied binding.depth <= lineDepth again, attesting a publish the shell never would. Fix: pop bindings whose depth exceeds the new lineDepth when a block closer fires.\n\nFinding 2 (Later assignments rewrite earlier commands): All same-line assignments were loaded before the line was expanded, so npm publish $FLAG; FLAG=--provenance rewrote the earlier publish to carry the flag. Fix: split the line on unquoted ; and ;; (splitLineSegments), load same-line assignments per segment by offset, and expand each segment in order.\n\nFinding 3 (One-line branches lose their scope): if false; then FLAG=--provenance; fi has net depth change zero, so the assignment was recorded at the outer scope. Fix: track blockDepthChange and caseDepthChange per segment in scalarAssignments, so the assignment gets the inner depth.\n\nEach fix was verified by reverting only that fix and running the full suite: 263 pass / 1 fail (the new witness) in each case, 264/0 with all three restored. Three new paired tests added, each with a mirror that must stay green."
+tests[3]{command,path,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref},note}:
+  "npm test -- --test-name-pattern=\"a binding from a closed block does not reappear\"",test/verify-release-publish-attestation.test.ts,project,120,pi-agent,"2026-09-03T19:55:36.995Z",local_mutation,fix/index-unquoted-scalar-assignments,a binding from a closed block does not reappear in a later independent block
+  "npm test -- --test-name-pattern=\"a same-line assignment after a publish does not attest\"",test/verify-release-publish-attestation.test.ts,project,120,pi-agent,"2026-09-03T19:55:40.439Z",local_mutation,fix/index-unquoted-scalar-assignments,a same-line assignment after a publish does not attest it
+  "npm test -- --test-name-pattern=\"a one-line branch confines its binding\"",test/verify-release-publish-attestation.test.ts,project,120,pi-agent,"2026-09-03T19:55:43.759Z",local_mutation,fix/index-unquoted-scalar-assignments,a one-line branch confines its binding to the branch scope
+close_reason: All three P1 findings fixed with paired witness tests and revert verification
+body: ""

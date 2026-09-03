@@ -1099,3 +1099,71 @@ test("a read-write redirection does not turn its target into the command", () =>
   assert.equal(result.failures.length, 1, "the redirected publish must still be audited");
   assert.match(result.failures[0]!, /does not enable --provenance/);
 });
+test("a binding from a closed block does not reappear in a later independent block", () => {
+  // Greptile P1: `FLAG=--provenance` inside a completed block leaked into a
+  // later independent block at the same depth, because block closers lowered
+  // lineDepth without removing the binding. When the later block reopened at
+  // that depth, `binding.depth <= lineDepth` was satisfied again and the
+  // unattested publish was reported as attested.
+  const result = auditPublishAttestation([{
+    file: "release.yml",
+    text: "if false; then\n  FLAG=--provenance\nfi\nif true; then\n  npm publish $FLAG\nfi\nnpm publish --provenance\n",
+  }]);
+  assert.equal(result.failures.length, 1,
+    "a binding from a closed block cannot attest a publish in a later independent block");
+  assert.match(result.failures[0]!, /does not enable --provenance/);
+
+  // Mirror: a binding from before both blocks is visible in each, because the
+  // shell sets it at file scope and carries it into every block. Removing
+  // stale bindings on block close must not also remove enclosing-scope ones.
+  const outer = auditPublishAttestation([{
+    file: "release.yml",
+    text: "FLAG=--provenance\nif true; then\n  :\nfi\nif true; then\n  npm publish $FLAG\nfi\n",
+  }]);
+  assert.equal(outer.failures.length, 0,
+    "a binding from before both blocks is visible in each");
+});
+test("a same-line assignment after a publish does not attest it", () => {
+  // Greptile P1: `npm publish $FLAG; FLAG=--provenance` loaded the later
+  // assignment before expanding the line, so the earlier publish was rewritten
+  // to carry the flag. The shell runs the publish before the assignment, so
+  // $FLAG is unset and the publish is unattested.
+  const result = auditPublishAttestation([{
+    file: "release.yml",
+    text: "npm publish $FLAG; FLAG=--provenance\nnpm publish --provenance\n",
+  }]);
+  assert.equal(result.failures.length, 1,
+    "an assignment after a publish on the same line does not attest it");
+  assert.match(result.failures[0]!, /does not enable --provenance/);
+
+  // Mirror: an assignment before the publish on the same line still resolves
+  // it, because the shell binds before running the rest of the line.
+  const before = auditPublishAttestation([{
+    file: "release.yml",
+    text: "FLAG=--provenance; npm publish $FLAG\n",
+  }]);
+  assert.equal(before.failures.length, 0,
+    "an assignment before the publish on the same line still attests it");
+});
+test("a one-line branch confines its binding to the branch's scope", () => {
+  // Greptile P1: `if false; then FLAG=--provenance; fi` opens and closes on
+  // one line, so the net depth change is zero and the assignment was recorded
+  // at the outer scope. A later publish then inherited provenance the shell
+  // never established.
+  const result = auditPublishAttestation([{
+    file: "release.yml",
+    text: "if false; then FLAG=--provenance; fi\nnpm publish $FLAG\nnpm publish --provenance\n",
+  }]);
+  assert.equal(result.failures.length, 1,
+    "a binding in a one-line branch cannot attest a publish outside it");
+  assert.match(result.failures[0]!, /does not enable --provenance/);
+
+  // Mirror: a one-line branch that carries a publish still finds it, because
+  // the assignment and the publish are both inside the block at the same depth.
+  const taken = auditPublishAttestation([{
+    file: "release.yml",
+    text: "if true; then NPM=npm; $NPM publish; fi\nnpm publish --provenance\n",
+  }]);
+  assert.equal(taken.failures.length, 1,
+    "a publish inside a one-line branch is still found and audited");
+});

@@ -26,13 +26,13 @@ import {
   commandArguments,
   commandCandidates,
   commandName,
-  endsCaseArm,
   expandArrays,
   expandScalars,
   joinContinuations,
   blockDepthChange,
   caseDepthChange,
   scalarAssignments,
+  splitLineSegments,
   startsNewBranch,
   type ShellCommand,
   type SourceFile,
@@ -230,60 +230,103 @@ export function publishInvocationsIn(source: SourceFile): PublishInvocation[] {
   const expanded = text
     .split("\n")
     .map((line, index) => {
-      // `else` and `elif` open a new branch of an if/elif/else chain. A binding
-      // made in the preceding branch is at the same numeric depth but is in a
-      // mutually exclusive branch; the shell never carries it across. Popping
-      // before this line's assignments are added lets the new branch's own
-      // assignments through while removing the sibling's.
-      if (startsNewBranch(line)) {
-        for (const stack of inScope.values()) {
-          while (stack.length > 0 && stack[stack.length - 1]!.depth >= lineDepth) {
-            stack.pop();
-          }
-        }
-        for (const [name, stack] of inScope) {
-          if (stack.length === 0) inScope.delete(name);
-        }
-      }
-      // `<= index`, not `<`: `NPM=npm; "$NPM" publish` assigns and then runs on
-      // one line, and the shell binds before running it. Excluding the line's
-      // own assignment would leave `$NPM` unexpanded and miss the publish.
-      while (next < assignments.length && assignments[next]!.line <= index) {
+      // Load assignments from previous lines only. Same-line assignments are
+      // loaded per segment below, so an assignment after a publish on the same
+      // line (`npm publish $FLAG; FLAG=--provenance`) does not attest it.
+      while (next < assignments.length && assignments[next]!.line < index) {
         const assignment = assignments[next]!;
         const stack = inScope.get(assignment.name) ?? [];
         stack.push({ value: assignment.value, depth: assignment.depth });
         inScope.set(assignment.name, stack);
         next += 1;
       }
-      const change = blockDepthChange(line, caseDepth > 0);
-      caseDepth = Math.max(0, caseDepth + caseDepthChange(line));
-      if (change < 0) lineDepth = Math.max(0, lineDepth + change);
-      // The most recent binding still in scope, so a shadowed outer value is
-      // restored rather than lost when its inner block closes.
-      const visible = new Map<string, string>();
-      for (const [name, stack] of inScope) {
-        for (let at = stack.length - 1; at >= 0; at -= 1) {
-          const binding = stack[at]!;
-          if (binding.depth <= lineDepth) { visible.set(name, binding.value); break; }
-        }
-      }
-      const resolved = expandScalars(expandArrays(line, arrays), visible);
-      // A `;;` ends a `case` arm. After it, the next arm is a sibling, so a
-      // binding made in this arm must not be visible in the next one. Popping
-      // after expansion lets a publish on the same line as `;;` still see the
-      // arm's own binding, while the next arm's lines cannot.
-      if (caseDepth > 0 && endsCaseArm(line)) {
-        for (const stack of inScope.values()) {
-          while (stack.length > 0 && stack[stack.length - 1]!.depth >= lineDepth) {
-            stack.pop();
+      // A line is processed segment by segment, splitting on unquoted `;` and
+      // `;;`. Each segment gets its own depth change, its own assignment load,
+      // and its own expansion, so that position within the line is honoured:
+      // an opener before an assignment raises its depth even when a closer
+      // later on the same line brings the net change back to zero.
+      const segments = splitLineSegments(line);
+      const parts: string[] = [];
+      for (let seg = 0; seg < segments.length; seg += 1) {
+        const segment = segments[seg]!;
+        // `else` and `elif` open a new branch of an if/elif/else chain. A
+        // binding made in the preceding branch is at the same numeric depth
+        // but is in a mutually exclusive branch; the shell never carries it
+        // across. Popping before this segment's assignments are added lets the
+        // new branch's own assignments through while removing the sibling's.
+        if (startsNewBranch(segment.text)) {
+          for (const stack of inScope.values()) {
+            while (stack.length > 0 && stack[stack.length - 1]!.depth >= lineDepth) {
+              stack.pop();
+            }
+          }
+          for (const [name, stack] of inScope) {
+            if (stack.length === 0) inScope.delete(name);
           }
         }
-        for (const [name, stack] of inScope) {
-          if (stack.length === 0) inScope.delete(name);
+        const segChange = blockDepthChange(segment.text, caseDepth > 0);
+        caseDepth = Math.max(0, caseDepth + caseDepthChange(segment.text));
+        // A block closer returns to the enclosing scope. Bindings made inside
+        // the closed block must be removed, not merely hidden by the depth
+        // check: without removal, a later independent block that reopens at
+        // the same depth would see the stale binding and attest a publish the
+        // shell never would. `if false; then FLAG=--provenance; fi` followed
+        // by a second `if` block is the shape.
+        if (segChange < 0) {
+          lineDepth = Math.max(0, lineDepth + segChange);
+          for (const stack of inScope.values()) {
+            while (stack.length > 0 && stack[stack.length - 1]!.depth > lineDepth) {
+              stack.pop();
+            }
+          }
+          for (const [name, stack] of inScope) {
+            if (stack.length === 0) inScope.delete(name);
+          }
         }
+        // Load same-line assignments whose segment offset matches this
+        // segment. An assignment in a later segment must not be visible to an
+        // earlier segment's command, so only this segment's assignments are
+        // loaded here.
+        while (
+          next < assignments.length
+          && assignments[next]!.line === index
+          && assignments[next]!.offset === segment.start
+        ) {
+          const assignment = assignments[next]!;
+          const stack = inScope.get(assignment.name) ?? [];
+          stack.push({ value: assignment.value, depth: assignment.depth });
+          inScope.set(assignment.name, stack);
+          next += 1;
+        }
+        // The most recent binding still in scope, so a shadowed outer value is
+        // restored rather than lost when its inner block closes.
+        const visible = new Map<string, string>();
+        for (const [name, stack] of inScope) {
+          for (let at = stack.length - 1; at >= 0; at -= 1) {
+            const binding = stack[at]!;
+            if (binding.depth <= lineDepth) { visible.set(name, binding.value); break; }
+          }
+        }
+        const resolvedSeg = expandScalars(expandArrays(segment.text, arrays), visible);
+        if (segChange > 0) lineDepth += segChange;
+        // A `;;` ends a `case` arm. After it, the next arm is a sibling, so a
+        // binding made in this arm must not be visible in the next one. Popping
+        // after expansion lets a publish on the same segment as `;;` still see
+        // the arm's own binding, while the next arm's segments cannot.
+        if (caseDepth > 0 && segment.caseArmEnd) {
+          for (const stack of inScope.values()) {
+            while (stack.length > 0 && stack[stack.length - 1]!.depth >= lineDepth) {
+              stack.pop();
+            }
+          }
+          for (const [name, stack] of inScope) {
+            if (stack.length === 0) inScope.delete(name);
+          }
+        }
+        if (seg > 0) parts.push(segments[seg - 1]!.caseArmEnd ? ";;" : ";");
+        parts.push(resolvedSeg);
       }
-      if (change > 0) lineDepth += change;
-      return resolved;
+      return parts.join("");
     })
     .join("\n");
   const found: PublishInvocation[] = [];
