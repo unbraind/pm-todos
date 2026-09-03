@@ -1005,6 +1005,84 @@ test("a scalar is taken only from a line that is exactly one literal assignment"
     assert.match(result.failures[0]!, /does not enable --provenance/);
   }
 });
+test("a compound one-line assignment after then is recorded, so a variable-routed publish is audited", () => {
+  // Greptile P1: `if true; then NPM=npm; $NPM publish; fi` held its assignment
+  // after the `then` keyword on the same line. The start-anchored assignment
+  // regex stopped at `if` and never reached `NPM=npm`, so `$NPM` was left
+  // unresolved, `$NPM publish` was not recognised as a publish, and an attested
+  // sibling elsewhere in the file satisfied the non-vacuity guard while the
+  // real publish went unrecognised.
+  for (const [label, text] of [
+    ["if/then", "if true; then NPM=npm; $NPM publish; fi"],
+    ["while/do", "while true; do NPM=npm; $NPM publish; done"],
+    ["for/do", "for x in a b; do NPM=npm; $NPM publish; done"],
+  ] as const) {
+    const result = auditPublishAttestation([{
+      file: "release.yml",
+      text: `          npm publish --provenance\n          ${text}\n`,
+    }]);
+    assert.equal(result.failures.length, 1, `${label}: the variable-routed publish must be audited`);
+    assert.match(result.failures[0]!, /does not enable --provenance/, `${label}: the failure must name the unattested publish`);
+  }
+});
+test("a binding in one if branch is not visible in a sibling branch", () => {
+  // Greptile P1: `FLAG=--provenance` in the `then` branch was visible in the
+  // `else` branch because both branches share the same numeric block depth.
+  // The visibility check used `binding.depth <= lineDepth`, which let a
+  // binding from one mutually exclusive branch attest a publish in another.
+  //
+  // The mirror: a binding in the same branch still attests a publish in that
+  // branch, so narrowing scope cannot silently stop the scan finding publishes
+  // it used to see.
+  const siblingThenElse = auditPublishAttestation([{
+    file: "release.yml",
+    text: "if true; then\n  FLAG=--provenance\nelse\n  npm publish $FLAG\nfi\nnpm publish --provenance\n",
+  }]);
+  assert.equal(siblingThenElse.failures.length, 1,
+    "a binding in the then branch cannot attest a publish in the else branch");
+
+  const siblingElif = auditPublishAttestation([{
+    file: "release.yml",
+    text: "if true; then\n  FLAG=--provenance\nelif false; then\n  npm publish $FLAG\nfi\nnpm publish --provenance\n",
+  }]);
+  assert.equal(siblingElif.failures.length, 1,
+    "a binding in the then branch cannot attest a publish in an elif branch");
+
+  // A binding from before the if is still visible in both branches.
+  const outerBinding = auditPublishAttestation([{
+    file: "release.yml",
+    text: "FLAG=--provenance\nif true; then\n  :\nelse\n  npm publish $FLAG\nfi\n",
+  }]);
+  assert.equal(outerBinding.failures.length, 0,
+    "a binding from before the if is visible in both branches");
+
+  // A binding in the same branch attests a publish in that branch.
+  const sameBranch = auditPublishAttestation([{
+    file: "release.yml",
+    text: "if true; then\n  FLAG=--provenance\n  npm publish $FLAG\nfi\n",
+  }]);
+  assert.equal(sameBranch.failures.length, 0,
+    "a binding in the same branch still attests a publish in that branch");
+});
+test("a binding in one case arm is not visible in a sibling arm", () => {
+  // CodeRabbit: sibling `case` arms share a depth, so a binding from one arm
+  // was visible in the next. `;;` ends an arm and the next arm is a sibling;
+  // after `;;`, bindings from the preceding arm are removed.
+  const siblingArms = auditPublishAttestation([{
+    file: "release.yml",
+    text: 'case "$x" in\n  a)\n    FLAG=--provenance\n    ;;\n  b)\n    npm publish $FLAG\n    ;;\nesac\nnpm publish --provenance\n',
+  }]);
+  assert.equal(siblingArms.failures.length, 1,
+    "a binding in one case arm cannot attest a publish in a sibling arm");
+
+  // The mirror: a publish in the same arm that set the flag is still attested.
+  const sameArm = auditPublishAttestation([{
+    file: "release.yml",
+    text: 'case "$x" in\n  a)\n    FLAG=--provenance\n    npm publish $FLAG\n    ;;\n  b)\n    :\n    ;;\nesac\n',
+  }]);
+  assert.equal(sameArm.failures.length, 0,
+    "a publish in the same case arm still sees that arm's binding");
+});
 test("a read-write redirection does not turn its target into the command", () => {
   // `<>` is one operator, not `<` followed by `>`. Unnamed, it was read as a
   // joined redirection that consumes no target, so `/dev/null` became the

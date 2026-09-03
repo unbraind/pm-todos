@@ -558,6 +558,74 @@ export function bashArrays(text: string): Map<string, string> {
 const STANDALONE_ASSIGNMENT =
   /^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=(?:"((?:\\.|[^"\\$`])*)"|'([^']*)'|((?:\\.|[^\s;&|"'`$()\\])+))[ \t]*(?:[;#]|\r?$)/;
 
+/**
+ * Split a line on semicolons that are outside quotes.
+ *
+ * A compound one-line command such as `if true; then NPM=npm; $NPM publish; fi`
+ * holds its assignment after a keyword and a `;` separator. The start-anchored
+ * assignment regex cannot reach past the keyword, so the line is split into
+ * `;`-separated segments first and each segment is tried after stripping a
+ * leading `then`/`else`/`elif`/`do` keyword.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns The line's segments, with quoted semicolons preserved in their segment.
+ */
+function splitUnquotedSemicolons(line: string): string[] {
+  const segments: string[] = [];
+  let current = "";
+  let single = false;
+  let double = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (char === "\\" && !single) {
+      current += char;
+      if (index + 1 < line.length) { current += line[index + 1]!; index += 1; }
+      continue;
+    }
+    if (char === "'" && !double) { single = !single; current += char; continue; }
+    if (char === '"' && !single) { double = !double; current += char; continue; }
+    // A # preceded by whitespace or at the start opens a comment; the rest of
+    // the line is not shell syntax and its semicolons must not be split on.
+    if (char === "#" && !single && !double && (index === 0 || /\s/.test(line[index - 1]!))) {
+      current += line.slice(index);
+      break;
+    }
+    if (char === ";" && !single && !double) { segments.push(current); current = ""; continue; }
+    current += char;
+  }
+  if (current.length > 0 || segments.length === 0) segments.push(current);
+  return segments;
+}
+
+/**
+ * True when the line opens a new branch of an if/elif/else chain.
+ *
+ * `else` and `elif` start a branch that is mutually exclusive with the
+ * preceding one. A binding made in the `then` arm must not be visible in the
+ * `else` arm, even though both are at the same numeric block depth.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns True when the line contains `else` or `elif` as a keyword.
+ */
+export function startsNewBranch(line: string): boolean {
+  const bare = unquotedText(line);
+  return /(?:^|[\s;&|])(?:else|elif)(?=[\s;&|)]|$)/.test(bare);
+}
+
+/**
+ * True when the line ends a `case` arm with `;;`.
+ *
+ * After `;;`, the next arm is a sibling. A binding made in one arm must not be
+ * visible in the next, even though both are at the same depth.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns True when the line contains `;;` outside quotes.
+ */
+export function endsCaseArm(line: string): boolean {
+  const bare = unquotedText(line);
+  return bare.includes(";;");
+}
+
 /** Return every syntactic, unquoted heredoc terminator opened on a line. */
 function heredocTerminators(line: string): Array<{ delimiter: string; stripTabs: boolean }> {
   const found: Array<{ delimiter: string; stripTabs: boolean }> = [];
@@ -808,10 +876,18 @@ export function scalarAssignments(text: string): ScalarAssignment[] {
     // `NPM=other; NPM=npm; $NPM publish` with NPM as `npm`. Recording only the
     // first expanded the invocation to `other publish`, so the real publish was
     // never recognised and an attested sibling satisfied the non-vacuity guard.
-    let remainder = line;
-    while (remainder.length > 0) {
-      const assignment = STANDALONE_ASSIGNMENT.exec(remainder);
-      if (assignment === null) break;
+    //
+    // The line is split on unquoted `;` first, and each segment is tried after
+    // stripping a leading `then`/`else`/`elif`/`do` keyword. Without the split,
+    // a one-line compound such as `if true; then NPM=npm; $NPM publish; fi`
+    // never reaches the assignment because the start-anchored regex stops at
+    // the `if` keyword. With it, `then NPM=npm` strips to `NPM=npm` and binds,
+    // so `$NPM publish` is expanded and the publish is audited rather than
+    // left invisible while an attested sibling satisfies the non-vacuity guard.
+    for (const segment of splitUnquotedSemicolons(line)) {
+      const stripped = segment.replace(/^[ \t]*(?:(?:then|else|elif|do)[ \t]+)?/, "");
+      const assignment = STANDALONE_ASSIGNMENT.exec(stripped);
+      if (assignment === null) continue;
       // Exactly one of the three value alternatives matches, so the last is the
       // only case left rather than a fallback that could be undefined.
       const raw = assignment[2] ?? assignment[3] ?? assignment[4]!;
@@ -826,12 +902,6 @@ export function scalarAssignments(text: string): ScalarAssignment[] {
       if (!/[\$`"'(){};&|<>#]/.test(value)) {
         assignments.push({ name: assignment[1]!, value, line: lineNumber, depth });
       }
-      // Continue only past an assignment the shell keeps, which is one ended by
-      // `;`. An assignment ending at end-of-line has nothing after it, and a
-      // prefix assignment (`FLAG=x cmd`) never matches this pattern at all.
-      const consumed = assignment[0]!;
-      if (!consumed.trimEnd().endsWith(";")) break;
-      remainder = remainder.slice(consumed.length);
     }
     if (change > 0) depth += change;
   }

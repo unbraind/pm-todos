@@ -26,12 +26,14 @@ import {
   commandArguments,
   commandCandidates,
   commandName,
+  endsCaseArm,
   expandArrays,
   expandScalars,
   joinContinuations,
   blockDepthChange,
   caseDepthChange,
   scalarAssignments,
+  startsNewBranch,
   type ShellCommand,
   type SourceFile,
   tokenizeCommands,
@@ -228,6 +230,21 @@ export function publishInvocationsIn(source: SourceFile): PublishInvocation[] {
   const expanded = text
     .split("\n")
     .map((line, index) => {
+      // `else` and `elif` open a new branch of an if/elif/else chain. A binding
+      // made in the preceding branch is at the same numeric depth but is in a
+      // mutually exclusive branch; the shell never carries it across. Popping
+      // before this line's assignments are added lets the new branch's own
+      // assignments through while removing the sibling's.
+      if (startsNewBranch(line)) {
+        for (const stack of inScope.values()) {
+          while (stack.length > 0 && stack[stack.length - 1]!.depth >= lineDepth) {
+            stack.pop();
+          }
+        }
+        for (const [name, stack] of inScope) {
+          if (stack.length === 0) inScope.delete(name);
+        }
+      }
       // `<= index`, not `<`: `NPM=npm; "$NPM" publish` assigns and then runs on
       // one line, and the shell binds before running it. Excluding the line's
       // own assignment would leave `$NPM` unexpanded and miss the publish.
@@ -251,6 +268,20 @@ export function publishInvocationsIn(source: SourceFile): PublishInvocation[] {
         }
       }
       const resolved = expandScalars(expandArrays(line, arrays), visible);
+      // A `;;` ends a `case` arm. After it, the next arm is a sibling, so a
+      // binding made in this arm must not be visible in the next one. Popping
+      // after expansion lets a publish on the same line as `;;` still see the
+      // arm's own binding, while the next arm's lines cannot.
+      if (caseDepth > 0 && endsCaseArm(line)) {
+        for (const stack of inScope.values()) {
+          while (stack.length > 0 && stack[stack.length - 1]!.depth >= lineDepth) {
+            stack.pop();
+          }
+        }
+        for (const [name, stack] of inScope) {
+          if (stack.length === 0) inScope.delete(name);
+        }
+      }
       if (change > 0) lineDepth += change;
       return resolved;
     })

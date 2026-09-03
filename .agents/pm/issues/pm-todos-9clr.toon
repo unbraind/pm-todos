@@ -6,9 +6,9 @@ status: closed
 priority: 1
 tags: []
 created_at: "2026-08-28T22:09:48.430Z"
-updated_at: "2026-08-31T20:15:08.503Z"
-closed_at: "2026-08-31T18:45:02.635Z"
-completed_at: "2026-08-31T18:45:02.635Z"
+updated_at: "2026-09-03T18:10:33.104Z"
+closed_at: "2026-09-03T18:10:33.086Z"
+completed_at: "2026-09-03T18:10:33.086Z"
 author: claude
 comments[4]{created_at,author,text}:
   "2026-08-31T18:44:52.158Z",claude,"Bot review found three further bypasses of the same gate, all fail-open, all now fixed and covered by tests that were each verified to fail when the fix is reverted. (1) Heredoc bodies: an assignment-shaped line inside a heredoc, such as FLAG=--provenance, was stored as a real binding and expanded into a later npm publish $FLAG, so inert text attested a publish. shellScalars now tracks heredoc state and skips those lines. (2) Escaped separators: FLAG=--provenance\\; decoded to a literal semicolon that the tokenizer read as a command separator, leaving an exact --provenance token, although the shell passes --provenance; as one non-attestation argument. The value filter now rejects a decoded value containing shell syntax. (3) Source position: scalars resolved from one file-wide map, so an assignment written below a command could resolve it. npm publish $FLAG above FLAG=--provenance read as attested even though the shell runs it with $FLAG unset."
@@ -25,5 +25,5 @@ files[3]{path,scope}:
   scripts/shell-command-scan.ts,project
   scripts/verify-release-publish-attestation.ts,project
   test/verify-release-publish-attestation.test.ts,project
-close_reason: "Closed all four bypasses of the publish-attestation gate: the original unquoted-variable route, plus heredoc bodies inventing bindings, escaped separators inventing attestation, and file-wide scalar resolution letting an assignment resolve a command written above it. Each fix carries a regression test that was verified to fail when the fix is reverted. 251/251 tests pass, coverage thresholds met, docstring gate covers 10 files and 105 declarations."
+close_reason: "Closed every bypass of the publish-attestation gate found across five review rounds: the original unquoted-variable route; comment, quoted-argument, truncation and substitution bindings; heredoc bodies inventing bindings; escaped separators inventing attestation; file-wide scalar resolution letting an assignment resolve a command written above it; a backslash-quoted heredoc delimiter that never closed; scope-blind assignment expansion from untaken branches; nested shadowing that lost the outer binding when the block closed; case arm labels escaping scope tracking; later same-line assignments being ignored; compound one-line assignments after then/do remaining unrecorded; and sibling if-branches and case arms sharing bindings. Each fix carries a regression test verified red when the fix is reverted."
 body: ""

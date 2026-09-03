@@ -1,22 +1,20 @@
 # Changelog
 
-## 2026.9.3 - 2026-09-03
+## Unreleased
 
-### Security
+### Fixed
 
-- Resolve polynomial-redos code-scanning alerts by measurement ([pm-todos-5vxe](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-5vxe.toon))
+- The publish-attestation gate misses a publish routed through an unquoted shell variable ([pm-todos-9clr](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9clr.toon))
+
+### Other
+
+- Round 4 on PR 67: land the compound-line, sibling-branch and case-arm scope fixes in this vendored scanner and clear all four review threads ([pm-todos-m48u](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-m48u.toon))
 
 ## 2026.9.1 - 2026-09-01
 
 ### Fixed
 
 - pm-todos runs CodeQL but received no dependency updates, because it had no Dependabot configuration ([pm-todos-shd9](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-shd9.toon))
-
-## 2026.8.29 - 2026-08-29
-
-### Fixed
-
-- The publish-attestation gate misses a publish routed through an unquoted shell variable ([pm-todos-9clr](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9clr.toon))
 
 ## 2026.8.29 - 2026-08-29
 

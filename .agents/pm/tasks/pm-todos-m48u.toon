@@ -1,0 +1,34 @@
+id: pm-todos-m48u
+title: "Round 4 on PR 67: land the compound-line, sibling-branch and case-arm scope fixes in this vendored scanner and clear all four review threads"
+description: ""
+type: Task
+status: closed
+priority: 1
+tags: []
+created_at: "2026-09-03T18:11:03.997Z"
+updated_at: "2026-09-03T18:16:58.846Z"
+closed_at: "2026-09-03T18:16:53.724Z"
+completed_at: "2026-09-03T18:16:53.724Z"
+author: pi-agent
+resolution: "Four unresolved PR-67 review threads addressed at the source: compound-line assignments (Greptile P1), sibling if-branch bindings (Greptile P1), sibling case-arm bindings and scope identity (CodeRabbit major), closure-metadata sync (CodeRabbit minor)."
+expected_result: Each new regression test fails when its fix is reverted and passes with it; full suite green; pm health strict exit 0; changelog check passes with CHANGELOG.md committed.
+actual_result: "58 pass / 1 fail for each isolated revert (compound-line, if-branch, case-arm); 254 pass / 0 fail with all fixes; pm health --strict-exit exit 0 with history_drift ok; changelog:check reports up to date."
+comments[1]{created_at,author,text}:
+  "2026-09-03T18:11:25.736Z",pi-agent,"Round 4 measured evidence, all against this repo's own verifier:\n\n(1) Compound-line assignments (Greptile P1, thread PRRT_kwDOSZpews6d3N0P). Reverted only the segment-split change in scalarAssignments back to the start-anchored remainder loop and ran node --test test/verify-release-publish-attestation.test.ts: 58 pass / 1 fail, the failure being 'a compound one-line assignment after then is recorded, so a variable-routed publish is audited' — the shape if true; then NPM=npm; $NPM publish; fi leaves $NPM unbound, the publish is never recognised, and an attested sibling satisfies the non-vacuity guard (failures: [] overall). With the fix: green.\n\n(2) Sibling if-branches (Greptile P1, thread PRRT_kwDOSZpews6d3N0f). Removed only the startsNewBranch pop from publishInvocationsIn: 58 pass / 1 fail, failing 'a binding in one if branch is not visible in a sibling branch' — FLAG=--provenance in the then arm attested npm publish $FLAG in the else arm at the same numeric depth. With the fix: green, and the mirrors hold (outer binding visible in both branches; same-branch binding still attests).\n\n(3) Sibling case arms (CodeRabbit Major, thread PRRT_kwDOSZpews6d3Qvz). Removed only the endsCaseArm pop: 58 pass / 1 fail, failing 'a binding in one case arm is not visible in a sibling arm'. With the fix: green, and the same-arm mirror holds.\n\n(4) Full suite with all three fixes: 254 pass / 0 fail (node --test, 62s).\n\n(5) Closure metadata (CodeRabbit Minor, thread PRRT_kwDOSZpews6d3Qvv). The prior attempt hand-reordered pm-todos-9clr history lines; measured pm health --strict-exit = exit 1 with history_drift_chain_mismatch and history_drift_hash_mismatch (gate_failing), because reordering an append-only hash-chained ledger breaks the chain. Redone chain-validly: history restored to the committed chain, then pm update --status open followed by pm close with the complete reason, so the final close event is appended after the last review entry. pm health --strict-exit now exits 0 and pm validate is ok with history_drift ok.\n\nScope-identity design note: else/elif and ;; are recognised as unquoted keywords exactly like the pre-existing BLOCK_OPENERS/BLOCK_CLOSERS word shapes (if/for/while/until/case/select, fi/done/esac), so precision is consistent with the file's established convention; popping is bounded by depth so enclosing-scope bindings survive, each direction covered by its own test."
+files[5]{path,scope}:
+  .agents/pm/history/pm-todos-9clr.jsonl,project
+  .agents/pm/issues/pm-todos-9clr.toon,project
+  scripts/shell-command-scan.ts,project
+  scripts/verify-release-publish-attestation.ts,project
+  test/verify-release-publish-attestation.test.ts,project
+tests[1]{command,path,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref},note}:
+  PM_PATH=/tmp/pm-x PM_GLOBAL_PATH=/tmp/pm-x-g node --test test/verify-release-publish-attestation.test.ts,test/verify-release-publish-attestation.test.ts,project,120,pi-agent,"2026-09-03T18:12:27.382Z",local_mutation,fix/index-unquoted-scalar-assignments,"test(): a compound one-line assignment after then is recorded, so a variable-routed publish is audited — verified red with the segment-split fix reverted (58 pass / 1 fail)"
+docs[6]{path,scope,note}:
+  "https://github.com/unbraind/pm-ops/blob/main/.agents/pm/issues/ops-brsc.toon",project,canonical sibling-scope fix tracker in pm-ops
+  "https://github.com/unbraind/pm-todos/pull/67",project,PR 67 under review (round 4)
+  "https://github.com/unbraind/pm-todos/pull/67#discussion_r3898044204",project,Greptile P1 compound-line assignments thread
+  "https://github.com/unbraind/pm-todos/pull/67#discussion_r3898044221",project,Greptile P1 sibling if-branch bindings thread
+  "https://github.com/unbraind/pm-todos/pull/67#discussion_r3898062206",project,CodeRabbit minor closure-metadata sync thread
+  "https://github.com/unbraind/pm-todos/pull/67#discussion_r3898062211",project,CodeRabbit major scope-identity thread
+close_reason: "Landed the round-4 review fixes in this vendored scanner and repaired the closure metadata chain-validly. Compound one-line assignments after then/else/elif/do are now recorded by splitting a line on unquoted semicolons before the anchored match, so a variable-routed publish inside a one-line compound is audited instead of invisible behind an attested sibling. Sibling if-branches and case arms no longer share bindings: else/elif and a case arm's ;; pop same-depth bindings, while enclosing-scope bindings survive, each direction covered by its own test. pm-todos-9clr's closure metadata now follows its final fix history via a chain-valid reopen and re-close, after measuring that hand-reordering the hash-chained history broke pm health's history-drift gate (exit 1, chain and hash mismatch). All three regression tests verified red with their fix reverted; 254/254 pass; coverage thresholds met; pm health --strict-exit exits 0; changelog regenerated and checked."
+body: ""
