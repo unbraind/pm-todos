@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The publish-attestation gate misses a publish routed through an unquoted shell variable ([pm-todos-9clr](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9clr.toon))
+
+### Security
+
+- Close three P1 security findings on PR \#67: closed-block binding leakage, same-line assignment ordering, one-line branch scope ([pm-todos-bil9](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-bil9.toon))
+
+### Other
+
+- Round 4 on PR 67: land the compound-line, sibling-branch and case-arm scope fixes in this vendored scanner and clear all four review threads ([pm-todos-m48u](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-m48u.toon))
+
 ## 2026.9.3 - 2026-09-03
 
 ### Security
@@ -13,6 +27,10 @@
 - pm-todos runs CodeQL but received no dependency updates, because it had no Dependabot configuration ([pm-todos-shd9](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-shd9.toon))
 
 ## 2026.8.29 - 2026-08-29
+
+### Fixed
+
+- Preserve double-quoted scalar backslashes ([pm-todos-ynqt](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ynqt.toon))
 
 ### Other
 

@@ -343,14 +343,18 @@ export function tokenizeCommands(text: string, depth = 0): ShellCommand[] {
  * `> /dev/null npm publish` runs npm. A scan that reads words in order sees `>`
  * as the program and audits nothing. The forms accepted here are the ones a
  * workflow actually writes: the plain operators, a file-descriptor prefix
- * (`2>`, `2>>`), and the duplicating forms (`>&`, `2>&1`, `&>`).
+ * (`2>`, `2>>`), the duplicating forms (`>&`, `2>&1`, `&>`), and the read-write
+ * form `<>`. `<>` has to be named explicitly: it is not `<` followed by `>`, so
+ * without it the operator was read as a joined redirection that consumes no
+ * target, its target `/dev/null` became the command word, and the real
+ * `npm publish` after it was never audited.
  *
  * @param token - One command word.
  * @returns True when the word is a redirection operator.
  */
 function isRedirection(token: ShellToken): boolean {
   if (token.startsQuoted) return false;
-  return /^(?:[0-9]*(?:>>?|<<?<?)&?[0-9-]*|&>>?)$/.test(token.value);
+  return /^(?:[0-9]*(?:>>?|<>|<<?<?)&?[0-9-]*|&>>?)$/.test(token.value);
 }
 
 /**
@@ -550,37 +554,396 @@ export function bashArrays(text: string): Map<string, string> {
   return arrays;
 }
 
+/** A line opening with one assignment of a fully literal value, ending there or at a `;`. */
+const STANDALONE_ASSIGNMENT =
+  /^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=(?:"((?:\\.|[^"\\$`])*)"|'([^']*)'|((?:\\.|[^\s;&|"'`$()\\])+))[ \t]*(?:[;#]|\r?$)/;
+
+/** One `;`- or `;;`-separated segment of a line, with its position and separator. */
+export interface LineSegment {
+  /** The segment's text, without the trailing `;` or `;;` separator. */
+  readonly text: string;
+  /** True when the segment is followed by `;;` (a case-arm end), not a single `;`. */
+  readonly caseArmEnd: boolean;
+  /** Zero-based character offset of the segment's start within its line. */
+  readonly start: number;
+}
+
+/**
+ * Split a line on semicolons that are outside quotes, tracking `;;` and position.
+ *
+ * A compound one-line command such as `if true; then NPM=npm; $NPM publish; fi`
+ * holds its assignment after a keyword and a `;` separator. The start-anchored
+ * assignment regex cannot reach past the keyword, so the line is split into
+ * `;`-separated segments first and each segment is tried after stripping a
+ * leading `then`/`else`/`elif`/`do` keyword.
+ *
+ * `;;` (a case-arm end) is treated as one separator distinct from `;`, so a
+ * binding made in one arm can be popped before the next arm's text is expanded.
+ *
+ * Each segment carries its zero-based character offset within the line, so
+ * callers can match same-line assignments to the segment they belong to and
+ * load them in order — an assignment after a publish on the same line
+ * (`npm publish $FLAG; FLAG=--provenance`) must not be visible to that publish.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns The line's segments, with quoted semicolons preserved in their segment.
+ */
+export function splitLineSegments(line: string): LineSegment[] {
+  const segments: LineSegment[] = [];
+  let current = "";
+  let start = 0;
+  let single = false;
+  let double = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (char === "\\" && !single) {
+      current += char;
+      if (index + 1 < line.length) { current += line[index + 1]!; index += 1; }
+      continue;
+    }
+    if (char === "'" && !double) { single = !single; current += char; continue; }
+    if (char === '"' && !single) { double = !double; current += char; continue; }
+    // A # preceded by whitespace or at the start opens a comment; the rest of
+    // the line is not shell syntax and its semicolons must not be split on.
+    if (char === "#" && !single && !double && (index === 0 || /\s/.test(line[index - 1]!))) {
+      current += line.slice(index);
+      break;
+    }
+    if (char === ";" && !single && !double) {
+      const isDouble = line[index + 1] === ";";
+      segments.push({ text: current, caseArmEnd: isDouble, start });
+      current = "";
+      start = index + (isDouble ? 2 : 1);
+      if (isDouble) index += 1;
+      continue;
+    }
+    current += char;
+  }
+  if (current.length > 0 || segments.length === 0) {
+    segments.push({ text: current, caseArmEnd: false, start });
+  }
+  return segments;
+}
+
+/**
+ * True when the line opens a new branch of an if/elif/else chain.
+ *
+ * `else` and `elif` start a branch that is mutually exclusive with the
+ * preceding one. A binding made in the `then` arm must not be visible in the
+ * `else` arm, even though both are at the same numeric block depth.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns True when the line contains `else` or `elif` as a keyword.
+ */
+export function startsNewBranch(line: string): boolean {
+  const bare = unquotedText(line);
+  return /(?:^|[\s;&|])(?:else|elif)(?=[\s;&|)]|$)/.test(bare);
+}
+
+/**
+ * True when the line ends a `case` arm with `;;`.
+ *
+ * After `;;`, the next arm is a sibling. A binding made in one arm must not be
+ * visible in the next, even though both are at the same depth.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns True when the line contains `;;` outside quotes.
+ */
+export function endsCaseArm(line: string): boolean {
+  const bare = unquotedText(line);
+  return bare.includes(";;");
+}
+
+/** Return every syntactic, unquoted heredoc terminator opened on a line. */
+function heredocTerminators(line: string): Array<{ delimiter: string; stripTabs: boolean }> {
+  const found: Array<{ delimiter: string; stripTabs: boolean }> = [];
+  let single = false;
+  let double = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (char === "\\" && !single) { index += 1; continue; }
+    if (char === "'" && !double) { single = !single; continue; }
+    if (!single && ((char === "$" && line[index + 1] === "(" && line[index + 2] === "(") ||
+      (!double && char === "(" && line[index + 1] === "("))) {
+      const close = line.indexOf("))", index + (char === "$" ? 3 : 2));
+      if (close !== -1) index = close + 1;
+      continue;
+    }
+    if (double && char === "$" && line[index + 1] === "(") {
+      // Scan the substitution's own text and resume after it. Reading past the
+      // closing parenthesis would record a heredoc opened later on the line here
+      // AND again in this loop, queueing one delimiter twice. The real terminator
+      // line then clears only one entry, so every following line stays misread as
+      // heredoc body — including an assignment that routes a command, which leaves
+      // `$CMD publish` unresolved and the publish never audited at all.
+      let depth = 1;
+      let cursor = index + 2;
+      let quoted = false;
+      while (cursor < line.length && depth > 0) {
+        const inner = line[cursor]!;
+        if (inner === "\\") { cursor += 2; continue; }
+        if (inner === "'") quoted = !quoted;
+        else if (!quoted && inner === "(") depth += 1;
+        else if (!quoted && inner === ")") depth -= 1;
+        cursor += 1;
+      }
+      const closed = depth === 0;
+      found.push(...heredocTerminators(line.slice(index + 2, closed ? cursor - 1 : line.length)));
+      index = closed ? cursor - 1 : line.length;
+      continue;
+    }
+    if (char === '"' && !single) { double = !double; continue; }
+    if (single || double) continue;
+    if (char === "#" && (index === 0 || /\s/.test(line[index - 1]!))) return found;
+    if (char !== "<" || line[index + 1] !== "<" || line[index + 2] === "<") continue;
+    let cursor = index + 2;
+    const stripTabs = line[cursor] === "-";
+    if (stripTabs) cursor += 1;
+    while (line[cursor] === " " || line[cursor] === "\t") cursor += 1;
+    const quote = line[cursor] === "'" || line[cursor] === '"' ? line[cursor++] : undefined;
+    const start = cursor;
+    if (quote !== undefined) while (cursor < line.length && line[cursor] !== quote) cursor += 1;
+    else while (cursor < line.length && /[^\s;&|<>()]/.test(line[cursor]!)) cursor += 1;
+    if (cursor > start && (quote === undefined || line[cursor] === quote)) {
+      const word = line.slice(start, cursor);
+      // `<<\EOF` quotes the delimiter with a backslash exactly as `<<'EOF'` quotes it
+      // with single quotes, and the shell strips the backslash before matching the
+      // terminator line. Keeping it would leave the delimiter as `\EOF`, which the
+      // real `EOF` line never matches, so the heredoc would stay open for the rest of
+      // the file and every later assignment would be discarded as body text — leaving
+      // a scalar-routed publish unresolved and never audited.
+      found.push({ delimiter: quote === undefined ? word.replace(/\\(.)/gu, "$1") : word, stripTabs });
+      index = cursor;
+    }
+  }
+  return found;
+}
+
 /**
  * Index scalar assignments so a command held in a variable can be audited.
  *
  * `CMD="npm publish"` followed by `$CMD` runs a publish that no scan of the
  * invocation line can see, because the invocation line contains no publish. The
- * assignment is where the command actually is.
+ * assignment is where the command actually is. `NPM=npm` followed by
+ * `$NPM publish` hides one the same way, so unquoted values are indexed too.
  *
- * Only literal single- or double-quoted values are indexed. An unquoted value
- * cannot hold a space and so cannot hold a command, and a value built from
- * other variables is not resolvable without evaluating the script, which this
- * module deliberately does not do.
+ * A name is taken only where a line OPENS with one assignment carrying a fully
+ * literal value and holds nothing else before its end or a `;`. `NPM=npm; cmd`
+ * therefore binds, because the semicolon ends the assignment and the shell keeps
+ * it afterwards, while `NPM=npm cmd` does not, because that binding lasts only
+ * for the command it precedes. Requiring the line to OPEN with the assignment is
+ * what keeps a `;` inside a comment from exposing one. That single rule keeps
+ * the scan from inventing
+ * bindings the shell never makes, each of which let an unattested publish
+ * borrow a flag and pass the gate:
+ *
+ * - `# FLAG=--provenance` is a comment, and a comment is not a line that is
+ *   only an assignment.
+ * - `echo "config NPM=npm"` is a command with an argument, not an assignment.
+ * - `FLAG=--provenance some-command` binds only for that one command; the shell
+ *   does not keep it afterwards, so neither does this map.
+ * - `$(FLAG=--provenance)` binds inside a subshell that the outer shell never
+ *   sees.
+ * - `NPM=npm$SUFFIX` and `NPM=npm$(printf foo)` are not literal. The value must
+ *   match to the end of the line, so a prefix is never mistaken for the whole
+ *   value -- the mistake that let a scan analyse a different command from the
+ *   one the shell runs.
+ *
+ * `export NPM=npm`, a trailing `# comment` and a CRLF line ending are all still
+ * assignments: refusing them left `$NPM` unresolved, and an attested publish
+ * elsewhere in the file then satisfied the non-vacuity guard, so being too
+ * strict here passes an unattested publish just as being too loose does.
+ *
+ * Escapes are honoured outside single quotes, so `NPM=npm\\ publish` is one word
+ * holding a command while `CMD='"'"'a\\b'"'"' keeps its backslash as the shell does.
+ * A value that still carries a substitution, backtick, quote or parenthesis
+ * after unescaping is refused: inlining `pkg_name="$(node -p …)"` injects an
+ * unbalanced parenthesis into an unrelated command, and the scan then reports
+ * invocations that are not there while losing the one that is -- a false
+ * verdict in both directions, which is worse than not resolving the variable.
  *
  * @param text - File contents with continuations already joined.
  * @returns Variable name mapped to the literal text it holds.
  */
 export function shellScalars(text: string): Map<string, string> {
   const scalars = new Map<string, string>();
-  for (const match of text.matchAll(/(?:^|[\s;&|])([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"\n]*)"|'([^'\n]*)')/g)) {
-    // The alternation guarantees exactly one of the two value groups matched,
-    // so there is no third case to fall back to.
-    const value = match[2] ?? match[3]!;
-    // Only a plain literal is inlined. A value carrying a substitution, a
-    // backtick, or a quote of its own changes how the line it lands in parses:
-    // inlining `pkg_name="$(node -p …)"` injects an unbalanced parenthesis into
-    // an unrelated command, and the scan then reports invocations that are not
-    // there while losing the one that is. That is a false verdict in both
-    // directions, which is worse than not resolving the variable at all.
-    if (/[$`"'()]/.test(value)) continue;
-    scalars.set(match[1]!, value);
-  }
+  for (const assignment of scalarAssignments(text)) scalars.set(assignment.name, assignment.value);
   return scalars;
+}
+
+/** A scalar binding and the zero-based line whose text established it. */
+export interface ScalarAssignment {
+  /** Variable name the line assigns. */
+  readonly name: string;
+  /** Literal value the shell would bind, after decoding escapes. */
+  readonly value: string;
+  /** Zero-based index of the line that makes the assignment. */
+  readonly line: number;
+  /**
+   * Shell block nesting the assignment sits inside; 0 is the file's own scope.
+   *
+   * An assignment inside `if`/`for`/`while`/`case`, a function body, or a
+   * subshell may never run. Crediting it to a command in an outer scope lets an
+   * untaken branch supply `--provenance` to a publish the shell runs without it.
+   */
+  readonly depth: number;
+  /**
+   * Zero-based character offset of the `;`-segment that contains the
+   * assignment, within its line. Position within the line is load-bearing: an
+   * assignment after a publish on the same line (`npm publish $FLAG;
+   * FLAG=--provenance`) must not be visible to that publish, so callers load
+   * same-line assignments per segment rather than all at once before expansion.
+   */
+  readonly offset: number;
+}
+
+/**
+ * Strip quoted spans and a trailing comment, leaving the line's shell syntax.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns The line's unquoted characters, comment removed.
+ */
+function unquotedText(line: string): string {
+  let bare = "";
+  let single = false;
+  let double = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (char === "\\" && !single) { index += 1; continue; }
+    if (char === "'" && !double) { single = !single; continue; }
+    if (char === '"' && !single) { double = !double; continue; }
+    if (single || double) continue;
+    if (char === "#" && (index === 0 || /\s/u.test(line[index - 1]!))) break;
+    bare += char;
+  }
+  return bare;
+}
+
+/** Block openers and closers, matched as words outside quotes. */
+const BLOCK_OPENERS = /(?:^|[\s;&|(])(?:if|for|while|until|case|select)(?=[\s;&|]|$)/gu;
+const BLOCK_CLOSERS = /(?:^|[\s;&|])(?:fi|done|esac)(?=[\s;&|)]|$)/gu;
+
+/**
+ * Net change in `case` nesting contributed by one line.
+ *
+ * Tracked separately from block depth because a `case` arm label ends in a bare
+ * `)` that is not a parenthesis close. Without knowing a `case` is open, that
+ * `)` decrements the depth counter and tags an assignment inside an untaken arm
+ * as file-scoped, which then attests a publish after `esac`.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @returns +1 for each `case` opened, -1 for each `esac` closed.
+ */
+export function caseDepthChange(line: string): number {
+  const bare = unquotedText(line);
+  return (bare.match(/(?:^|[\s;&|(])case(?=[\s;&|]|$)/gu) ?? []).length
+    - (bare.match(/(?:^|[\s;&|])esac(?=[\s;&|)]|$)/gu) ?? []).length;
+}
+
+/**
+ * Net change in block nesting contributed by one line.
+ *
+ * Counts shell keywords and brace/parenthesis groups outside quotes. This is a
+ * nesting count, not a parse: it exists to tell "this assignment is inside
+ * something conditional" from "this assignment is the file's own scope", which
+ * is the distinction attestation depends on.
+ *
+ * @param line - One already-continuation-joined source line.
+ * @param insideCase - Whether a `case` is open, so a bare `)` is an arm label
+ *   rather than a group close.
+ * @returns Positive when the line opens more blocks than it closes.
+ */
+export function blockDepthChange(line: string, insideCase = false): number {
+  const bare = unquotedText(line);
+  let depth = 0;
+  let open = 0;
+  for (const char of bare) {
+    if (char === "{" || char === "(") { depth += 1; open += 1; continue; }
+    if (char !== "}" && char !== ")") continue;
+    // Inside a `case`, a `)` with nothing open on this line is an arm label, not
+    // a group close. Counting it would tag an assignment in an untaken arm as
+    // file-scoped and let it attest a publish after `esac`.
+    if (insideCase && open === 0) continue;
+    depth -= 1;
+    open -= 1;
+  }
+  depth += (bare.match(BLOCK_OPENERS) ?? []).length;
+  depth -= (bare.match(BLOCK_CLOSERS) ?? []).length;
+  return depth;
+}
+
+/**
+ * Collect every scalar assignment in file order, each tagged with its line.
+ *
+ * Position is load-bearing. A file-wide map lets an assignment resolve a
+ * command written above it, so `npm publish $FLAG` followed later by
+ * `FLAG=--provenance` would read as attested even though the shell runs the
+ * publish with `$FLAG` unset. Callers auditing a command must use only the
+ * assignments that precede it.
+ *
+ * Heredoc bodies are skipped: their lines are data the shell never evaluates,
+ * so an assignment-shaped line inside one establishes no binding.
+ *
+ * @param text - Whole file contents, with line continuations already joined.
+ * @returns Every assignment the shell would make, in file order.
+ */
+export function scalarAssignments(text: string): ScalarAssignment[] {
+  const assignments: ScalarAssignment[] = [];
+  const heredocs: Array<{ delimiter: string; stripTabs: boolean }> = [];
+  let lineNumber = -1;
+  let depth = 0;
+  let caseDepth = 0;
+  for (const line of text.split("\n")) {
+    lineNumber += 1;
+    const heredoc = heredocs[0];
+    if (heredoc !== undefined) {
+      const candidate = heredoc.stripTabs ? line.replace(/^\t+/, "") : line;
+      if (candidate.replace(/\r$/, "") === heredoc.delimiter) heredocs.shift();
+      continue;
+    }
+    heredocs.push(...heredocTerminators(line));
+    // A line can hold several assignments before its command, and the depth at
+    // each assignment's position depends on the openers and closers that
+    // precede it on the same line. `if false; then FLAG=--provenance; fi` opens
+    // and closes on one line: the net change is zero, but the assignment is
+    // inside the block and must be recorded at the inner depth, not the outer.
+    // Splitting on `;` and tracking depth per segment gives each assignment the
+    // depth the shell would have at that point.
+    //
+    // The line is split on unquoted `;` and `;;` first, and each segment is
+    // tried after stripping a leading `then`/`else`/`elif`/`do` keyword.
+    // Without the split, a one-line compound such as
+    // `if true; then NPM=npm; $NPM publish; fi` never reaches the assignment
+    // because the start-anchored regex stops at the `if` keyword. With it,
+    // `then NPM=npm` strips to `NPM=npm` and binds, so `$NPM publish` is
+    // expanded and the publish is audited rather than left invisible while an
+    // attested sibling satisfies the non-vacuity guard.
+    for (const segment of splitLineSegments(line)) {
+      const segChange = blockDepthChange(segment.text, caseDepth > 0);
+      caseDepth = Math.max(0, caseDepth + caseDepthChange(segment.text));
+      if (segChange < 0) depth = Math.max(0, depth + segChange);
+      const stripped = segment.text.replace(/^[ \t]*(?:(?:then|else|elif|do)[ \t]+)?/, "");
+      const assignment = STANDALONE_ASSIGNMENT.exec(stripped);
+      if (assignment !== null) {
+        // Exactly one of the three value alternatives matches, so the last is the
+        // only case left rather than a fallback that could be undefined.
+        const raw = assignment[2] ?? assignment[3] ?? assignment[4]!;
+        // Single quotes make a backslash literal, so only the other two forms are
+        // unescaped. Unescaping a single-quoted value turned `'npm publish
+        // \\--provenance'` into an attested-looking command the shell never runs.
+        const value = assignment[3] !== undefined
+          ? raw
+          : assignment[2] !== undefined
+            ? raw.replace(/\\([$`"\\])/g, "$1")
+            : raw.replace(/\\(.)/g, "$1");
+        if (!/[\$`"'(){};&|<>#]/.test(value)) {
+          assignments.push({ name: assignment[1]!, value, line: lineNumber, depth, offset: segment.start });
+        }
+      }
+      if (segChange > 0) depth += segChange;
+    }
+  }
+  return assignments;
 }
 
 /**
@@ -597,7 +960,10 @@ export function shellScalars(text: string): Map<string, string> {
 export function expandScalars(line: string, scalars: Map<string, string>): string {
   // One of the two alternatives always captures the name, so there is no
   // nameless match to guard against.
-  return line.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole, braced?: string, bare?: string) => scalars.get(braced ?? bare!) ?? whole);
+  return line.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole, braced?: string, bare?: string) => {
+    const value = scalars.get(braced ?? bare!);
+    return value?.replace(/\\/g, "\\\\") ?? whole;
+  });
 }
 
 /**
