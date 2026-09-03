@@ -10,6 +10,12 @@
 
 - Round 4 on PR 67: land the compound-line, sibling-branch and case-arm scope fixes in this vendored scanner and clear all four review threads ([pm-todos-m48u](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-m48u.toon))
 
+## 2026.9.3 - 2026-09-03
+
+### Security
+
+- Resolve polynomial-redos code-scanning alerts by measurement ([pm-todos-5vxe](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-5vxe.toon))
+
 ## 2026.9.1 - 2026-09-01
 
 ### Fixed
