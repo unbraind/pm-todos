@@ -1,0 +1,26 @@
+id: pm-todos-neey
+title: Pin pm toolchain to 2026.9.5 / changelog 2026.9.2
+description: "Pin @unbrained/pm-cli 2026.9.5, pm-changelog 2026.9.2, and pm-ops 2026.9.5 so this repo runs the current published toolchain. The changelog-date control already asserts the unflagged heading differs from the flagged one, which holds for both the old clock-stamping generator and the 2026.9.2 undated heading."
+type: Chore
+status: closed
+priority: 2
+tags: []
+created_at: "2026-09-05T17:59:32.423Z"
+updated_at: "2026-09-05T18:00:49.857Z"
+closed_at: "2026-09-05T18:00:38.554Z"
+completed_at: "2026-09-05T18:00:38.554Z"
+claim_principal: pi-agent
+author: pi-agent
+resolution: "Pinned @unbrained/pm-cli 2026.9.5, pm-changelog 2026.9.2, and pm-ops 2026.9.5. The changelog-date control already asserted difference rather than clock form, so no verifier rewrite was required."
+expected_result: "release:check and pm health --strict-exit both exit 0 against the current published toolchain."
+actual_result: "release:check exit 0; pm health --strict-exit exit 0. Unflagged heading is '## 2026.1.2'; flagged heading is '## 2026.1.2 - 2026-01-02'."
+comments[1]{created_at,author,text}:
+  "2026-09-05T18:00:35.379Z",pi-agent,"Pin only. No verifier source change: this repo already asserts that the unflagged heading differs from the flagged one.\n\nrelease:check exit 0. pm health --strict-exit exit 0.\n\nRevert-proof on test/verify-release-changelog-date.test.ts:\n- clock-derived control (old assertion) against pm-changelog 2026.9.2: 4 fail / 17 pass\n  live failure: without --date-from-version expected the clock-derived '## 2026.1.2 - 2026-09-05', got '## 2026.1.2'\n- restored property-based control: 21 pass / 0 fail\nThe identical-control case still fails, so the suite is not vacuous."
+files[2]{path,scope}:
+  package.json,project
+  package-lock.json,project
+tests[2]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+  "a control identical to the flagged run fails, because then the flag discriminates nothing",project,pi-agent,"2026-09-05T18:00:48.797Z",local_mutation,chore/pin-pm-toolchain-2026.9.5
+  "a control derived some other way still passes, because the contract is that the flag changes the heading",project,pi-agent,"2026-09-05T18:00:49.804Z",local_mutation,chore/pin-pm-toolchain-2026.9.5
+close_reason: "Pinned @unbrained/pm-cli 2026.9.5, pm-changelog 2026.9.2, and pm-ops 2026.9.5. The changelog-date control already asserted difference rather than clock form, so no verifier rewrite was required."
+body: ""

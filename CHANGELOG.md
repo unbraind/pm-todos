@@ -12,6 +12,7 @@
 
 ### Other
 
+- Pin pm toolchain to 2026.9.5 / changelog 2026.9.2 ([pm-todos-neey](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-neey.toon))
 - Round 4 on PR 67: land the compound-line, sibling-branch and case-arm scope fixes in this vendored scanner and clear all four review threads ([pm-todos-m48u](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-m48u.toon))
 
 ## 2026.9.3 - 2026-09-03
