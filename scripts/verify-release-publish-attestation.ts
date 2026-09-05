@@ -338,7 +338,21 @@ export function publishInvocationsIn(source: SourceFile): PublishInvocation[] {
     for (const candidate of commandCandidates(command)) {
       const program = commandName(candidate);
       if (program === undefined) continue;
-      if (program !== "npm" && !FOREIGN_PUBLISHERS.has(program)) continue;
+      // A command position still holding an expansion is audited, never skipped.
+      // The indexer resolves a binding written bare or with `export`; a shell
+      // has other ways to make one persist -- `readonly NPM=npm`, `declare`,
+      // `typeset`, and `local` inside a function -- and each leaves `$NPM`
+      // unresolved here. Skipping an unresolved program made `$NPM publish`
+      // invisible, and because an attested sibling publish in the same file
+      // already satisfied the non-vacuity check, the gate reported that every
+      // invocation was attested while an unattested one ran.
+      //
+      // Enumerating the declaration keywords would only move the boundary to
+      // the next shape that is not on the list. Refusing to assume that an
+      // unresolved command position is not a publish is the property itself, so
+      // a keyword nobody has thought of yet is covered too.
+      const unresolvedProgram = /^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$/.test(program);
+      if (program !== "npm" && !FOREIGN_PUBLISHERS.has(program) && !unresolvedProgram) continue;
       if (!isPublishCommand(candidate)) continue;
       // Not de-duplicated: two identical publish lines are two invocations, and
       // collapsing them would report one of them as if the other did not exist.

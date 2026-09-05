@@ -1167,3 +1167,74 @@ test("a one-line branch confines its binding to the branch's scope", () => {
   assert.equal(taken.failures.length, 1,
     "a publish inside a one-line branch is still found and audited");
 });
+
+// ---------------------------------------------------------------------------
+// A command position that still holds an expansion must be audited, never
+// skipped. The scalar indexer resolves a binding written bare or with `export`;
+// a shell has other ways to make one persist, and each left `$NPM` unresolved.
+// Because an attested sibling publish in the same file already satisfied the
+// non-vacuity check, skipping the unresolved program reported every invocation
+// as attested while an unattested one ran.
+//
+// Every case below pairs the hidden publish with an ATTESTED sibling on
+// purpose: without the sibling the file would fail the non-vacuity check for an
+// unrelated reason, and the test would pass against the unfixed code too.
+// ---------------------------------------------------------------------------
+
+/** A release step that publishes attestedly, then routes a second publish through a declaration. */
+function hiddenPublishVia(declaration: string): string {
+  return `          ${ATTESTED}\n          ${declaration}\n          $NPM publish\n`;
+}
+
+for (const declaration of [
+  "readonly NPM=npm",
+  "declare NPM=npm",
+  "typeset NPM=npm",
+  "declare -r NPM=npm",
+  "local NPM=npm",
+  "export -p NPM=npm",
+]) {
+  test(`a publish routed through \`${declaration}\` is audited, not hidden by an attested sibling`, () => {
+    const result = auditPublishAttestation([{ file: "release.yml", text: hiddenPublishVia(declaration) }]);
+    assert.equal(
+      result.failures.length,
+      1,
+      `${declaration} must not leave the publish unaudited; failures were ${JSON.stringify(result.failures)}`,
+    );
+    assert.match(
+      result.failures[0]!,
+      /no attested equivalent|does not enable --provenance/,
+      "the hidden publish is reported, whether the binding resolved or stayed unresolved",
+    );
+    assert.deepEqual(result.notes, [], "an attested sibling must not report the file as fully attested");
+  });
+}
+
+test("an unresolved command position is audited even with no declaration to explain it", () => {
+  // The property is not a list of declaration keywords. A bare `$NPM publish`
+  // whose binding comes from the environment, a sourced file, or a keyword
+  // nobody has enumerated yet is refused on the same grounds.
+  const result = auditPublishAttestation([
+    { file: "release.yml", text: `          ${ATTESTED}\n          $NPM publish\n` },
+  ]);
+  assert.equal(result.failures.length, 1, "an unexplained expansion in command position is still audited");
+  assert.match(result.failures[0]!, /no attested equivalent/);
+});
+
+test("a braced unresolved command position is audited too", () => {
+  const result = auditPublishAttestation([
+    { file: "release.yml", text: `          ${ATTESTED}\n          \${NPM} publish\n` },
+  ]);
+  assert.equal(result.failures.length, 1, "${NPM} publish is the same hazard written with braces");
+});
+
+test("an expansion that is not a command position does not become a false publish", () => {
+  // The refusal is bounded to the program word. A resolved, attested publish
+  // carrying an expansion in an ARGUMENT must still pass, or the guard would
+  // fail every real workflow that passes a tag or a registry through a variable.
+  const result = auditPublishAttestation([
+    { file: "release.yml", text: `          npm publish --access public ${ATTESTATION_FLAG} --tag $DIST_TAG\n` },
+  ]);
+  assert.deepEqual(result.failures, [], "an expansion in an argument is not a command position");
+  assert.equal(result.notes.length, 1, "the attested publish is still reported as attested");
+});

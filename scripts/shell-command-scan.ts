@@ -289,6 +289,24 @@ export function tokenizeCommands(text: string, depth = 0): ShellCommand[] {
       started = true;
       continue;
     }
+    if (character === "$" && text[index + 1] === "{") {
+      // `${name}` is one word. The `{` here opens a parameter expansion, not a
+      // brace group, so treating it as a separator splits the expansion into
+      // `$`, `name` and whatever followed -- which reads `${NPM} publish` as a
+      // command named `publish` and hides a publish that reaches the shell
+      // through an expansion.
+      let braces = 0;
+      let end = index + 1;
+      for (; end < text.length; end += 1) {
+        if (text[end] === "{") braces += 1;
+        else if (text[end] === "}" && (braces -= 1) === 0) break;
+      }
+      value += text.slice(index, end + 1);
+      index = end;
+      if (!started) startsQuoted = false;
+      started = true;
+      continue;
+    }
     if (character === "`" || (character === "$" && text[index + 1] === "(")) {
       const { inner, end } = readSubstitution(text, index);
       nested.push(inner);

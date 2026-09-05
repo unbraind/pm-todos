@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Publish attestation gate misses a publish routed through a declaration keyword or a braced expansion ([pm-todos-zbe0](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-zbe0.toon))
 - The publish-attestation gate misses a publish routed through an unquoted shell variable ([pm-todos-9clr](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9clr.toon))
 
 ### Security
