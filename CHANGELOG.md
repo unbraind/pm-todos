@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Other
+
+- Pin pm toolchain to 2026.9.5 / changelog 2026.9.2 ([pm-todos-neey](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-neey.toon))
+
 ## 2026.9.3 - 2026-09-03
 
 ### Security
