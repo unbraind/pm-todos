@@ -26,7 +26,7 @@ import {
   joinContinuations,
   type SourceFile,
   type VerifierResult,
-} from "./shell-command-scan.ts";
+} from "pm-ops/shell-scan";
 import { isMainInvocation } from "./main-invocation.ts";
 
 /** Every spelling that tells the generator which version it is rendering.

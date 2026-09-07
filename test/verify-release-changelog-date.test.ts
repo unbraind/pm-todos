@@ -30,7 +30,7 @@ import {
   bashArrays,
   expandArrays,
   joinContinuations,
-} from "../scripts/shell-command-scan.ts";
+} from "pm-ops/shell-scan";
 import { isMainInvocation } from "../scripts/main-invocation.ts";
 
 const FLAGGED = `pm-changelog --pm-root .agents/pm --release-version-from-package ${DATE_FLAG}`;
