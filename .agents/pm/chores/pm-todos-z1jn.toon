@@ -6,14 +6,19 @@ status: in_progress
 priority: 2
 tags[3]: cli,compatibility,sdk
 created_at: "2026-09-07T20:42:36.179Z"
-updated_at: "2026-09-07T21:14:02.965Z"
+updated_at: "2026-09-07T21:33:47.310Z"
 assignee: codex-pm-ecosystem
 claim_principal: codex-pm-ecosystem
 author: codex-pm-ecosystem
 acceptance_criteria: Exact installed dependency versions are verified; package checks and real CLI acceptance pass without weakened gates; independent coverage and privacy limitations remain explicit
-comments[2]{created_at,author,text}:
-  "2026-09-07T21:14:01.876Z",codex-pm-ecosystem,"2026-09-07 UTC: wall-clock sampling falsely reported 13.98x growth under concurrent fleet load. CPU sampling keeps the existing 8x bound for quadrupled input, calibrates after warm-up, and removes time spent descheduled. The full 203-test gate passes. A deliberate temporary restoration of the original quadratic HEADER_RE failed the CPU-growth assertion as required, and the exact original source bytes were restored afterward."
-  "2026-09-07T21:14:02.965Z",codex-pm-ecosystem,"Final local release:check passed using installed CLI/SDK 2026.9.7 and pm-changelog 2026.9.6. Final top-level test report: tests=1, pass=1, fail=0, skipped=0. ℹ all files |  69.31 |    87.09 |   76.07 | . Coverage is the current reported scope; complete four-dimensional source certification and independent production/privacy/review gates remain open."
+comments[2]:
+  - created_at: "2026-09-07T21:14:01.876Z"
+    author: codex-pm-ecosystem
+    text: "2026-09-07 UTC: wall-clock sampling falsely reported 13.98x growth under concurrent fleet load. CPU sampling keeps the existing 8x bound for quadrupled input, calibrates after warm-up, and removes time spent descheduled. The full 203-test gate passes. A deliberate temporary restoration of the original quadratic HEADER_RE failed the CPU-growth assertion as required, and the exact original source bytes were restored afterward."
+  - created_at: "2026-09-07T21:14:02.965Z"
+    author: codex-pm-ecosystem
+    text: "2026-09-07 UTC correction: the full release:check passed using installed CLI/SDK 2026.9.7 and pm-changelog 2026.9.6. The coverage-suite report is 203 tests / 203 passed / 0 failed / 0 skipped. A separate later nested acceptance reports one test and is not the package suite total. Reported line/branch/function coverage: ℹ all files |  69.31 |    87.09 |   76.07 | . Complete four-dimensional all-source coverage and independent production/privacy/review gates remain open."
+    edited_at: "2026-09-07T21:33:47.310Z"
 tests[1]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
   "npm run release:check",project,1200,codex-pm-ecosystem,"2026-09-07T20:42:39.079Z",local_mutation,chore/certify-pm-cli-2026-9-7
 docs[1]{path,scope,note}:
