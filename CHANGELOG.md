@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Consume the canonical attestation gate instead of carrying a copy of it ([pm-todos-sgex](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-sgex.toon))
+
 ## 2026.9.7 - 2026-09-07
 
 ### Other
