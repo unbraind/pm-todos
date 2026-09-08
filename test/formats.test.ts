@@ -983,7 +983,7 @@ test("extractCreatedTodoId reads the id out of pm --json create output (several 
 // Threshold is generous (250 ms) but the old regex took seconds at n=64000.
 
 /**
- * Time a call over a prepared input, reporting the fastest of several rounds.
+ * Measure CPU used by a call over prepared input, taking the fastest round.
  *
  * Three details make this a measurement rather than a coin toss.
  *
@@ -999,23 +999,25 @@ test("extractCreatedTodoId reads the id out of pm --json create output (several 
  *
  * The MINIMUM across rounds is reported, after a warm-up round. Scheduling
  * noise and garbage collection only ever add time, so the fastest round is the
- * closest estimate of the real cost - taking a single sample instead made this
+ * closest estimate of the real cost. CPU time excludes runner descheduling;
+ * wall time gave a linear parser a 14x ratio under fleet load. A single sample
  * assertion pass alone and fail when run beside its neighbours.
  *
  * @param call - The call to time.
  * @param input - The prepared input to pass it.
  * @param iterations - Fixed iteration count, or `undefined` to choose one.
- * @returns The fastest elapsed milliseconds and the iteration count used.
+ * @returns The fastest CPU milliseconds and the iteration count used.
  */
 function measure<TInput>(call: (input: TInput) => void, input: TInput, iterations?: number): { ms: number; iterations: number } {
   let count = iterations ?? 1;
   const time = (): number => {
-    const started = process.hrtime.bigint();
+    const started = process.cpuUsage();
     for (let index = 0; index < count; index += 1) call(input);
-    return Number(process.hrtime.bigint() - started) / 1e6;
+    const consumed = process.cpuUsage(started);
+    return (consumed.user + consumed.system) / 1000;
   };
-  while (iterations === undefined && count < 4096 && time() < 5) count *= 2;
-  time(); // warm-up, discarded: the first pass pays JIT and page-fault costs.
+  time(); // Warm before calibration so JIT does not select a tiny batch.
+  while (iterations === undefined && count < 4096 && Math.min(time(), time(), time()) < 5) count *= 2;
   return { ms: Math.min(time(), time(), time()), iterations: count };
 }
 
