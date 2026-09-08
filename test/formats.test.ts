@@ -10,6 +10,7 @@ import {
   pmPriorityToLetter,
   parseTodoTxtLine,
   parseTodoTxt,
+  parseJsonl,
   serializeTodoTxtLine,
   serializeTodoTxt,
   parsePiTodoDetails,
@@ -17,6 +18,7 @@ import {
   extractTodojsonSourceId,
   buildTodojsonImportDescription,
   renderTaskList,
+  renderCheckboxMarkdown,
   groupItems,
   validateTodoFile,
   preflightValidateImportFiles,
@@ -1163,4 +1165,151 @@ test("validation sees the same tasks a CRLF import does", () => {
   const lfValidated = validateTodoFile(lf, "markdown");
   assert.equal(lfValidated.taskCount, parseMarkdownTodos(lf).length);
   assert.deepEqual(lfValidated.issues.map((issue) => issue.message), validated.issues.map((issue) => issue.message));
+});
+
+// ---------------------------------------------------------------------------
+// Remaining exported edge branches: context ordering, todojson, bangs, dates
+// ---------------------------------------------------------------------------
+
+test("sortItemsForContext breaks ties by priority, deadline, recency, then title", () => {
+  const items = [
+    { id: "pm-a", title: "Zulu", status: "open", priority: 2, deadline: "2026-06-20", updated_at: "2026-06-01T00:00:00.000Z" },
+    { id: "pm-b", title: "Alpha", status: "open", priority: 2, deadline: "2026-06-20", updated_at: "2026-06-01T00:00:00.000Z" },
+    { id: "pm-c", title: "Mid", status: "open", priority: 2, deadline: "2026-06-20", updated_at: "2026-06-10T00:00:00.000Z" },
+    { id: "pm-d", title: "Soon", status: "open", priority: 2, deadline: "2026-06-11" },
+    { id: "pm-e", title: "Hot", status: "open", priority: 0 },
+    { id: "pm-f", title: "Mystery", status: "unknown-status", priority: 0 },
+  ];
+  const out = sortItemsForContext(items);
+  assert.deepEqual(out.map((i) => i.id), ["pm-e", "pm-d", "pm-c", "pm-b", "pm-a", "pm-f"]);
+});
+
+test("buildTodoContextSnapshot counts unparseable due dates as missing and unknown labels", () => {
+  const snapshot = buildTodoContextSnapshot(
+    [
+      { id: "pm-1", title: "Bad date", status: " ", deadline: "2026-99-99" },
+      { id: "pm-2", title: "Also bad", status: "open", deadline: "soon" },
+    ],
+    { limit: 10, nowIso: "2026-06-10T09:00:00.000Z" },
+  );
+  assert.equal(snapshot.counts.withoutDeadline, 2);
+  assert.equal(snapshot.counts.overdue, 0);
+  assert.equal(snapshot.counts.byStatus["(unknown)"], 1);
+  assert.equal(snapshot.counts.byType["(none)"], 2);
+});
+
+test("parseMarkdownTodos reads bang priority tokens and ignores them when (pN) already won", () => {
+  const bangs = parseMarkdownTodos("- [ ] !!! ship it\n- [ ] !! soon\n- [ ] ! later\n- [ ] (p1) keep ! marker\n");
+  assert.equal(bangs[0].priority, 0);
+  assert.equal(bangs[0].text, "ship it");
+  assert.equal(bangs[1].priority, 1);
+  assert.equal(bangs[2].priority, 2);
+  assert.equal(bangs[3].priority, 1);
+  assert.match(bangs[3].text, /keep/);
+  assert.match(bangs[3].text, /!/);
+});
+
+test("parsePiTodoDetails rejects malformed payloads and defaults optional fields", () => {
+  assert.throws(() => parsePiTodoDetails("{nope"), /Invalid todojson/);
+  assert.throws(() => parsePiTodoDetails("null"), /expected a TodoDetails object/);
+  assert.throws(() => parsePiTodoDetails(JSON.stringify({ todos: ["x"] })), /not an object/);
+  assert.throws(() => parsePiTodoDetails(JSON.stringify({ todos: [{ id: 1.5, text: "A", done: false }] })), /invalid id/);
+  assert.throws(() => parsePiTodoDetails(JSON.stringify({ todos: [{ id: 1, text: "  ", done: false }] })), /invalid text/);
+  assert.throws(() => parsePiTodoDetails(JSON.stringify({ todos: [{ id: 1, text: "A", done: "yes" }] })), /invalid done/);
+  const fallback = parsePiTodoDetails(JSON.stringify({
+    action: "nope",
+    nextId: 0,
+    todos: [{ id: 4, text: "Standalone", done: false }],
+  }));
+  assert.equal(fallback.action, "list");
+  assert.equal(fallback.nextId, 5);
+});
+
+test("serializePiTodoDetails orders unassigned ids by timestamps then identity", () => {
+  const parsed = JSON.parse(serializePiTodoDetails([
+    { id: "pm-b", title: "Second", status: "open", created_at: "not-a-date", updated_at: "2026-01-02T00:00:00.000Z" },
+    { id: "pm-a", title: "First", status: "open", created_at: "2026-01-01T00:00:00.000Z" },
+    { id: "pm-c", title: "Third", status: "open" },
+  ]));
+  assert.deepEqual(parsed.todos.map((todo: { text: string }) => todo.text), ["First", "Second", "Third"]);
+});
+
+test("extractTodojsonSourceId ignores non-positive captured ids", () => {
+  assert.equal(extractTodojsonSourceId("Imported from stdin line 1 (todo-id:0)"), undefined);
+});
+
+test("validateTodoFile accepts an in-range markdown (pN) marker and malformed todojson", () => {
+  const ok = validateTodoFile("- [ ] (p2) in range\n", "markdown");
+  assert.equal(ok.taskCount, 1);
+  assert.equal(ok.issues.length, 0);
+  const empty = validateTodoFile("- [ ] (p1)\n", "markdown");
+  assert.equal(empty.taskCount, 1);
+  assert.ok(empty.issues.some((issue) => issue.severity === "warning" && /Checkbox has no text/.test(issue.message)));
+  const bad = validateTodoFile("{nope", "todojson");
+  assert.ok(bad.issues.some((issue) => issue.severity === "error" && /Invalid todojson/.test(issue.message)));
+});
+
+test("renderCheckboxMarkdown metadata omits a non-ISO deadline token", () => {
+  const out = renderCheckboxMarkdown(
+    [{ id: "pm-1", title: "Soon", status: "open", priority: 1, deadline: "whenever" }],
+    true,
+  );
+  assert.match(out, /\(p1\)/);
+  assert.equal(out.includes("due:"), false);
+});
+
+test("exported helpers take every defensive fallback on missing fields", () => {
+  const missing = { id: "pm-x", title: undefined as unknown as string, status: undefined as unknown as string };
+  assert.deepEqual(sortItems([missing, { id: "pm-y", title: "Y", status: "open" }], "title").map((i) => i.id), ["pm-x", "pm-y"]);
+  assert.equal(sortItems([{ id: "a", title: "A", status: "open", deadline: "2026-01-01" }, { id: "b", title: "B", status: "open", deadline: "2026-01-01" }], "deadline").length, 2);
+  assert.equal(sortItems([{ id: "a", title: "A", status: "open" }, { id: "b", title: "B", status: "open" }], "deadline")[0].id, "a");
+  assert.equal(sortItems([{ id: "a", title: "A", status: "open" }, { id: "b", title: "B", status: "open" }], "priority")[1].id, "b");
+
+  const ordered = sortItemsForContext([
+    { id: "pm-1", title: undefined as unknown as string, status: "open" },
+    { id: "pm-2", title: "B", status: "open" },
+  ]);
+  assert.equal(ordered.length, 2);
+
+  const snapshot = buildTodoContextSnapshot(
+    [{ id: "pm-1", title: "A", status: undefined as unknown as string }],
+    { limit: 1, nowIso: "2026-06-10T00:00:00.000Z" },
+  );
+  assert.equal(snapshot.counts.byStatus["(unknown)"], 1);
+
+  assert.equal(buildTodojsonImportDescription(undefined, 4), "Imported from stdin line 4");
+  assert.equal(extractTodojsonSourceId("Imported from stdin line 1"), undefined);
+
+  const parsed = parseJsonl(JSON.stringify({
+    title: "Dated",
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-02T00:00:00.000Z",
+    creationDate: "2026-01-01",
+    completionDate: "2026-01-02",
+  }) + "\n");
+  assert.equal(parsed[0].created_at, "2026-01-01T00:00:00.000Z");
+  assert.equal(parsed[0].creationDate, "2026-01-01");
+
+  const groups = groupItems([
+    { id: "pm-1", title: "A", status: "open", sprint: "B" },
+    { id: "pm-2", title: "C", status: "open" },
+    { id: "pm-3", title: "D", status: "open", sprint: "A" },
+  ], "sprint");
+  assert.deepEqual(groups.map((g) => g.heading), ["A", "B", "(unassigned)"]);
+
+  const index = buildExistingTodoIndex([
+    { id: "", title: "skip me", status: "open" },
+    { id: "pm-1", status: "open" } as { id: string; title?: string; status: string },
+  ]);
+  assert.equal(index.byId.has(""), false);
+  assert.equal(index.byId.has("pm-1"), true);
+
+  const serialized = serializePiTodoDetails([
+    { id: "pm-1", title: undefined as unknown as string, status: "open" },
+    { id: "pm-2", title: "B", status: "open" },
+  ]);
+  assert.match(serialized, /"id":/);
+
+  assert.match(serializeTodoTxtLine({ id: "pm-1", title: "Bare", status: "open" }), /Bare/);
+  assert.equal(renderCheckboxMarkdown([{ id: "pm-1", title: "Bare", status: "open" }], true), "- [ ] Bare <!-- pm-1 -->\n");
 });

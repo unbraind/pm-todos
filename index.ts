@@ -32,6 +32,22 @@ class CommandError extends Error {
   }
 }
 
+/**
+ * Read a UTF-8 text file and map filesystem failures onto the command error
+ * contract: a missing path is NOT_FOUND, any other read error is a generic
+ * failure. Shared by validate, preflight, import, and sync so those surfaces
+ * cannot drift onto different exit codes for the same underlying errno.
+ */
+function readTextFile(file: string, label: string): string {
+  try {
+    return readFileSync(file, "utf-8");
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
+    throw new CommandError(`${label} ${file}: ${msg}`, exitCode);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -846,15 +862,6 @@ export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
     }
   }
   return todos;
-}
-
-/**
- * Filter parsed todos to a single section (matched case-insensitively against
- * the raw heading text).
- */
-function filterBySection(todos: TodoItem[], section: string): TodoItem[] {
-  const want = section.trim().toLowerCase();
-  return todos.filter((t) => (t.section ?? "").toLowerCase() === want);
 }
 
 function mapStatusToPm(checked: boolean, closedAs: string, openAs = "open"): string {
@@ -1734,14 +1741,7 @@ export function preflightValidateImportFiles(
   format: TodoImportFormat,
 ): void {
   for (const file of files) {
-    let content: string;
-    try {
-      content = readFileSync(file, "utf-8");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
-      throw new CommandError(`Preflight: cannot read ${file}: ${msg}`, exitCode);
-    }
+    const content = readTextFile(file, "Preflight: cannot read");
 
     const { issues } = validateTodoFile(content, format);
     const errors = issues.filter((i) => i.severity === "error");
@@ -2375,14 +2375,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
   };
 
   for (const file of opts.files) {
-    let md: string;
-    try {
-      md = readFileSync(file, "utf-8");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
-      throw new CommandError(`Failed to read file ${file}: ${msg}`, exitCode);
-    }
+    const md = readTextFile(file, "Failed to read file");
 
     let todos = parseFileToNormalized(md, file, opts.format);
     if (opts.section && opts.format === "markdown") {
@@ -2809,14 +2802,7 @@ export default defineExtension({
           );
         }
 
-        let content: string;
-        try {
-          content = readFileSync(resolve(filePath), "utf-8");
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
-          throw new CommandError(`Failed to read file ${filePath}: ${msg}`, exitCode);
-        }
+        const content = readTextFile(resolve(filePath), "Failed to read file");
 
         const { issues, taskCount } = validateTodoFile(content, format);
         const errors = issues.filter((i) => i.severity === "error");
@@ -2992,14 +2978,7 @@ export default defineExtension({
 
         // Preserve the original bytes for the destructive-empty guard below.
         // The syntax gate still runs before any pm-store write.
-        let originalContent: string;
-        try {
-          originalContent = readFileSync(filePath, "utf-8");
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const exitCode = /ENOENT|no such file/i.test(msg) ? EXIT_CODE.NOT_FOUND : EXIT_CODE.GENERIC_FAILURE;
-          throw new CommandError(`Failed to read sync file ${filePath}: ${msg}`, exitCode);
-        }
+        const originalContent = readTextFile(filePath, "Failed to read sync file");
         preflightValidateImportFiles([filePath], importFormat);
 
         const importResult = runTodoImport({

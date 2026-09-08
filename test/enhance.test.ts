@@ -274,6 +274,7 @@ test("parseFilterExpression parses status=value and key:value forms", () => {
 test("parseFilterExpression parses a comma-separated list and last-wins on repeats", () => {
   assert.deepEqual(parseFilterExpression("status=open,type=Task"), { status: "open", type: "Task" });
   assert.deepEqual(parseFilterExpression("status=open,status=closed"), { status: "closed" });
+  assert.deepEqual(parseFilterExpression("status=open,,type=Task"), { status: "open", type: "Task" });
 });
 
 test("parseFilterExpression throws on unknown keys and malformed tokens", () => {

@@ -94,6 +94,21 @@ test("supplemental policy rejects every pm-cli 2026.8.21 SDK receipt gap", () =>
   for (const [name, value, pattern] of cases) assert.throws(() => readItemsFromListAll(value, "the TODO export"), pattern, name);
 });
 
+test("readItemsFromListAll copies namespaced extension fields", () => {
+  const items = readItemsFromListAll(completeEnvelope({
+    items: [{
+      id: "fixture-1",
+      title: "Fixture",
+      status: "open",
+      tags: ["agent"],
+      todos_kv: { rec: "1w" },
+      kv: { extra: "1" },
+    }],
+  }));
+  assert.deepEqual(items[0].todos_kv, { rec: "1w" });
+  assert.deepEqual(items[0].kv, { extra: "1" });
+});
+
 test("item fields are validated before import indexing or export", () => {
   const cases: Array<[string, Record<string, unknown>, RegExp]> = [
     ["title", { id: "fixture-1", title: 1, status: "open" }, /string title and status/],
