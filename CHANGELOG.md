@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Certify pm CLI 2026.9.10 and record the truthful update-coverage warning it introduces ([pm-todos-ctue](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-ctue.toon))
+
 ## 2026.9.8 - 2026-09-08
 
 ### Security

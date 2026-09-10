@@ -1,0 +1,30 @@
+id: pm-todos-ctue
+title: Certify pm CLI 2026.9.10 and record the truthful update-coverage warning it introduces
+description: "The devDependency pin advances from 2026.9.7 to 2026.9.10, the published npm latest. CI runs this pinned binary, so the pin is what determines which commands and behaviours the gates actually exercise. The upgrade surfaces one behaviour change in the deep package doctor: pm-cli 2026.9.8 fixed GH-1219 to report truthful package update coverage for skipped and failed checks, so a package installed from a local directory now yields a partial-coverage warning naming the skip reason instead of being silently counted as covered. The integration test asserted an empty warning list and therefore encoded the old under-reporting."
+type: Chore
+status: closed
+priority: 2
+tags: []
+created_at: "2026-09-10T21:28:57.699Z"
+updated_at: "2026-09-10T21:29:47.138Z"
+closed_at: "2026-09-10T21:29:10.585Z"
+completed_at: "2026-09-10T21:29:10.585Z"
+claim_principal: claude-orchestrator
+author: claude-orchestrator
+files[3]{path,scope}:
+  package-lock.json,project
+  package.json,project
+  test/integration.test.ts,project
+tests[1]:
+  - command: npm test
+    scope: project
+    timeout_seconds: 1200
+    provenance:
+      author: claude-orchestrator
+      created_at: "2026-09-10T21:29:47.026Z"
+      source_kind: local_mutation
+      source_ref: chore/certify-pm-cli-2026-9-10
+    assert_stdout_contains[1]: pass 203
+    note: Full suite under CLI 2026.9.10; the count assertion fails if any test is filtered out or added without review
+close_reason: "Pin advanced to 2026.9.10 and the full release gate passes: npm test 203 of 203, coverage, docstring, canonical-reader and packed acceptance, audit:prod, pack dry-run, changelog:check, verify:release-changelog-date and verify:release-publish-attestation. The packed acceptance receipts record host_version 2026.9.10 for both the npm and bun current scenarios and 2026.8.20 for both minimum scenarios. The single test change asserts the exact warning list [extension_update_health_partial_coverage:skipped_non_github:1] rather than merely tolerating warnings, so any other warning still fails the test."
+body: ""
