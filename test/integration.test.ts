@@ -36,7 +36,13 @@ test("installed package preserves rich JSONL context through the pm store", () =
     runPm(["init", tracker, "--json"]);
     runPm(["--pm-path", tracker, "install", process.cwd(), "--project", "--json"]);
     const doctor = JSON.parse(runPm(["--pm-path", tracker, "package", "doctor", "--project", "--detail", "deep", "--json"]));
-    assert.deepEqual(doctor.warnings, []);
+    // This fixture installs the package from a local directory, which has no GitHub
+    // release feed, so the update-health probe cannot cover it. pm-cli 2026.9.8
+    // (GH-1219) began reporting that skip instead of counting it as covered, so the
+    // truthful result here is exactly one partial-coverage warning naming the reason.
+    // Asserting the exact list rather than merely tolerating warnings keeps any OTHER
+    // warning — the ones this test exists to catch — a failure.
+    assert.deepEqual(doctor.warnings, ["extension_update_health_partial_coverage:skipped_non_github:1"]);
     assert.equal(doctor.details.deep.activation.registration_counts.item_fields, 5);
 
     runPm(["--pm-path", tracker, "todos", "import", input, "--format", "jsonl", "--upsert", "--json"]);
