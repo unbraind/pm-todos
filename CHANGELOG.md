@@ -6,6 +6,10 @@
 
 - Certify pm CLI 2026.9.10 and record the truthful update-coverage warning it introduces ([pm-todos-ctue](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-ctue.toon))
 
+### Fixed
+
+- Seven publish-attestation bypasses stayed open because the caret range floated and the lockfile did not ([pm-todos-zgwg](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-zgwg.toon))
+
 ## 2026.9.8 - 2026-09-08
 
 ### Security
