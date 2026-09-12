@@ -1191,9 +1191,9 @@ test("validation sees the same tasks a CRLF import does", () => {
 // ---------------------------------------------------------------------------
 
 test("assertLinearGrowth catches a deliberately quadratic function", () => {
-  // A nested loop over the input length is unambiguously O(n²).  The base size
-  // is kept small (300) and iterations fixed at 1 so the largest size (4800)
-  // completes in well under a second while the fitted exponent is clearly > 1.5.
+  // A nested loop over the input length is unambiguously O(n^2). At the default
+  // 16x span a quadratic grows 256x against a rejection threshold of 64x, so the
+  // proof tolerates a 4x error in either timing.
   const quadratic = (input: string): void => {
     let sum = 0;
     const n = input.length;
@@ -1205,13 +1205,23 @@ test("assertLinearGrowth catches a deliberately quadratic function", () => {
     // Prevent dead-code elimination of the result.
     if (sum < -1) throw new Error("unreachable");
   };
+  // Warm both sizes first. A single-call measurement at the small size used to
+  // time interpreted code while the large size ran optimized code, which
+  // compressed the ratio below the threshold and let the quadratic pass (CI run
+  // on PR 89, Node 26). Four iterations lift the base timing well clear of
+  // CPU-clock granularity, while the 16N side stays a fraction of a second.
+  for (let round = 0; round < 5; round += 1) {
+    quadratic("x".repeat(300));
+    quadratic("x".repeat(4_800));
+  }
   assert.throws(
     () => assertLinearGrowth(
       "quadratic-baseline",
       (size) => "x".repeat(size),
       quadratic,
-      { baseSize: 300, iterations: 1 },
+      { baseSize: 300, iterations: 4 },
     ),
     /is not linear: exponent k=/,
   );
 });
+
