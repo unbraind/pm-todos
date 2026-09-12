@@ -1022,33 +1022,80 @@ function measure<TInput>(call: (input: TInput) => void, input: TInput, iteration
 }
 
 /**
- * Assert that a call's cost grows linearly, by measuring it at N and at 4N.
+ * Fit the growth exponent k from log(time) vs log(size) by ordinary least
+ * squares.  Returns k such that time ≈ size^k: k≈1 is linear, k≈2 is
+ * quadratic.  Using a fitted exponent across three or more sizes is far more
+ * robust than a single N→4N ratio, which can exceed an 8x bound purely from
+ * constant-factor effects (allocation/GC of the 4x-larger string) while the
+ * underlying algorithm is perfectly linear — exactly the CI flake that
+ * motivated this rewrite (ratio 8.26x on a linear parser, k=0.97).
  *
- * An absolute deadline cannot tell a quadratic implementation from a loaded
- * runner, and a generous one cannot catch a partial regression either: a
- * hundredfold slowdown still lands under 250 ms. A ratio catches both.
- *
- * The ratio is the only constraint - there is no absolute floor. An earlier
- * version floored the bound at 100 ms, which for these sub-millisecond paths
- * meant the floor always won and a thousandfold regression would have passed.
- *
- * @param label - Name of the call under measurement, for the failure message.
- * @param build - Builds the adversarial input for a given size.
- * @param call - Invokes the call under measurement on that input.
+ * @param sizes  - The input sizes that produced each time.
+ * @param times  - The measured times (same units, same iteration count).
+ * @returns The fitted exponent k.
  */
-function assertLinearGrowth<TInput>(label: string, build: (size: number) => TInput, call: (input: TInput) => void): void {
-  const n = 8_000;
-  const factor = 4;
-  const base = measure(call, build(n), undefined);
-  const grown = measure(call, build(n * factor), base.iterations);
-  // Quadrupling the input separates the two shapes with headroom on each side:
-  // linear work grows 4x and quadratic 16x, so a bound of 8x is twice the
-  // linear expectation and half the quadratic one. A 2x step with a 3x bound
-  // left no such margin and flaked when the suite ran under load.
-  const bound = base.ms * 8;
+function fitExponent(sizes: number[], times: number[]): number {
+  const n = sizes.length;
+  let sumLogS = 0, sumLogT = 0, sumLogST = 0, sumLogS2 = 0;
+  for (let i = 0; i < n; i++) {
+    const ls = Math.log(sizes[i]);
+    const lt = Math.log(times[i]);
+    sumLogS += ls;
+    sumLogT += lt;
+    sumLogST += ls * lt;
+    sumLogS2 += ls * ls;
+  }
+  const denom = n * sumLogS2 - sumLogS * sumLogS;
+  if (denom === 0) return NaN;
+  return (n * sumLogST - sumLogS * sumLogT) / denom;
+}
+
+/**
+ * Assert that a call's cost grows linearly, by measuring the growth EXPONENT
+ * across three sizes (N, 4N, 16N) and failing when k > 1.5.
+ *
+ * The earlier two-point N→4N ratio (bound 8x) was too sensitive to
+ * constant-factor effects at N=8000: a linear parser measured 8.26x on one
+ * CI run because allocating/GC-ing the 4x-larger string inflated the 4N time
+ * beyond the 8x bound, even though the fitted exponent across four sizes was
+ * 0.97.  An exponent threshold of 1.5 still catches a true quadratic (k≈2)
+ * with a wide margin, while giving linear code (k≈1) 0.5 of headroom against
+ * allocation/GC noise.
+ *
+ * The iteration count is calibrated from the smallest size and reused for all
+ * sizes so the per-iteration times are directly comparable in the exponent
+ * fit.  An optional `baseSize` and fixed `iterations` make it possible to
+ * verify the assertion itself catches a quadratic without waiting on O(n²)
+ * work at the default 128k size.
+ *
+ * @param label   - Name of the call under measurement, for the failure message.
+ * @param build   - Builds the adversarial input for a given size.
+ * @param call    - Invokes the call under measurement on that input.
+ * @param options - Optional `baseSize` (default 8000) and `iterations` (auto).
+ */
+function assertLinearGrowth<TInput>(
+  label: string,
+  build: (size: number) => TInput,
+  call: (input: TInput) => void,
+  options?: { baseSize?: number; iterations?: number },
+): void {
+  const n = options?.baseSize ?? 8_000;
+  const sizes = [n, n * 4, n * 16];
+  // Calibrate the iteration count from the smallest input (or use the fixed
+  // count provided by the caller) so every size is measured with the same
+  // count and the per-iteration times are comparable.
+  const base = measure(call, build(sizes[0]), options?.iterations);
+  const iterations = base.iterations;
+  const perIterMs: number[] = [];
+  for (const size of sizes) {
+    const { ms } = measure(call, build(size), iterations);
+    perIterMs.push(ms / iterations);
+  }
+  const k = fitExponent(sizes, perIterMs);
   assert.ok(
-    grown.ms < bound,
-    `${label} is not linear: N=${base.ms.toFixed(3)} ms, ${factor}N=${grown.ms.toFixed(3)} ms over ${base.iterations} iteration(s), bound=${bound.toFixed(3)} ms (ratio ${(grown.ms / base.ms).toFixed(2)}x, linear would be ~${factor}x)`
+    k <= 1.5,
+    `${label} is not linear: exponent k=${k.toFixed(3)} over sizes [${sizes.join(", ")}] ` +
+      `(per-iter ms ${perIterMs.map((t) => t.toFixed(6)).join(", ")}), threshold k=1.5`,
   );
 }
 
@@ -1163,4 +1210,37 @@ test("validation sees the same tasks a CRLF import does", () => {
   const lfValidated = validateTodoFile(lf, "markdown");
   assert.equal(lfValidated.taskCount, parseMarkdownTodos(lf).length);
   assert.deepEqual(lfValidated.issues.map((issue) => issue.message), validated.issues.map((issue) => issue.message));
+});
+
+// ---------------------------------------------------------------------------
+// Exponent-based linearity guard: prove the strengthened assertion catches a
+// quadratic.  The old two-point N→4N ratio could flake at 8.26x on a linear
+// parser (constant-factor GC at 4x size); the new exponent fit across three
+// sizes (k > 1.5 threshold) must still fail RED on a true O(n²) function.
+// ---------------------------------------------------------------------------
+
+test("assertLinearGrowth catches a deliberately quadratic function", () => {
+  // A nested loop over the input length is unambiguously O(n²).  The base size
+  // is kept small (300) and iterations fixed at 1 so the largest size (4800)
+  // completes in well under a second while the fitted exponent is clearly > 1.5.
+  const quadratic = (input: string): void => {
+    let sum = 0;
+    const n = input.length;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        sum += input.charCodeAt(i) ^ input.charCodeAt(j);
+      }
+    }
+    // Prevent dead-code elimination of the result.
+    if (sum < -1) throw new Error("unreachable");
+  };
+  assert.throws(
+    () => assertLinearGrowth(
+      "quadratic-baseline",
+      (size) => "x".repeat(size),
+      quadratic,
+      { baseSize: 300, iterations: 1 },
+    ),
+    /is not linear: exponent k=/,
+  );
 });

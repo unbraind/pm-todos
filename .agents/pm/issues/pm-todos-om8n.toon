@@ -1,0 +1,23 @@
+id: pm-todos-om8n
+title: parseMarkdownTodos is linear; strengthen linearity test to use growth exponent instead of single N-to-4N ratio
+description: "CI run 34719606517 (Node 26, job test (26)) failed: 'parseMarkdownTodos is not linear: N=5.329 ms, 4N=44.023 ms over 256 iteration(s), bound=42.632 ms (ratio 8.26x, linear would be ~4x)'. Input: '## ' + '  '.repeat(size) + '#' + '  '.repeat(size) + '!\\n- [ ] item\\n' at size 8000 and 32000. The test used CPU time and minimum of several rounds. Measurements (3 runs, process.cpuUsage, min of 5 rounds, 256 fixed iterations, sizes 2k/8k/32k/128k) against the BUILT parser: Run 1 — (a) whitespace k=0.9739, (b) hash-run k=0.9239, (c) letters k=0.9262. Run 2 — (a) k=0.9701, (b) k=0.9237, (c) k=0.9317. Run 3 — (a) k=0.9654, (b) k=0.9206, (c) k=0.9409. All exponents are ~1 (well below 1.2). The parser is linear. The CI flake was a constant-factor effect: the single N-to-4N ratio (bound 8x) was exceeded at 8.26x because allocating and GC-ing the 4x-larger 32k-char string inflated the 4N time under CI load, not because the algorithm is superlinear."
+type: Issue
+status: closed
+priority: 2
+tags: []
+created_at: "2026-09-12T23:17:02.190Z"
+updated_at: "2026-09-12T23:17:22.081Z"
+closed_at: "2026-09-12T23:17:22.033Z"
+completed_at: "2026-09-12T23:17:22.033Z"
+claim_principal: pi-agent
+author: pi-agent
+acceptance_criteria: "Step 2 branch taken: parser is linear (k ~ 0.97 for all three input shapes), so the TEST was fixed, not the parser. assertLinearGrowth now measures the growth exponent k across three sizes (N=8000, 4N=32000, 16N=128000) and fails when k > 1.5. This catches a true quadratic (k ~ 2) with a wide margin while giving linear code 0.5 of headroom against allocation/GC noise. Proven by a new test that runs assertLinearGrowth against a deliberately O(n-squared) nested-loop function and asserts it throws. The bound was not widened, no retries were added, no tests were skipped."
+resolution: fixed
+expected_result: Linearity test no longer flakes on a linear parser under CI load; still catches true quadratic regressions
+actual_result: "assertLinearGrowth now uses exponent fit (k>1.5 threshold) across 3 sizes instead of single N-to-4N ratio (8x bound). Quadratic-proof test passes. 5/5 load runs pass. release:check exits 0."
+comments[1]{created_at,author,text}:
+  "2026-09-12T23:17:13.136Z",pi-agent,"Measurement details (3 runs, built parser via npm run build, process.cpuUsage, min of 5 rounds after warmup, 256 fixed iterations):\n\nRun 1:\n  (a) whitespace: size=2000 cpuMs=3.057, size=8000 cpuMs=11.298, size=32000 cpuMs=44.529, size=128000 cpuMs=174.242, k=0.9739\n  (b) hash-run:   size=2000 cpuMs=0.950, size=8000 cpuMs=3.072,  size=32000 cpuMs=11.237, size=128000 cpuMs=44.060,  k=0.9239\n  (c) letters:    size=2000 cpuMs=0.935, size=8000 cpuMs=2.934,  size=32000 cpuMs=11.187, size=128000 cpuMs=43.235,  k=0.9262\n\nRun 2:\n  (a) whitespace: k=0.9701, ratios 3.56x/3.93x/4.01x\n  (b) hash-run:   k=0.9237, ratios 3.11x/3.75x/3.94x\n  (c) letters:    k=0.9317, ratios 3.23x/3.73x/3.97x\n\nRun 3:\n  (a) whitespace: k=0.9654, ratios 3.65x/3.91x/3.84x\n  (b) hash-run:   k=0.9206, ratios 3.17x/3.77x/3.78x\n  (c) letters:    k=0.9409, ratios 3.30x/3.74x/4.04x\n\nAll exponents ~1 (well below 1.2 threshold). Parser is linear. The CI flake (ratio 8.26x) was a constant-factor effect from allocating/GC-ing the 4x-larger input string under load, not algorithmic superlinearity."
+files[1]{path,scope,note}:
+  test/formats.test.ts,project,Strengthened assertLinearGrowth to use growth exponent across 3 sizes (N/4N/16N) with k>1.5 threshold; added quadratic-proof test
+close_reason: "Measured parseMarkdownTodos across 3 input shapes (whitespace, hash-run, letters) and 4 sizes (2k/8k/32k/128k) over 3 runs. Fitted exponents k=0.97/0.92/0.93 — all linear. The CI flake (ratio 8.26x) was a constant-factor effect, not algorithmic superlinearity. Strengthened assertLinearGrowth to measure the growth exponent across 3 sizes (N/4N/16N) and fail when k>1.5. Added a test proving the strengthened assertion catches a deliberately quadratic function. All 206 tests pass. release:check exits 0. 5 linearity test runs under parallel load all pass."
+body: ""
