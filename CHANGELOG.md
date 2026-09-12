@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- parseMarkdownTodos is linear; strengthen linearity test to use growth exponent instead of single N-to-4N ratio ([pm-todos-om8n](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-om8n.toon))
+
 ### Other
 
 - Certify pm CLI 2026.9.12 and the pm-ops 2026.9.11 auditor ([pm-todos-wboc](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-wboc.toon))
