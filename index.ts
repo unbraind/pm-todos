@@ -2763,7 +2763,7 @@ const defineExtension = <TModule extends ExtensionModule>(module: TModule): TMod
 
 export default defineExtension({
   name: "pm-todos",
-  version: "2026.9.11",
+  version: "2026.9.13",
 
   activate(api: ExtensionApi) {
     api.registerItemFields([
