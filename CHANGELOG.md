@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Other
+
+- Certify pm CLI 2026.9.17 ([pm-todos-zrxn](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-zrxn.toon))
+
 ## 2026.9.13 - 2026-09-13
 
 ### Fixed
