@@ -2,17 +2,28 @@ id: pm-todos-p60g
 title: Bring pm-todos to 100% line/branch/function coverage and raise gate to 100
 description: "The coverage gate currently enforces lines 68 / branches 85 / functions 74. Drive every uncovered code path in index.ts with behavioural tests so all three metrics read 100.00, then raise coverageGate.thresholds to 100."
 type: Task
-status: open
+status: in_progress
 priority: 2
 tags: []
 created_at: "2026-09-18T03:15:38.568Z"
-updated_at: "2026-09-18T05:42:24.700Z"
+updated_at: "2026-09-18T07:11:25.615Z"
 assignee: pi-agent
 claim_principal: pi-agent
 author: pi-agent
 acceptance_criteria: "npm run coverage reports 100.00 for lines, branches, and functions; coverageGate.thresholds in package.json is 100 for each metric; npm run release:check exits 0; no gate is weakened"
-comments[3]{created_at,author,text}:
+comments[5]{created_at,author,text}:
   "2026-09-18T03:15:53.333Z",pi-agent,"Baseline: lines 69.31 / branches 87.09 / functions 76.07 (index.ts only). 206 tests passing. Uncovered ranges: 168-275 (option readers), 316-345 (export filter + bounded int), 492-504 (context sort branches), 545-547 (NaN deadline), 621-623 (bang markers), 855-858 (filterBySection), 1239-1325 (parsePiTodo + helpers), 1684-1685 (malformed checkbox), 1779-1988 (glob + parseFileToNormalized), 2123-2315 (pm command runners), 2345-2601 (runTodoImport), 2645-2748 (export core), 2801-3427 (extension commands/importers/exporters/preflight)."
   "2026-09-18T05:32:57.755Z",pi-agent,Added 65 direct option/internal-helper tests and 38 in-process SDK harness tests. The harness now covers validate/context/sync/import/export/legacy importer/preflight against one real temp pm workspace; command test suite passes 38/38.
   "2026-09-18T05:42:24.700Z",pi-agent,"Widened readCompletePmItems and runTodoImport exports only for in-process tests of their error branches. These paths are otherwise reachable only inside registered handlers; subprocess integration tests execute outside the coverage runner, while direct invocation preserves real pm CLI behavior for normal reads/writes and lets tests pin read failure, malformed receipt, and dropped-line handling."
+  "2026-09-18T07:04:26.137Z",pi-agent,"Coverage now reports 100.00% lines, branches, and functions across 350 passing tests; all changes are pushed through commit 9a6e8d3. Raising the declared gate and running release checks next."
+  "2026-09-18T07:11:25.561Z",pi-agent,"Raised package.json coverageGate thresholds to 100/100/100. npm run release:check passed: typecheck, docstring, 350-test coverage at 100.00/100.00/100.00, canonical reader, audit, pack, packed acceptance, changelog, and release attestation gates."
+files[4]{path,scope,note}:
+  index.ts,project,Coverage-oriented helper exports and invariant simplifications
+  test/coverage-options.test.ts,project,Pure helper and branch coverage
+  test/coverage-commands.test.ts,project,In-process SDK command/import/export coverage
+  package.json,project,Coverage thresholds raised to 100 for lines branches functions
+tests[3]{command,path,scope,timeout_seconds,pm_context_mode,provenance{author,created_at,source_kind,source_ref}}:
+  npm run coverage,.,project,900,auto,pi-agent,"2026-09-18T07:04:26.137Z",local_mutation,test/cover-pm-todos-to-full-coverage
+  "npm run build:test",.,project,120,auto,pi-agent,"2026-09-18T07:04:26.137Z",local_mutation,test/cover-pm-todos-to-full-coverage
+  "npm run release:check",.,project,1200,auto,pi-agent,"2026-09-18T07:11:25.561Z",local_mutation,test/cover-pm-todos-to-full-coverage
 body: ""
