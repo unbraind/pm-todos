@@ -422,11 +422,88 @@ test("todos import with no items found reports zero", async () => {
   assert.equal((result.result as { imported: number; skipped: number }).imported, 0);
 });
 
+test("todos import reports dropped lines when pm rejects a create", async () => {
+  const beforeExitCode = process.exitCode;
+  try {
+    const file = tempFile("i-drop.md", "# TODO\n\n- [ ] CreateDrop\n");
+    const result = await harness.runImporter({
+      importer: "todos",
+      args: [file],
+      options: { type: "DefinitelyMissingType" },
+      pmRoot: tracker,
+    });
+    const receipt = result.result as { imported: number; skipped: number; dropped?: Array<{ title: string }> };
+    assert.equal(receipt.imported, 0);
+    assert.equal(receipt.skipped, 1);
+    assert.equal(receipt.dropped?.[0]?.title, "CreateDrop");
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = beforeExitCode;
+  }
+});
+
+test("todos import reports dropped lines when pm rejects an upsert update", async () => {
+  const beforeExitCode = process.exitCode;
+  try {
+    const good = tempFile("i-update-good.jsonl", JSON.stringify({ id: "pm-cov-update-1", title: "UpdateDrop", status: "open", type: "Task" }) + "\n");
+    await harness.runImporter({ importer: "todos", args: [good], options: { format: "jsonl", upsert: true }, pmRoot: tracker });
+    const bad = tempFile("i-update-bad.jsonl", JSON.stringify({ id: "pm-cov-update-1", title: "UpdateDrop", status: "open", type: "DefinitelyMissingType" }) + "\n");
+    const result = await harness.runImporter({ importer: "todos", args: [bad], options: { format: "jsonl", upsert: true }, pmRoot: tracker });
+    const receipt = result.result as { imported: number; skipped: number; updated?: number; dropped?: Array<{ title: string }> };
+    assert.equal(receipt.imported, 0);
+    assert.equal(receipt.updated, 0);
+    assert.equal(receipt.skipped, 1);
+    assert.equal(receipt.dropped?.[0]?.title, "UpdateDrop");
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = beforeExitCode;
+  }
+});
+
 test("todos import with --section only imports named section", async () => {
   const file = tempFile("i11.md", "## Backlog\n- [ ] A\n## Done\n- [x] B\n");
   const result = await harness.runImporter({ importer: "todos", args: [file], options: { section: "Backlog" }, pmRoot: tracker });
   const res = result.result as { imported: number; updated?: number };
   assert.equal(res.imported + (res.updated ?? 0), 1);
+});
+
+test("todos sync reports dropped lines and preserves the source file", async () => {
+  const beforeExitCode = process.exitCode;
+  try {
+    const file = tempFile("s-drop.md", "# TODO\n\n- [ ] SyncDrop\n");
+    const before = readFileSync(file, "utf-8");
+    const result = await harness.runCommand({
+      command: "todos sync",
+      args: [file],
+      options: { type: "DefinitelyMissingType" },
+      pmRoot: tracker,
+    });
+    const receipt = result.result as { dropped?: Array<{ title: string }> };
+    assert.equal(receipt.dropped?.[0]?.title, "SyncDrop");
+    assert.equal(readFileSync(file, "utf-8"), before);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = beforeExitCode;
+  }
+});
+
+test("todos sync preserves a dropped report when re-export also fails", async () => {
+  const beforeExitCode = process.exitCode;
+  try {
+    const file = tempFile("s-drop-export.md", "# TODO\n\n- [ ] SyncDropExport\n");
+    const result = await harness.runCommand({
+      command: "todos sync",
+      args: [file],
+      options: { type: "DefinitelyMissingType", "group-by": "not-a-group" },
+      pmRoot: tracker,
+    });
+    const receipt = result.result as { dropped?: Array<{ title: string }>; reexport_error?: string };
+    assert.equal(receipt.dropped?.[0]?.title, "SyncDropExport");
+    assert.match(receipt.reexport_error ?? "", /Unknown --group-by/);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = beforeExitCode;
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -443,6 +520,25 @@ test("todos-import legacy importer creates items from file option", async () => 
 test("todos-import legacy importer skips when no file is provided", async () => {
   const result = await harness.runImporter({ importer: "todos-import", pmRoot: tracker });
   assert.equal(result.handled, true);
+});
+
+test("todos-import legacy importer reports dropped lines", async () => {
+  const beforeExitCode = process.exitCode;
+  try {
+    const file = tempFile("legacy-drop.md", "# TODO\n\n- [ ] LegacyDrop\n");
+    const result = await harness.runImporter({
+      importer: "todos-import",
+      options: { file, type: "DefinitelyMissingType" },
+      pmRoot: tracker,
+    });
+    const receipt = result.result as { imported: number; skipped: number; dropped?: Array<{ title: string }> };
+    assert.equal(receipt.imported, 0);
+    assert.equal(receipt.skipped, 1);
+    assert.equal(receipt.dropped?.[0]?.title, "LegacyDrop");
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = beforeExitCode;
+  }
 });
 
 // ---------------------------------------------------------------------------

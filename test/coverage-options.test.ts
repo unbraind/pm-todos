@@ -684,6 +684,10 @@ test("readCompletePmItems reports a pm process error when the executable is unav
   }
 });
 
+test("readCompletePmItems rejects a non-zero pm status", () => {
+  assert.throws(() => readCompletePmItems("/no/such/pm-todos-tracker", "status coverage"), /pm list --all failed|Could not parse/);
+});
+
 test("readCompletePmItems rejects non-JSON stdout from a successful pm process", () => {
   const dir = mkdtempSync(join(tmpdir(), "pm-todos-pm-"));
   const before = process.env.PATH;
