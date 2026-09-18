@@ -4,7 +4,6 @@
 
 ### Other
 
-- Bring pm-todos to 100% line/branch/function coverage and raise gate to 100 ([pm-todos-p60g](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-p60g.toon))
 - Certify pm CLI 2026.9.17 ([pm-todos-zrxn](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-zrxn.toon))
 
 ## 2026.9.13 - 2026-09-13
