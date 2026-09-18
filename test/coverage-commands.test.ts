@@ -24,7 +24,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { before } from "node:test";
@@ -32,7 +32,7 @@ import test, { before } from "node:test";
 import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
 import type { ExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
 
-import extension from "../index.ts";
+import extension, { runTodoImport } from "../index.ts";
 
 /** The pm binary shipped with the installed dev dependency. */
 const pmBin = join(process.cwd(), "node_modules", ".bin", "pm");
@@ -127,6 +127,22 @@ test("todos validate throws NOT_FOUND for a missing file", async () => {
   await assert.rejects(
     () => harness.runCommand({ command: "todos validate", args: [join(root, "nope.md")], pmRoot: tracker }),
     (err: unknown) => err instanceof Error && /Failed to read file/.test(err.message),
+  );
+});
+
+test("todos validate returns JSON issues for a warning-only file", async () => {
+  const file = tempFile("v-warning.md", "plain prose\n");
+  const result = await harness.runCommand({ command: "todos validate", args: [file], global: { json: true }, pmRoot: tracker });
+  const report = result.result as { issues: Array<{ line: number; text: string }>; warnings: number };
+  assert.equal(report.warnings, 1);
+  assert.equal(report.issues[0]?.line, 0);
+  assert.equal(report.issues[0]?.text, "");
+});
+
+test("todos validate reports a generic read failure for a directory", async () => {
+  await assert.rejects(
+    () => harness.runCommand({ command: "todos validate", args: [root], pmRoot: tracker }),
+    (err: unknown) => err instanceof Error && /Failed to read file/.test(err.message) && !/ENOENT/.test(err.message),
   );
 });
 
@@ -328,6 +344,10 @@ test("todos sync throws USAGE when no file and NOT_FOUND for missing file", asyn
     () => harness.runCommand({ command: "todos sync", args: [join(root, "nope.md")], pmRoot: tracker }),
     (err: unknown) => err instanceof Error && /Failed to read sync file/.test(err.message),
   );
+  await assert.rejects(
+    () => harness.runCommand({ command: "todos sync", args: [root], pmRoot: tracker }),
+    (err: unknown) => err instanceof Error && /Failed to read sync file/.test(err.message) && !/ENOENT/.test(err.message),
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -346,6 +366,19 @@ test("todos import with --dry-run previews", async () => {
   const result = await harness.runImporter({ importer: "todos", args: [file], options: { "dry-run": true }, pmRoot: tracker });
   assert.equal((result.result as { dryRun: boolean }).dryRun, true);
   assert.equal((result.result as { wouldImport: number }).wouldImport, 1);
+});
+
+test("todos import dry-run previews an upsert with all markdown metadata", async () => {
+  const file = tempFile("i2-update.md", "# TODO\n\n- [ ] Existing\n");
+  await harness.runImporter({ importer: "todos", args: [file], pmRoot: tracker });
+  writeFileSync(file, "## Backlog\n- [x] (p1) Existing due:2026-07-01\n");
+  const result = await harness.runImporter({ importer: "todos", args: [file], options: { upsert: true, "dry-run": true }, pmRoot: tracker });
+  const preview = (result.result as { previews: Array<{ action: string; existingId?: string; tags: string[]; priority?: string; deadline?: string }> }).previews[0];
+  assert.equal(preview?.action, "update");
+  assert.ok(preview?.existingId);
+  assert.deepEqual(preview?.tags, ["backlog"]);
+  assert.equal(preview?.priority, "1");
+  assert.equal(preview?.deadline, "2026-07-01");
 });
 
 test("todos import with --upsert updates existing items", async () => {
@@ -376,6 +409,17 @@ test("todos import with no file/glob throws USAGE", async () => {
     () => harness.runImporter({ importer: "todos", pmRoot: tracker }),
     (err: unknown) => err instanceof Error && /Usage: pm todos import/.test(err.message),
   );
+});
+
+test("todos import updates jsonl optional fields through the real pm harness", async () => {
+  const first = tempFile("i-rich-update-1.jsonl", JSON.stringify({ title: "Rich update", status: "open" }) + "\n");
+  await harness.runImporter({ importer: "todos", args: [first], options: { format: "jsonl", upsert: true }, pmRoot: tracker });
+  const second = tempFile("i-rich-update-2.jsonl", JSON.stringify({
+    title: "Rich update", status: "closed", description: "new description", assignee: "alice", sprint: "S1",
+    created_at: "2026-01-01", updated_at: "2026-01-02", creationDate: "2026-01-01", completionDate: "2026-01-03", kv: { source: "import" },
+  }) + "\n");
+  const result = await harness.runImporter({ importer: "todos", args: [second], options: { format: "jsonl", upsert: true }, pmRoot: tracker });
+  assert.equal((result.result as { updated: number }).updated, 1);
 });
 
 test("todos import with --format jsonl/todotxt/todojson/checkbox", async () => {
@@ -420,6 +464,24 @@ test("todos import with no items found reports zero", async () => {
   const file = tempFile("i10.md", "just prose, no tasks\n");
   const result = await harness.runImporter({ importer: "todos", args: [file], pmRoot: tracker });
   assert.equal((result.result as { imported: number; skipped: number }).imported, 0);
+});
+
+test("todos import reports a fallback create failure when pm returns no stderr", async () => {
+  const fakeBin = mkdtempSync(join(root, "false-pm-"));
+  symlinkSync("/bin/false", join(fakeBin, "pm"));
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = fakeBin;
+    const file = tempFile("i-fallback.md", "- [ ] Fallback failure\n");
+    const result = runTodoImport({
+      files: [file], format: "markdown", pmRoot: tracker, upsert: false, dryRun: false,
+      itemType: "Task", closedAs: "closed", extraTags: [], sectionTags: true,
+    });
+    assert.equal(result.dropped?.[0]?.reason, "pm create failed");
+  } finally {
+    process.env.PATH = oldPath;
+    rmSync(fakeBin, { recursive: true, force: true });
+  }
 });
 
 test("todos import reports dropped lines when pm rejects a create", async () => {

@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -43,9 +43,11 @@ import {
   parseMarkdownTodos,
   parsePiTodoDetails,
   parseJsonl,
+  serializeJsonl,
   serializeTodoTxtLine,
   serializePiTodoDetails,
   extractTodojsonSourceId,
+  extractTrailing,
   buildTodojsonImportDescription,
   buildExistingTodoIndex,
   groupItems,
@@ -54,6 +56,7 @@ import {
   sortItemsForContext,
   buildTodoContextSnapshot,
   validateTodoFile,
+  preflightValidateImportFiles,
   resolveGlob,
   readCompletePmItems,
   runTodoImport,
@@ -416,6 +419,14 @@ test("sortItems covers missing, equal, and ordered priority/deadline values", ()
     { id: "same", title: "Same", status: "open", deadline: "2026-06-01" },
   ], "deadline");
   assert.deepEqual(deadlines.map((item) => item.id), ["early", "same", "late", "missing"]);
+  assert.deepEqual(sortItems([
+    { id: "dated", title: "Dated", status: "open", deadline: "2026-06-01" },
+    { id: "none", title: "None", status: "open" },
+  ], "deadline").map((item) => item.id), ["dated", "none"]);
+  assert.deepEqual(sortItems([
+    { id: "none", title: "None", status: "open" },
+    { id: "dated", title: "Dated", status: "open", deadline: "2026-06-01" },
+  ], "deadline").map((item) => item.id), ["dated", "none"]);
 });
 
 test("sortItemsForContext breaks a complete urgency tie by title and handles unknown fields", () => {
@@ -424,12 +435,22 @@ test("sortItemsForContext breaks a complete urgency tie by title and handles unk
     { id: "a", title: "alpha", status: "mystery", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
   ];
   assert.deepEqual(sortItemsForContext(items).map((item) => item.id), ["a", "b"]);
+  const contextPairs = [
+    [{ id: "known", title: "Known", status: "open", priority: 1 }, { id: "missing", title: "Missing", status: "mystery" }],
+    [{ id: "missing", title: "Missing", status: "mystery" }, { id: "known", title: "Known", status: "open", priority: 1 }],
+    [{ id: "due", title: "Due", status: "open", deadline: "2026-06-01" }, { id: "no-due", title: "No due", status: "open" }],
+    [{ id: "no-due", title: "No due", status: "open" }, { id: "due", title: "Due", status: "open", deadline: "2026-06-01" }],
+    [{ id: "updated", title: "Updated", status: "open", updated_at: "2026-06-02" }, { id: "no-updated", title: "No updated", status: "open" }],
+    [{ id: "no-updated", title: "No updated", status: "open" }, { id: "updated", title: "Updated", status: "open", updated_at: "2026-06-02" }],
+  ] as const;
+  for (const pair of contextPairs) sortItemsForContext([...pair]);
 });
 
 test("buildTodoContextSnapshot uses unknown status/type fallbacks", () => {
   const snapshot = buildTodoContextSnapshot([
     { id: "unknown", title: "Unknown", status: " ", type: " " },
-  ], { limit: 1, nowIso: "2026-06-10T00:00:00.000Z" });
+    { id: "open", title: "Open", status: "open", type: "Task" },
+  ], { limit: 2, nowIso: "2026-06-10T00:00:00.000Z" });
   assert.equal(snapshot.counts.byStatus["(unknown)"], 1);
   assert.equal(snapshot.counts.byType["(none)"], 1);
 });
@@ -454,6 +475,21 @@ test("serializeTodoTxtLine handles absent tags and metadata markers", () => {
 test("todojson source and provenance helpers cover absent and non-positive ids", () => {
   assert.equal(extractTodojsonSourceId("Imported from f line 1 (todo-id:0)"), undefined);
   assert.equal(buildTodojsonImportDescription(undefined, 4), "Imported from stdin line 4");
+  assert.deepEqual(extractTrailing("text", /text$/), { text: "", value: undefined });
+});
+
+test("parseFileToNormalized leaves an absent jsonl id without a pm id", () => {
+  const [todo] = parseFileToNormalized(JSON.stringify({ title: "No pm id", status: "open" }), undefined, "jsonl");
+  assert.equal(todo.pmId, undefined);
+});
+
+test("serializeJsonl omits empty optional arrays and objects", () => {
+  const line = serializeJsonl([
+    { id: "empty", title: "Empty", status: "open", tags: [], kv: {} },
+  ]);
+  assert.equal(JSON.parse(line).id, "empty");
+  assert.equal("tags" in JSON.parse(line), false);
+  assert.equal("kv" in JSON.parse(line), false);
 });
 
 test("parseJsonl preserves every optional field when present", () => {
@@ -472,8 +508,9 @@ test("buildExistingTodoIndex skips idless and empty-title signature rows", () =>
   const index = buildExistingTodoIndex([
     { id: "", title: "No id", status: "open" },
     { id: "pm-empty-title", title: "   ", status: "open" },
+    { id: "pm-missing-title", title: undefined as unknown as string, status: "open" },
   ]);
-  assert.equal(index.byId.size, 1);
+  assert.equal(index.byId.size, 2);
   assert.equal(index.bySig.size, 0);
 });
 
@@ -481,8 +518,9 @@ test("serializePiTodoDetails resolves equal timestamps, ids, and titles determin
   const output = JSON.parse(serializePiTodoDetails([
     { id: "b", title: "Same", status: "open", created_at: "2026-01-01" },
     { id: "a", title: "Same", status: "open", created_at: "2026-01-01" },
+    { id: undefined as unknown as string, title: "No id", status: "open", created_at: "2026-01-01" },
   ])) as { todos: Array<{ id: number; text: string }> };
-  assert.deepEqual(output.todos.map((todo) => todo.text), ["Same", "Same"]);
+  assert.deepEqual(output.todos.map((todo) => todo.text), ["No id", "Same", "Same"]);
 });
 
 test("groupItems compares two unassigned buckets without throwing", () => {
@@ -492,6 +530,26 @@ test("groupItems compares two unassigned buckets without throwing", () => {
   ], "sprint");
   assert.equal(groups.length, 1);
   assert.equal(groups[0]?.heading, "(unassigned)");
+});
+
+test("preflight reports file-level todojson errors without line text", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pm-todos-preflight-"));
+  const file = join(dir, "bad.json");
+  writeFileSync(file, "not json");
+  assert.throws(() => preflightValidateImportFiles([file], "todojson"), (err: unknown) => err instanceof Error && /file:/.test(err.message));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("resolveGlob stops descending beyond its safety depth", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pm-todos-deep-"));
+  let nested = dir;
+  for (let i = 0; i < 14; i++) {
+    nested = join(nested, `d${i}`);
+    mkdirSync(nested);
+  }
+  writeFileSync(join(nested, "deep.md"), "- [ ] too deep\n");
+  assert.deepEqual(resolveGlob("**/*.md", dir), []);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------

@@ -655,7 +655,7 @@ export function extractMarkdownDue(text: string): { text: string; deadline?: str
  * capture. When the regex does not match, `value` is undefined and `text` is
  * returned unchanged. Shared by `extractPmIdComment` and `extractTypeTag`.
  */
-function extractTrailing(text: string, regex: RegExp): { text: string; value?: string } {
+export function extractTrailing(text: string, regex: RegExp): { text: string; value?: string } {
   const m = regex.exec(text);
   if (!m) return { text };
   const value = m[1]?.trim();
@@ -1395,9 +1395,11 @@ export function serializePiTodoDetails(items: PmItem[]): string {
   }
 
   const todos = rows
-    .sort((a, b) => (a.todoId ?? 0) - (b.todoId ?? 0))
+    // Every row is assigned above: persisted ids are retained and all remaining
+    // rows receive a fresh id in the second pass.
+    .sort((a, b) => a.todoId! - b.todoId!)
     .map((row) => ({
-      id: row.todoId ?? 0,
+      id: row.todoId!,
       text: row.item.title,
       done: mapPmStatusToChecked(row.item.status),
     }));
@@ -2692,7 +2694,9 @@ export function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata 
   if (openItems.length > 0) {
     lines.push("## Open", "");
     for (const item of openItems) {
-      const check = mapPmStatusToChecked(item.status) ? "x" : " ";
+      // `openItems` is already restricted to non-terminal statuses, so every
+      // task in this section is unchecked by definition.
+      const check = " ";
       const meta = metadata ? markdownMetadataSuffix(item, priorityMap) : "";
       const typeTag = item.type ? ` [${item.type}]` : "";
       lines.push(`- [${check}] ${item.title}${meta}${typeTag} <!-- ${item.id} -->`);
@@ -2742,9 +2746,11 @@ function buildTodoMarkdown(opts: TodoExportOptions): { markdown: string; count: 
   const items = fetchPmItems(opts);
   if (items.length === 0) return { markdown: "", count: 0 };
 
-  const format = opts.format ?? "markdown";
+  // All callers resolve these options through the option readers first; the
+  // optional type only documents the CLI default at the boundary.
+  const format = opts.format as TodoExportFormat;
   const groupBy = opts.groupBy;
-  const priorityMap = opts.priorityMap ?? "number";
+  const priorityMap = opts.priorityMap as PriorityMapScheme;
 
   if (format === "todotxt") {
     return { markdown: serializeTodoTxt(items), count: items.length };
