@@ -165,7 +165,7 @@ export const HEADER_RE = /^(#{1,6})[ \t]+(\S.*)$/;
  * camelCase key the runtime normalizes it to (e.g. `--dry-run` -> `dryRun`).
  * Without this, `ctx.options["dry-run"]` is silently `undefined`.
  */
-function readBoolOption(options: Record<string, unknown>, ...keys: string[]): boolean {
+export function readBoolOption(options: Record<string, unknown>, ...keys: string[]): boolean {
   for (const key of keys) {
     if (options[key] !== undefined) return Boolean(options[key]);
   }
@@ -177,7 +177,7 @@ function readBoolOption(options: Record<string, unknown>, ...keys: string[]): bo
  * kebab-case and camelCase forms the runtime may use, e.g. `closed-as` /
  * `closedAs`).
  */
-function readStringOption(options: Record<string, unknown>, ...keys: string[]): string | undefined {
+export function readStringOption(options: Record<string, unknown>, ...keys: string[]): string | undefined {
   for (const key of keys) {
     const v = options[key];
     if (v !== undefined && v !== null) return String(v);
@@ -190,7 +190,7 @@ function readStringOption(options: Record<string, unknown>, ...keys: string[]): 
  * Defaults to markdown (current behaviour). Throws a USAGE CommandError on an
  * unrecognised value so typos fail loudly instead of silently importing nothing.
  */
-function readImportFormat(options: Record<string, unknown>): TodoImportFormat {
+export function readImportFormat(options: Record<string, unknown>): TodoImportFormat {
   const raw = readStringOption(options, "format");
   if (raw === undefined) return "markdown";
   const v = raw.toLowerCase();
@@ -217,7 +217,7 @@ function readImportFormat(options: Record<string, unknown>): TodoImportFormat {
 /**
  * Read and validate the export `--format` option (markdown | todotxt | tasklist).
  */
-function readExportFormat(options: Record<string, unknown>): TodoExportFormat {
+export function readExportFormat(options: Record<string, unknown>): TodoExportFormat {
   const raw = readStringOption(options, "format");
   if (raw === undefined) return "markdown";
   const v = raw.toLowerCase();
@@ -239,7 +239,7 @@ function readExportFormat(options: Record<string, unknown>): TodoExportFormat {
 /**
  * Read and validate the `--group-by` option (status | sprint | type).
  */
-function readGroupBy(options: Record<string, unknown>): string | undefined {
+export function readGroupBy(options: Record<string, unknown>): string | undefined {
   const raw = readStringOption(options, "group-by", "groupBy");
   if (raw === undefined) return undefined;
   const v = raw.toLowerCase();
@@ -251,7 +251,7 @@ function readGroupBy(options: Record<string, unknown>): string | undefined {
  * Read and validate the export `--sort` option (priority | deadline | title).
  * Returns undefined when absent (preserves pm's native ordering).
  */
-function readSort(options: Record<string, unknown>): "priority" | "deadline" | "title" | undefined {
+export function readSort(options: Record<string, unknown>): "priority" | "deadline" | "title" | undefined {
   const raw = readStringOption(options, "sort");
   if (raw === undefined) return undefined;
   const v = raw.toLowerCase();
@@ -265,7 +265,7 @@ function readSort(options: Record<string, unknown>): "priority" | "deadline" | "
  * `letter` emits todo.txt-style `(A)`..`(E)` letters instead. Unknown values throw
  * a USAGE error so typos surface before any export write.
  */
-function readPriorityMap(options: Record<string, unknown>): PriorityMapScheme {
+export function readPriorityMap(options: Record<string, unknown>): PriorityMapScheme {
   const raw = readStringOption(options, "priority-map", "priorityMap");
   if (raw === undefined) return "number";
   const v = raw.toLowerCase();
@@ -313,7 +313,7 @@ export function parseFilterExpression(raw: string | undefined): { status?: strin
  * name the same key (a redundant `--filter` does not override an explicit flag).
  * Returns undefined when neither source provides a predicate.
  */
-function readExportFilter(options: Record<string, unknown>): { status?: string; type?: string } {
+export function readExportFilter(options: Record<string, unknown>): { status?: string; type?: string } {
   const status = readStringOption(options, "status");
   const type = readStringOption(options, "type");
   const filter = parseFilterExpression(readStringOption(options, "filter"));
@@ -327,7 +327,7 @@ function readExportFilter(options: Record<string, unknown>): { status?: string; 
  * Read a bounded integer option (strict base-10 digits only). Throws a USAGE
  * error on invalid values so bad agent/user input fails loudly.
  */
-function readBoundedIntOption(
+export function readBoundedIntOption(
   options: Record<string, unknown>,
   config: { key: string; label: string; min: number; max: number; defaultValue: number },
 ): number {
@@ -604,7 +604,7 @@ export function buildTodoContextSnapshot(items: PmItem[], options: TodoContextBu
  *
  * Returns the cleaned text plus the inferred priority (undefined if none).
  */
-function extractPriority(text: string): { text: string; priority?: number } {
+export function extractPriority(text: string): { text: string; priority?: number } {
   let priority: number | undefined;
   let cleaned = text;
 
@@ -763,7 +763,7 @@ export function resolveUpsertTitleType(
 /**
  * Normalise a section heading into a tag-safe slug (lowercase, dashes).
  */
-function sectionToTag(section: string): string {
+export function sectionToTag(section: string): string {
   return section
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -852,16 +852,16 @@ export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
  * Filter parsed todos to a single section (matched case-insensitively against
  * the raw heading text).
  */
-function filterBySection(todos: TodoItem[], section: string): TodoItem[] {
+export function filterBySection(todos: TodoItem[], section: string): TodoItem[] {
   const want = section.trim().toLowerCase();
   return todos.filter((t) => (t.section ?? "").toLowerCase() === want);
 }
 
-function mapStatusToPm(checked: boolean, closedAs: string, openAs = "open"): string {
+export function mapStatusToPm(checked: boolean, closedAs: string, openAs = "open"): string {
   return checked ? closedAs : openAs;
 }
 
-function mapPmStatusToChecked(status: string): boolean {
+export function mapPmStatusToChecked(status: string): boolean {
   return status === "closed" || status === "canceled";
 }
 
@@ -1313,14 +1313,14 @@ export function buildTodojsonImportDescription(file: string | undefined, lineNum
  * Decide whether an upserted todojson line should refresh an existing item's
  * description with the canonical import-provenance marker.
  */
-function shouldRefreshTodojsonDescription(existingDescription: string | undefined, todoId: number): boolean {
+export function shouldRefreshTodojsonDescription(existingDescription: string | undefined, todoId: number): boolean {
   if (!existingDescription) return true;
   const existingId = extractTodojsonSourceId(existingDescription);
   if (existingId !== undefined) return existingId !== todoId;
   return TODOJSON_IMPORTED_DESCRIPTION_RE.test(existingDescription);
 }
 
-function parseTimestamp(value: string | undefined): number {
+export function parseTimestamp(value: string | undefined): number {
   if (!value) return Number.POSITIVE_INFINITY;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
@@ -1776,7 +1776,7 @@ export function preflightValidateImportFiles(
  * Convert a simple glob pattern (supporting `*`, `?`, `**`) into a RegExp that
  * matches a path relative to the base directory (with `/` separators).
  */
-function globToRegExp(glob: string): RegExp {
+export function globToRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const ch = glob[i];
@@ -1804,7 +1804,7 @@ function globToRegExp(glob: string): RegExp {
  * Resolve a `--glob <pattern>` into a sorted list of absolute file paths.
  * Walks the working directory (capped depth) and matches relative paths.
  */
-function resolveGlob(pattern: string, cwd: string): string[] {
+export function resolveGlob(pattern: string, cwd: string): string[] {
   const re = globToRegExp(pattern);
   const out: string[] = [];
 
@@ -1906,7 +1906,7 @@ interface NormalizedTodo {
  * Read+parse one file into normalized todos for either supported format. For
  * todo.txt, `+project`/`@context` become tags and `due:` becomes the deadline.
  */
-function parseFileToNormalized(
+export function parseFileToNormalized(
   md: string,
   file: string | undefined,
   format: TodoImportFormat,
@@ -2120,7 +2120,7 @@ export function extractCreatedTodoId(stdout: string): string | undefined {
  * `PM_JSON_MAX_BUFFER` env var. Resolved per call so the override takes effect
  * without an import-order dependency. Invalid or non-positive values fall back to
  * the default rather than silently disabling the guard. */
-function pmJsonMaxBuffer(): number {
+export function pmJsonMaxBuffer(): number {
   // Number(), not parseInt(): parseInt("64MiB") silently yields 64, which would
   // impose a 64-BYTE cap and break every ordinary read while appearing to honor
   // the documented invalid-value fallback. Number() rejects the whole string.
@@ -2131,7 +2131,7 @@ function pmJsonMaxBuffer(): number {
 /** Name the real cause of a failed `pm` read. A stdout overrun kills the child
  * with `status: null` and EMPTY stderr, so without this the failure surfaces as
  * an unexplained error (or, worse, as an empty result set). */
-function describePmReadFailure(error: Error, limitBytes: number): string {
+export function describePmReadFailure(error: Error, limitBytes: number): string {
   const code = (error as NodeJS.ErrnoException).code;
   if (code === "ENOBUFS") {
     return `pm output exceeded the ${limitBytes} byte read buffer. `
@@ -2149,7 +2149,7 @@ function describePmReadFailure(error: Error, limitBytes: number): string {
  * publishes its package root and this runner validates the declared `bin.pm`
  * entry before invoking it with the current Node executable.
  */
-function runPmCommand(args: string[], maxBuffer = 64 * 1024 * 1024): SpawnSyncReturns<string> {
+export function runPmCommand(args: string[], maxBuffer = 64 * 1024 * 1024): SpawnSyncReturns<string> {
   let command = "pm";
   let commandArgs = args;
   if (process.platform === "win32") {
