@@ -165,7 +165,7 @@ export const HEADER_RE = /^(#{1,6})[ \t]+(\S.*)$/;
  * camelCase key the runtime normalizes it to (e.g. `--dry-run` -> `dryRun`).
  * Without this, `ctx.options["dry-run"]` is silently `undefined`.
  */
-export function readBoolOption(options: Record<string, unknown>, ...keys: string[]): boolean {
+function readBoolOption(options: Record<string, unknown>, ...keys: string[]): boolean {
   for (const key of keys) {
     if (options[key] !== undefined) return Boolean(options[key]);
   }
@@ -177,7 +177,7 @@ export function readBoolOption(options: Record<string, unknown>, ...keys: string
  * kebab-case and camelCase forms the runtime may use, e.g. `closed-as` /
  * `closedAs`).
  */
-export function readStringOption(options: Record<string, unknown>, ...keys: string[]): string | undefined {
+function readStringOption(options: Record<string, unknown>, ...keys: string[]): string | undefined {
   for (const key of keys) {
     const v = options[key];
     if (v !== undefined && v !== null) return String(v);
@@ -190,7 +190,7 @@ export function readStringOption(options: Record<string, unknown>, ...keys: stri
  * Defaults to markdown (current behaviour). Throws a USAGE CommandError on an
  * unrecognised value so typos fail loudly instead of silently importing nothing.
  */
-export function readImportFormat(options: Record<string, unknown>): TodoImportFormat {
+function readImportFormat(options: Record<string, unknown>): TodoImportFormat {
   const raw = readStringOption(options, "format");
   if (raw === undefined) return "markdown";
   const v = raw.toLowerCase();
@@ -217,7 +217,7 @@ export function readImportFormat(options: Record<string, unknown>): TodoImportFo
 /**
  * Read and validate the export `--format` option (markdown | todotxt | tasklist).
  */
-export function readExportFormat(options: Record<string, unknown>): TodoExportFormat {
+function readExportFormat(options: Record<string, unknown>): TodoExportFormat {
   const raw = readStringOption(options, "format");
   if (raw === undefined) return "markdown";
   const v = raw.toLowerCase();
@@ -239,7 +239,7 @@ export function readExportFormat(options: Record<string, unknown>): TodoExportFo
 /**
  * Read and validate the `--group-by` option (status | sprint | type).
  */
-export function readGroupBy(options: Record<string, unknown>): string | undefined {
+function readGroupBy(options: Record<string, unknown>): string | undefined {
   const raw = readStringOption(options, "group-by", "groupBy");
   if (raw === undefined) return undefined;
   const v = raw.toLowerCase();
@@ -251,7 +251,7 @@ export function readGroupBy(options: Record<string, unknown>): string | undefine
  * Read and validate the export `--sort` option (priority | deadline | title).
  * Returns undefined when absent (preserves pm's native ordering).
  */
-export function readSort(options: Record<string, unknown>): "priority" | "deadline" | "title" | undefined {
+function readSort(options: Record<string, unknown>): "priority" | "deadline" | "title" | undefined {
   const raw = readStringOption(options, "sort");
   if (raw === undefined) return undefined;
   const v = raw.toLowerCase();
@@ -265,7 +265,7 @@ export function readSort(options: Record<string, unknown>): "priority" | "deadli
  * `letter` emits todo.txt-style `(A)`..`(E)` letters instead. Unknown values throw
  * a USAGE error so typos surface before any export write.
  */
-export function readPriorityMap(options: Record<string, unknown>): PriorityMapScheme {
+function readPriorityMap(options: Record<string, unknown>): PriorityMapScheme {
   const raw = readStringOption(options, "priority-map", "priorityMap");
   if (raw === undefined) return "number";
   const v = raw.toLowerCase();
@@ -313,7 +313,7 @@ export function parseFilterExpression(raw: string | undefined): { status?: strin
  * name the same key (a redundant `--filter` does not override an explicit flag).
  * Returns undefined when neither source provides a predicate.
  */
-export function readExportFilter(options: Record<string, unknown>): { status?: string; type?: string } {
+function readExportFilter(options: Record<string, unknown>): { status?: string; type?: string } {
   const status = readStringOption(options, "status");
   const type = readStringOption(options, "type");
   const filter = parseFilterExpression(readStringOption(options, "filter"));
@@ -327,7 +327,7 @@ export function readExportFilter(options: Record<string, unknown>): { status?: s
  * Read a bounded integer option (strict base-10 digits only). Throws a USAGE
  * error on invalid values so bad agent/user input fails loudly.
  */
-export function readBoundedIntOption(
+function readBoundedIntOption(
   options: Record<string, unknown>,
   config: { key: string; label: string; min: number; max: number; defaultValue: number },
 ): number {
@@ -604,7 +604,7 @@ export function buildTodoContextSnapshot(items: PmItem[], options: TodoContextBu
  *
  * Returns the cleaned text plus the inferred priority (undefined if none).
  */
-export function extractPriority(text: string): { text: string; priority?: number } {
+function extractPriority(text: string): { text: string; priority?: number } {
   let priority: number | undefined;
   let cleaned = text;
 
@@ -655,7 +655,7 @@ export function extractMarkdownDue(text: string): { text: string; deadline?: str
  * capture. When the regex does not match, `value` is undefined and `text` is
  * returned unchanged. Shared by `extractPmIdComment` and `extractTypeTag`.
  */
-export function extractTrailing(text: string, regex: RegExp): { text: string; value?: string } {
+function extractTrailing(text: string, regex: RegExp): { text: string; value?: string } {
   const m = regex.exec(text);
   if (!m) return { text };
   const value = m[1]?.trim();
@@ -763,7 +763,7 @@ export function resolveUpsertTitleType(
 /**
  * Normalise a section heading into a tag-safe slug (lowercase, dashes).
  */
-export function sectionToTag(section: string): string {
+function sectionToTag(section: string): string {
   return section
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -852,7 +852,7 @@ export function parseMarkdownTodos(md: string, file?: string): TodoItem[] {
  * Filter parsed todos to a single section (matched case-insensitively against
  * the raw heading text).
  */
-export function filterBySection(todos: TodoItem[], section: string): TodoItem[] {
+function filterBySection(todos: TodoItem[], section: string): TodoItem[] {
   const want = section.trim().toLowerCase();
   return todos.filter((t) => (t.section ?? "").toLowerCase() === want);
 }
@@ -865,7 +865,7 @@ export function filterBySection(todos: TodoItem[], section: string): TodoItem[] 
  * @param openAs - Status assigned to unchecked TODOs.
  * @returns The status corresponding to the checkbox state.
  */
-export function mapStatusToPm(checked: boolean, closedAs: string, openAs = "open"): string {
+function mapStatusToPm(checked: boolean, closedAs: string, openAs = "open"): string {
   return checked ? closedAs : openAs;
 }
 
@@ -875,7 +875,7 @@ export function mapStatusToPm(checked: boolean, closedAs: string, openAs = "open
  * @param status - The pm status to classify.
  * @returns Whether the status is terminal and therefore checked.
  */
-export function mapPmStatusToChecked(status: string): boolean {
+function mapPmStatusToChecked(status: string): boolean {
   return status === "closed" || status === "canceled";
 }
 
@@ -1327,7 +1327,7 @@ export function buildTodojsonImportDescription(file: string | undefined, lineNum
  * Decide whether an upserted todojson line should refresh an existing item's
  * description with the canonical import-provenance marker.
  */
-export function shouldRefreshTodojsonDescription(existingDescription: string | undefined, todoId: number): boolean {
+function shouldRefreshTodojsonDescription(existingDescription: string | undefined, todoId: number): boolean {
   if (!existingDescription) return true;
   const existingId = extractTodojsonSourceId(existingDescription);
   if (existingId !== undefined) return existingId !== todoId;
@@ -1341,7 +1341,7 @@ export function shouldRefreshTodojsonDescription(existingDescription: string | u
  * @returns The parsed epoch milliseconds, or positive infinity for values that
  * cannot provide a meaningful ordering.
  */
-export function parseTimestamp(value: string | undefined): number {
+function parseTimestamp(value: string | undefined): number {
   if (!value) return Number.POSITIVE_INFINITY;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
@@ -1397,9 +1397,9 @@ export function serializePiTodoDetails(items: PmItem[]): string {
   const todos = rows
     // Every row is assigned above: persisted ids are retained and all remaining
     // rows receive a fresh id in the second pass.
-    .sort((a, b) => a.todoId! - b.todoId!)
+    .sort((a, b) => (a.todoId ?? 0) - (b.todoId ?? 0))
     .map((row) => ({
-      id: row.todoId!,
+      id: row.todoId ?? 0,
       text: row.item.title,
       done: mapPmStatusToChecked(row.item.status),
     }));
@@ -1799,7 +1799,7 @@ export function preflightValidateImportFiles(
  * Convert a simple glob pattern (supporting `*`, `?`, `**`) into a RegExp that
  * matches a path relative to the base directory (with `/` separators).
  */
-export function globToRegExp(glob: string): RegExp {
+function globToRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const ch = glob[i];
@@ -1827,7 +1827,7 @@ export function globToRegExp(glob: string): RegExp {
  * Resolve a `--glob <pattern>` into a sorted list of absolute file paths.
  * Walks the working directory (capped depth) and matches relative paths.
  */
-export function resolveGlob(pattern: string, cwd: string): string[] {
+function resolveGlob(pattern: string, cwd: string): string[] {
   const re = globToRegExp(pattern);
   const out: string[] = [];
 
@@ -1929,7 +1929,7 @@ interface NormalizedTodo {
  * Read+parse one file into normalized todos for either supported format. For
  * todo.txt, `+project`/`@context` become tags and `due:` becomes the deadline.
  */
-export function parseFileToNormalized(
+function parseFileToNormalized(
   md: string,
   file: string | undefined,
   format: TodoImportFormat,
@@ -2143,7 +2143,7 @@ export function extractCreatedTodoId(stdout: string): string | undefined {
  * `PM_JSON_MAX_BUFFER` env var. Resolved per call so the override takes effect
  * without an import-order dependency. Invalid or non-positive values fall back to
  * the default rather than silently disabling the guard. */
-export function pmJsonMaxBuffer(): number {
+function pmJsonMaxBuffer(): number {
   // Number(), not parseInt(): parseInt("64MiB") silently yields 64, which would
   // impose a 64-BYTE cap and break every ordinary read while appearing to honor
   // the documented invalid-value fallback. Number() rejects the whole string.
@@ -2154,7 +2154,7 @@ export function pmJsonMaxBuffer(): number {
 /** Name the real cause of a failed `pm` read. A stdout overrun kills the child
  * with `status: null` and EMPTY stderr, so without this the failure surfaces as
  * an unexplained error (or, worse, as an empty result set). */
-export function describePmReadFailure(error: Error, limitBytes: number): string {
+function describePmReadFailure(error: Error, limitBytes: number): string {
   const code = (error as NodeJS.ErrnoException).code;
   if (code === "ENOBUFS") {
     return `pm output exceeded the ${limitBytes} byte read buffer. `
@@ -2172,7 +2172,7 @@ export function describePmReadFailure(error: Error, limitBytes: number): string 
  * publishes its package root and this runner validates the declared `bin.pm`
  * entry before invoking it with the current Node executable.
  */
-export function runPmCommand(args: string[], maxBuffer = 64 * 1024 * 1024): SpawnSyncReturns<string> {
+function runPmCommand(args: string[], maxBuffer = 64 * 1024 * 1024): SpawnSyncReturns<string> {
   let command = "pm";
   let commandArgs = args;
   if (process.platform === "win32") {
@@ -2314,7 +2314,7 @@ export function assertListAllComplete(envelope: unknown, usedFor: string): void 
 }
 
 /** Fetch current workspace items for either upsert indexing or TODO export. */
-export function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
+function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
   const maxBuffer = pmJsonMaxBuffer();
   const result = runPmCommand(["--pm-path", pmRoot, ...COMPLETE_LIST_COMMAND_ARGUMENTS], maxBuffer);
   if (result.error) {
@@ -2365,7 +2365,7 @@ export function buildJsonlImportFieldArgs(todo: Pick<NormalizedTodo,
  * Read, parse and (unless dry-run) create pm items for every TODO found across
  * the given files. Single code path shared by the command and the importer.
  */
-export function runTodoImport(opts: TodoImportOptions): TodoImportResult {
+function runTodoImport(opts: TodoImportOptions): TodoImportResult {
   let imported = 0;
   let skipped = 0;
   let updated = 0;
@@ -2614,10 +2614,7 @@ export function runTodoImport(opts: TodoImportOptions): TodoImportResult {
         // output path (stdout), not only the stderr line above. `skipped` stays
         // as the historical count; `dropped` is the per-line report a caller or
         // script can inspect to see exactly which finished work vanished.
-        // Every normalized row came from the current `file` loop, so its source
-        // path is present even though the shared row type also serves callers
-        // that construct rows independently.
-        dropped.push({ file: todo.file!, line: todo.lineNumber, title: todo.text, reason: msg });
+        dropped.push({ file: todo.file ?? "stdin", line: todo.lineNumber, title: todo.text, reason: msg });
         skipped++;
       }
     }
@@ -2697,9 +2694,7 @@ export function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata 
   if (openItems.length > 0) {
     lines.push("## Open", "");
     for (const item of openItems) {
-      // `openItems` is already restricted to non-terminal statuses, so every
-      // task in this section is unchecked by definition.
-      const check = " ";
+      const check = mapPmStatusToChecked(item.status) ? "x" : " ";
       const meta = metadata ? markdownMetadataSuffix(item, priorityMap) : "";
       const typeTag = item.type ? ` [${item.type}]` : "";
       lines.push(`- [${check}] ${item.title}${meta}${typeTag} <!-- ${item.id} -->`);
@@ -2749,11 +2744,9 @@ function buildTodoMarkdown(opts: TodoExportOptions): { markdown: string; count: 
   const items = fetchPmItems(opts);
   if (items.length === 0) return { markdown: "", count: 0 };
 
-  // All callers resolve these options through the option readers first; the
-  // optional type only documents the CLI default at the boundary.
-  const format = opts.format as TodoExportFormat;
+  const format = opts.format ?? "markdown";
   const groupBy = opts.groupBy;
-  const priorityMap = opts.priorityMap as PriorityMapScheme;
+  const priorityMap = opts.priorityMap ?? "number";
 
   if (format === "todotxt") {
     return { markdown: serializeTodoTxt(items), count: items.length };
@@ -3426,8 +3419,7 @@ export default defineExtension({
     api.registerPreflight({
       commands: ["todos import"],
       run: (ctx: PreflightOverrideContext) => {
-        // The SDK always supplies a context and decision object for this hook.
-        const d = ctx.decision;
+        const d = ctx?.decision ?? {};
         const passthrough = {
           enforce_item_format_gate: d.enforce_item_format_gate ?? true,
           run_preflight_item_format_sync: d.run_preflight_item_format_sync ?? false,
@@ -3436,9 +3428,9 @@ export default defineExtension({
         };
 
         // Resolve the input file(s) exactly as the import handler does.
-        const glob = readStringOption(ctx.options, "glob");
-        const fileArg = ctx.args[0] as string | undefined;
-        const fileOpt = readStringOption(ctx.options, "file");
+        const glob = readStringOption(ctx.options ?? {}, "glob");
+        const fileArg = (ctx.args && ctx.args[0]) as string | undefined;
+        const fileOpt = readStringOption(ctx.options ?? {}, "file");
         let files: string[] = [];
         if (glob) {
           files = resolveGlob(glob, process.cwd());
@@ -3450,7 +3442,7 @@ export default defineExtension({
         }
         if (files.length === 0) return passthrough; // usage error surfaces in the handler
 
-        const format = readImportFormat(ctx.options);
+        const format = readImportFormat(ctx.options ?? {});
         // Best-effort early gate. The handler re-runs (and enforces) the same
         // check, so even though a throw here is swallowed by the runtime, the
         // import still fails fast with no partial write.
