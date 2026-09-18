@@ -139,5 +139,5 @@ test("preflight reports file-level todojson errors without line text", () => {
 test("parsePiTodoDetails rejects malformed payloads", () => {
   assert.throws(() => parsePiTodoDetails("not json"), /Invalid todojson/);
   assert.throws(() => parsePiTodoDetails(JSON.stringify({ action: "list", todos: "bad" })), /todos array/);
-  assert.throws(() => parsePiTodoDetails(JSON.stringify({ action: "list", todos: [{ id: 1, text: 2, done: false }] })), /malformed/);
+  assert.throws(() => parsePiTodoDetails(JSON.stringify({ action: "list", todos: [{ id: 1, text: 2, done: false }] })), /invalid text/);
 });
