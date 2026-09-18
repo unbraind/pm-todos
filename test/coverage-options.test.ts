@@ -22,6 +22,7 @@ import {
   readStringOption,
   readImportFormat,
   readExportFormat,
+  parseFilterExpression,
   readGroupBy,
   readSort,
   readPriorityMap,
@@ -41,6 +42,15 @@ import {
   runPmCommand,
   parseMarkdownTodos,
   parsePiTodoDetails,
+  parseJsonl,
+  serializeTodoTxtLine,
+  serializePiTodoDetails,
+  extractTodojsonSourceId,
+  buildTodojsonImportDescription,
+  buildExistingTodoIndex,
+  groupItems,
+  renderDefaultMarkdown,
+  sortItems,
   sortItemsForContext,
   buildTodoContextSnapshot,
   validateTodoFile,
@@ -220,6 +230,10 @@ test("readPriorityMap throws USAGE on an unknown value", () => {
 // readExportFilter
 // ---------------------------------------------------------------------------
 
+test("parseFilterExpression skips empty comma-separated tokens", () => {
+  assert.deepEqual(parseFilterExpression("status=open,,type=Task,"), { status: "open", type: "Task" });
+});
+
 test("readExportFilter merges explicit options with --filter (explicit wins)", () => {
   assert.deepEqual(readExportFilter({ status: "open" }), { status: "open", type: undefined });
   assert.deepEqual(readExportFilter({ type: "Task" }), { status: undefined, type: "Task" });
@@ -387,12 +401,37 @@ test("parseTimestamp returns the epoch ms for a valid ISO string", () => {
   assert.equal(parseTimestamp("2026-01-01T00:00:00.000Z"), Date.parse("2026-01-01T00:00:00.000Z"));
 });
 
-test("sortItemsForContext breaks a complete urgency tie by title", () => {
+test("sortItems covers missing, equal, and ordered priority/deadline values", () => {
+  const priority = sortItems([
+    { id: "missing", title: "Missing", status: "open" },
+    { id: "high", title: "High", status: "open", priority: 0 },
+    { id: "low", title: "Low", status: "open", priority: 2 },
+    { id: "same", title: "Same", status: "open", priority: 2 },
+  ], "priority");
+  assert.deepEqual(priority.map((item) => item.id), ["high", "low", "same", "missing"]);
+  const deadlines = sortItems([
+    { id: "missing", title: "Missing", status: "open" },
+    { id: "late", title: "Late", status: "open", deadline: "2026-07-01" },
+    { id: "early", title: "Early", status: "open", deadline: "2026-06-01" },
+    { id: "same", title: "Same", status: "open", deadline: "2026-06-01" },
+  ], "deadline");
+  assert.deepEqual(deadlines.map((item) => item.id), ["early", "same", "late", "missing"]);
+});
+
+test("sortItemsForContext breaks a complete urgency tie by title and handles unknown fields", () => {
   const items = [
-    { id: "b", title: "Zulu", status: "open", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
-    { id: "a", title: "alpha", status: "open", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
+    { id: "b", title: "Zulu", status: "mystery", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
+    { id: "a", title: "alpha", status: "mystery", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
   ];
   assert.deepEqual(sortItemsForContext(items).map((item) => item.id), ["a", "b"]);
+});
+
+test("buildTodoContextSnapshot uses unknown status/type fallbacks", () => {
+  const snapshot = buildTodoContextSnapshot([
+    { id: "unknown", title: "Unknown", status: " ", type: " " },
+  ], { limit: 1, nowIso: "2026-06-10T00:00:00.000Z" });
+  assert.equal(snapshot.counts.byStatus["(unknown)"], 1);
+  assert.equal(snapshot.counts.byType["(none)"], 1);
 });
 
 test("buildTodoContextSnapshot counts an invalid normalized deadline as without-deadline", () => {
@@ -405,6 +444,54 @@ test("buildTodoContextSnapshot counts an invalid normalized deadline as without-
 test("validateTodoFile warns when a checkbox has only metadata and no text", () => {
   const result = validateTodoFile("- [ ] due:2026-07-01\n", "markdown");
   assert.ok(result.issues.some((issue) => issue.severity === "warning" && /no text/.test(issue.message)));
+});
+
+test("serializeTodoTxtLine handles absent tags and metadata markers", () => {
+  assert.equal(serializeTodoTxtLine({ id: "bare", title: "Bare", status: "open" }), "Bare");
+  assert.equal(renderDefaultMarkdown([{ id: "bare", title: "Bare", status: "open" }], "2026-06-10T00:00:00.000Z", true), "# TODO\n\n<!-- Exported from pm-cli on 2026-06-10T00:00:00.000Z -->\n\n## Open\n\n- [ ] Bare <!-- bare -->\n");
+});
+
+test("todojson source and provenance helpers cover absent and non-positive ids", () => {
+  assert.equal(extractTodojsonSourceId("Imported from f line 1 (todo-id:0)"), undefined);
+  assert.equal(buildTodojsonImportDescription(undefined, 4), "Imported from stdin line 4");
+});
+
+test("parseJsonl preserves every optional field when present", () => {
+  const [item] = parseJsonl(JSON.stringify({
+    id: "pm-rich", title: "Rich", status: "open", description: "desc", type: "Task", priority: 1,
+    tags: ["tag"], deadline: "2026-06-01", assignee: "a", sprint: "s",
+    created_at: "2026-01-01", updated_at: "2026-01-02", creationDate: "2026-01-01",
+    completionDate: "2026-01-03", kv: { key: "value" },
+  }));
+  assert.equal(item.description, "desc");
+  assert.equal(item.created_at, "2026-01-01");
+  assert.equal(item.completionDate, "2026-01-03");
+});
+
+test("buildExistingTodoIndex skips idless and empty-title signature rows", () => {
+  const index = buildExistingTodoIndex([
+    { id: "", title: "No id", status: "open" },
+    { id: "pm-empty-title", title: "   ", status: "open" },
+  ]);
+  assert.equal(index.byId.size, 1);
+  assert.equal(index.bySig.size, 0);
+});
+
+test("serializePiTodoDetails resolves equal timestamps, ids, and titles deterministically", () => {
+  const output = JSON.parse(serializePiTodoDetails([
+    { id: "b", title: "Same", status: "open", created_at: "2026-01-01" },
+    { id: "a", title: "Same", status: "open", created_at: "2026-01-01" },
+  ])) as { todos: Array<{ id: number; text: string }> };
+  assert.deepEqual(output.todos.map((todo) => todo.text), ["Same", "Same"]);
+});
+
+test("groupItems compares two unassigned buckets without throwing", () => {
+  const groups = groupItems([
+    { id: "a", title: "A", status: "open" },
+    { id: "b", title: "B", status: "open" },
+  ], "sprint");
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0]?.heading, "(unassigned)");
 });
 
 // ---------------------------------------------------------------------------
