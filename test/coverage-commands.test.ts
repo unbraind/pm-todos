@@ -460,7 +460,7 @@ test("todos import updates jsonl optional fields through the real pm harness", a
 
 test("todos import with --format jsonl/todotxt/todojson/checkbox", async () => {
   // jsonl
-  const f1 = tempFile("i4.jsonl", JSON.stringify({ id: "pm-1", title: "Task", status: "open", type: "Task", priority: 2, tags: ["x"], deadline: "2026-07-01T00:00:00.000Z", assignee: "alice", sprint: "S1", kv: { k: "v" } }) + "\n");
+  const f1 = tempFile("i4.jsonl", JSON.stringify({ id: "pm-cov-format-jsonl", title: "Task", status: "open", type: "Task", priority: 2, tags: ["x"], deadline: "2026-07-01T00:00:00.000Z", assignee: "alice", sprint: "S1", kv: { k: "v" } }) + "\n");
   const r1 = await harness.runImporter({ importer: "todos", args: [f1], options: { format: "jsonl", upsert: true }, pmRoot: tracker });
   const res1j = r1.result as { imported: number; updated?: number };
   assert.equal(res1j.imported + (res1j.updated ?? 0), 1);
