@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -41,6 +41,12 @@ import {
   runPmCommand,
   parseMarkdownTodos,
   parsePiTodoDetails,
+  sortItemsForContext,
+  buildTodoContextSnapshot,
+  validateTodoFile,
+  resolveGlob,
+  readCompletePmItems,
+  runTodoImport,
 } from "../index.ts";
 
 // ---------------------------------------------------------------------------
@@ -381,6 +387,26 @@ test("parseTimestamp returns the epoch ms for a valid ISO string", () => {
   assert.equal(parseTimestamp("2026-01-01T00:00:00.000Z"), Date.parse("2026-01-01T00:00:00.000Z"));
 });
 
+test("sortItemsForContext breaks a complete urgency tie by title", () => {
+  const items = [
+    { id: "b", title: "Zulu", status: "open", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
+    { id: "a", title: "alpha", status: "open", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
+  ];
+  assert.deepEqual(sortItemsForContext(items).map((item) => item.id), ["a", "b"]);
+});
+
+test("buildTodoContextSnapshot counts an invalid normalized deadline as without-deadline", () => {
+  const snapshot = buildTodoContextSnapshot([
+    { id: "bad-date", title: "Bad date", status: "open", deadline: "2026-99-99" },
+  ], { limit: 1, nowIso: "2026-06-10T00:00:00.000Z" });
+  assert.equal(snapshot.counts.withoutDeadline, 1);
+});
+
+test("validateTodoFile warns when a checkbox has only metadata and no text", () => {
+  const result = validateTodoFile("- [ ] due:2026-07-01\n", "markdown");
+  assert.ok(result.issues.some((issue) => issue.severity === "warning" && /no text/.test(issue.message)));
+});
+
 // ---------------------------------------------------------------------------
 // globToRegExp
 // ---------------------------------------------------------------------------
@@ -418,6 +444,17 @@ test("globToRegExp escapes regex metacharacters in the pattern", () => {
   const re2 = globToRegExp("a+b");
   assert.ok(re2.test("a+b"));
   assert.ok(!re2.test("aXXb"));
+});
+
+test("resolveGlob ignores an unreadable working directory and broken symlink", () => {
+  assert.deepEqual(resolveGlob("*.md", "/no/such/pm-todos-directory"), []);
+  const dir = mkdtempSync(join(tmpdir(), "pm-todos-glob-"));
+  try {
+    symlinkSync(join(dir, "missing.md"), join(dir, "broken.md"));
+    assert.deepEqual(resolveGlob("*.md", dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -634,6 +671,46 @@ test("runPmCommand on Windows resolves the CLI entry and spawns node", () => {
     if (originalRoot !== undefined) process.env.PM_CLI_PACKAGE_ROOT = originalRoot;
     else delete process.env.PM_CLI_PACKAGE_ROOT;
   }
+});
+
+test("readCompletePmItems reports a pm process error when the executable is unavailable", () => {
+  const before = process.env.PATH;
+  process.env.PATH = "/no/such/pm-bin";
+  try {
+    assert.throws(() => readCompletePmItems("/tmp/unused", "error coverage"), /pm read failed/);
+  } finally {
+    if (before === undefined) delete process.env.PATH;
+    else process.env.PATH = before;
+  }
+});
+
+test("readCompletePmItems rejects non-JSON stdout from a successful pm process", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pm-todos-pm-"));
+  const before = process.env.PATH;
+  symlinkSync("/bin/echo", join(dir, "pm"));
+  process.env.PATH = dir;
+  try {
+    assert.throws(() => readCompletePmItems("/tmp/unused", "parse coverage"), /Could not parse/);
+  } finally {
+    if (before === undefined) delete process.env.PATH;
+    else process.env.PATH = before;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("runTodoImport reports a missing source file before any pm write", () => {
+  type ImportOptions = Parameters<typeof runTodoImport>[0];
+  const options: ImportOptions = {
+    files: ["/no/such/pm-todos-source.md"],
+    itemType: "Task",
+    closedAs: "closed",
+    extraTags: [],
+    sectionTags: true,
+    dryRun: false,
+    pmRoot: "/tmp/unused",
+    format: "markdown",
+  };
+  assert.throws(() => runTodoImport(options), /Failed to read file/);
 });
 
 // ---------------------------------------------------------------------------
