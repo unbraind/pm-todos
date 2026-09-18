@@ -115,9 +115,12 @@ test("parseJsonl preserves optional fields when present", () => {
 test("serializePiTodoDetails resolves deterministic ids", () => {
   const output = JSON.parse(serializePiTodoDetails([
     { id: "b", title: "Same", status: "open", created_at: "2026-01-01" },
-    { id: "a", title: "Same", status: "open", created_at: "2026-01-01" },
-  ])) as { todos: Array<{ id: number; text: string }> };
-  assert.equal(output.todos.length, 2);
+    { id: "a", title: "Same", status: "closed", created_at: "2026-01-01" },
+  ])) as { todos: Array<{ id: number; done: boolean }> };
+  assert.deepEqual(output.todos.map(({ id, done }) => ({ id, done })), [
+    { id: 1, done: true },
+    { id: 2, done: false },
+  ]);
 });
 
 test("groupItems compares unassigned and assigned buckets", () => {

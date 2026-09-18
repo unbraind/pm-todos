@@ -711,7 +711,8 @@ test("todos export with --status, --type, --filter, --group-by, --metadata, --pr
   // --sort title + --reverse
   const r4 = await harness.runExporter({ exporter: "todos", options: { sort: "title", reverse: true }, pmRoot: tracker });
   const md4 = (r4.result as { markdown: string }).markdown;
-  assert.ok(md4.indexOf("C") < md4.indexOf("A") || md4.indexOf("A") < md4.indexOf("B"));
+  const titles = [...md4.matchAll(/^- \[[ x]\] (\S+)/gm)].map((match) => match[1]);
+  assert.deepEqual(titles, ["C", "A", "B"]);
 });
 
 // ---------------------------------------------------------------------------
