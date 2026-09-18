@@ -2001,8 +2001,8 @@ export function resolveImportedTodoStatus(
 interface TodoImportResult {
   imported: number;
   skipped: number;
-  /** Number of existing items updated in place (only meaningful with --upsert). */
-  updated?: number;
+  /** Number of existing items updated in place (zero when --upsert is absent). */
+  updated: number;
   previews?: Array<Record<string, unknown>>;
   /**
    * Every source line whose pm create/update FAILED, with the file, line,
@@ -2011,7 +2011,7 @@ interface TodoImportResult {
    * disagree. Callers surface this on the normal output path (the structured
    * result) and exit non-zero so a partial import is never reported as success.
    */
-  dropped?: DroppedTodoLine[];
+  dropped: DroppedTodoLine[];
 }
 
 /**
@@ -3026,7 +3026,7 @@ export default defineExtension({
         // both of which can throw; letting it run first meant a re-export
         // failure propagated a bare error and took the dropped report with it,
         // leaving the store modified and no record of what was dropped.
-        const droppedLines = importResult.dropped ?? [];
+        const droppedLines = importResult.dropped;
 
         // Re-export the reconciled pm state back to the same file. The export
         // honours --filter/--group-by/--metadata/--priority-map so the written
@@ -3056,14 +3056,14 @@ export default defineExtension({
           if (droppedLines.length === 0) throw error;
           const reason = error instanceof Error ? error.message : String(error);
           console.error(
-            `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, but DROPPED ${droppedLines.length} item(s), and the re-export then failed (${reason}); NOT writing ${filePath} (see the 'dropped' field for file/line/reason).`,
+            `sync: imported ${importResult.imported}, updated ${importResult.updated}, but DROPPED ${droppedLines.length} item(s), and the re-export then failed (${reason}); NOT writing ${filePath} (see the 'dropped' field for file/line/reason).`,
           );
           return withDroppedReport(
             {
               file: filePath,
               format: importFormat,
               imported: importResult.imported,
-              updated: importResult.updated ?? 0,
+              updated: importResult.updated,
               skipped: importResult.skipped,
               reexported: 0,
               dryRun,
@@ -3077,7 +3077,7 @@ export default defineExtension({
           file: filePath,
           format: importFormat,
           imported: importResult.imported,
-          updated: importResult.updated ?? 0,
+          updated: importResult.updated,
           skipped: importResult.skipped,
           reexported: exportCount,
           dryRun,
@@ -3085,7 +3085,7 @@ export default defineExtension({
 
         if (dryRun) {
           console.error(
-            `[dry-run] sync ${filePath}: import ${importResult.imported}, update ${importResult.updated ?? 0}, skip ${importResult.skipped}, re-export ${exportCount} item(s).`,
+            `[dry-run] sync ${filePath}: import ${importResult.imported}, update ${importResult.updated}, skip ${importResult.skipped}, re-export ${exportCount} item(s).`,
           );
           return withDroppedReport({ ...result, previews: importResult.previews }, droppedLines);
         }
@@ -3101,7 +3101,7 @@ export default defineExtension({
         // misreported as a bare "refusing to replace non-empty file" error.
         if (droppedLines.length > 0) {
           console.error(
-            `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, but DROPPED ${droppedLines.length} item(s); NOT writing ${filePath} to avoid losing them (see the 'dropped' field for file/line/reason).`,
+            `sync: imported ${importResult.imported}, updated ${importResult.updated}, but DROPPED ${droppedLines.length} item(s); NOT writing ${filePath} to avoid losing them (see the 'dropped' field for file/line/reason).`,
           );
           return withDroppedReport(result, droppedLines);
         }
@@ -3121,7 +3121,7 @@ export default defineExtension({
           console.error(`sync: imported ${importResult.imported} item(s); cleared ${filePath} because no items remain.`);
         } else {
           console.error(
-            `sync: imported ${importResult.imported}, updated ${importResult.updated ?? 0}, skipped ${importResult.skipped}; wrote ${exportCount} item(s) back to ${filePath}.`,
+            `sync: imported ${importResult.imported}, updated ${importResult.updated}, skipped ${importResult.skipped}; wrote ${exportCount} item(s) back to ${filePath}.`
           );
         }
         return result;
@@ -3201,18 +3201,18 @@ export default defineExtension({
         typeFilter: importFilter?.type,
       });
 
-      if (imported === 0 && skipped === 0 && (updated ?? 0) === 0) {
+      if (imported === 0 && skipped === 0 && updated === 0) {
         console.error("No TODO items found.");
         return { imported: 0, skipped: 0 };
       }
 
       if (dryRun) {
-        const updPart = upsert ? `, update ${updated ?? 0}` : "";
+        const updPart = upsert ? `, update ${updated}` : "";
         console.error(`[dry-run] Would import ${imported}${updPart} TODO item(s), skip ${skipped}.`);
-        return { dryRun: true, wouldImport: imported, wouldUpdate: updated ?? 0, wouldSkip: skipped, previews };
+        return { dryRun: true, wouldImport: imported, wouldUpdate: updated, wouldSkip: skipped, previews };
       }
 
-      const droppedLines = dropped ?? [];
+      const droppedLines = dropped;
       // A partial import (some lines rejected by pm) must NOT exit 0. The
       // per-line `dropped` report travels in the structured result so it reaches
       // the normal output path (stdout), and `withDroppedReport` sets the
@@ -3220,13 +3220,13 @@ export default defineExtension({
       // human scanning the terminal also sees it next to the import summary.
       if (droppedLines.length > 0) {
         console.error(
-          `Imported ${imported}${upsert ? `, updated ${updated ?? 0}` : ""}, but DROPPED ${droppedLines.length} item(s) (see the 'dropped' field for file/line/reason).`,
+          `Imported ${imported}${upsert ? `, updated ${updated}` : ""}, but DROPPED ${droppedLines.length} item(s) (see the 'dropped' field for file/line/reason).`,
         );
       } else {
-        const updPart = upsert ? `, updated ${updated ?? 0}` : "";
+        const updPart = upsert ? `, updated ${updated}` : "";
         console.error(`Imported ${imported}${updPart} TODO item(s), skipped ${skipped}.`);
       }
-      const base = upsert ? { imported, updated: updated ?? 0, skipped } : { imported, skipped };
+      const base = upsert ? { imported, updated, skipped } : { imported, skipped };
       return withDroppedReport(base, droppedLines);
     }, {
       // Declare the same file argument + flag contracts the handler already
@@ -3349,7 +3349,7 @@ export default defineExtension({
         format: readImportFormat(ctx.options),
       });
 
-      const droppedLines = dropped ?? [];
+      const droppedLines = dropped;
       // Mirror the primary importer's contract: a partial legacy import must
       // not be reported as success. The dropped report rides the structured
       // result (stdout) and withDroppedReport sets the non-zero exit code.

@@ -72,6 +72,7 @@ test("supplemental policy rejects every pm-cli 2026.8.21 SDK receipt gap", () =>
     ["unreadable item", completeEnvelope({ completeness: { status: "complete", unreadable_item_count: 1, unreadable_directory_count: 0 } }), /unreadable_item_count=1/],
     ["unreadable directory", completeEnvelope({ completeness: { status: "complete", unreadable_item_count: 0, unreadable_directory_count: 1 } }), /unreadable_directory_count=1/],
     ["missing omission", (() => { const value = completeEnvelope(); delete value.omission_receipt; return value; })(), /omission_receipt=<missing>/],
+    ["omissions flagged", completeEnvelope({ omission_receipt: { has_omissions: true, omitted_field_group_count: 0, omitted_field_groups: [] } }), /has_omissions=true/],
     ["omission count", completeEnvelope({ omission_receipt: { has_omissions: false, omitted_field_group_count: 1, omitted_field_groups: [] } }), /omitted_field_group_count=1/],
     ["omission rows", completeEnvelope({ omission_receipt: { has_omissions: false, omitted_field_group_count: 0, omitted_field_groups: ["body"] } }), /omitted_field_groups=\["body"\]/],
     ["missing read", (() => { const value = completeEnvelope(); delete value.read_output; return value; })(), /read_output=<missing>/],
