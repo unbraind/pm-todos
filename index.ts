@@ -857,10 +857,24 @@ export function filterBySection(todos: TodoItem[], section: string): TodoItem[] 
   return todos.filter((t) => (t.section ?? "").toLowerCase() === want);
 }
 
+/**
+ * Map a binary checkbox state to the configured pm status pair.
+ *
+ * @param checked - Whether the source TODO is complete.
+ * @param closedAs - Status assigned to checked TODOs.
+ * @param openAs - Status assigned to unchecked TODOs.
+ * @returns The status corresponding to the checkbox state.
+ */
 export function mapStatusToPm(checked: boolean, closedAs: string, openAs = "open"): string {
   return checked ? closedAs : openAs;
 }
 
+/**
+ * Decide whether a pm status should render as a checked source checkbox.
+ *
+ * @param status - The pm status to classify.
+ * @returns Whether the status is terminal and therefore checked.
+ */
 export function mapPmStatusToChecked(status: string): boolean {
   return status === "closed" || status === "canceled";
 }
@@ -1320,6 +1334,13 @@ export function shouldRefreshTodojsonDescription(existingDescription: string | u
   return TODOJSON_IMPORTED_DESCRIPTION_RE.test(existingDescription);
 }
 
+/**
+ * Convert an optional timestamp to a sortable epoch value.
+ *
+ * @param value - An ISO-like timestamp, or an absent/invalid value.
+ * @returns The parsed epoch milliseconds, or positive infinity for values that
+ * cannot provide a meaningful ordering.
+ */
 export function parseTimestamp(value: string | undefined): number {
   if (!value) return Number.POSITIVE_INFINITY;
   const parsed = Date.parse(value);
