@@ -442,7 +442,9 @@ test("sortItemsForContext breaks a complete urgency tie by title and handles unk
   ];
   assert.deepEqual(sortItemsForContext(items).map((item) => item.id), ["a", "b"]);
   const missingTitle = { id: "missing-title", title: undefined as unknown as string, status: "open" };
-  sortItemsForContext([missingTitle, { id: "named-title", title: "Named", status: "open" }]);
+  const namedTitle = { id: "named-title", title: "Named", status: "open" };
+  sortItemsForContext([missingTitle, namedTitle]);
+  sortItemsForContext([namedTitle, missingTitle]);
   const contextPairs = [
     [{ id: "known", title: "Known", status: "open", priority: 1 }, { id: "missing", title: "Missing", status: "mystery" }],
     [{ id: "missing", title: "Missing", status: "mystery" }, { id: "known", title: "Known", status: "open", priority: 1 }],
@@ -462,6 +464,11 @@ test("buildTodoContextSnapshot uses unknown status/type fallbacks", () => {
   ], { limit: 2, nowIso: "2026-06-10T00:00:00.000Z" });
   assert.equal(snapshot.counts.byStatus["(unknown)"], 2);
   assert.equal(snapshot.counts.byType["(none)"], 2);
+  const unknownStatuses = buildTodoContextSnapshot([
+    { id: "mystery", title: "Mystery", status: "mystery" },
+    { id: "weird", title: "Weird", status: "weird" },
+  ], { limit: 2, nowIso: "2026-06-10T00:00:00.000Z" });
+  assert.equal(unknownStatuses.totalMatched, 2);
 });
 
 test("buildTodoContextSnapshot counts an invalid normalized deadline as without-deadline", () => {
@@ -529,6 +536,10 @@ test("serializePiTodoDetails resolves equal timestamps, ids, and titles determin
     { id: "a", title: "Same", status: "open", created_at: "2026-01-01" },
     { id: undefined as unknown as string, title: "No id", status: "open", created_at: "2026-01-01" },
   ])) as { todos: Array<{ id: number; text: string }> };
+  serializePiTodoDetails([
+    { id: undefined as unknown as string, title: undefined as unknown as string, status: "open", created_at: "2026-01-01" },
+    { id: undefined as unknown as string, title: "Named", status: "open", created_at: "2026-01-01" },
+  ]);
   assert.deepEqual(output.todos.map((todo) => todo.text), ["No id", "Same", "Same"]);
 });
 

@@ -99,6 +99,20 @@ function listItems(): Array<{ id: string; title: string; status: string; tags?: 
   return (JSON.parse(runPm(["--pm-path", tracker, "list-all", "--json"])) as { items: Array<{ id: string; title: string; status: string; tags?: string[]; priority?: number; type?: string }> }).items;
 }
 
+/** Force catches that narrow unknown errors to exercise their non-Error arm. */
+async function withForeignErrorConstructor<T>(run: () => Promise<T>): Promise<T> {
+  const nativeError = globalThis.Error;
+  const foreignError = function (...args: ConstructorParameters<typeof Error>): Error {
+    return new nativeError(...args);
+  } as unknown as typeof Error;
+  Object.defineProperty(globalThis, "Error", { value: foreignError, configurable: true, writable: true });
+  try {
+    return await run();
+  } finally {
+    Object.defineProperty(globalThis, "Error", { value: nativeError, configurable: true, writable: true });
+  }
+}
+
 test("todos validate reports on a clean markdown file and returns the summary", async () => {
   const file = tempFile("v1.md", "# TODO\n\n- [ ] Real task\n- [x] Done task\n");
   const result = await harness.runCommand({ command: "todos validate", args: [file], pmRoot: tracker });
@@ -140,10 +154,10 @@ test("todos validate returns JSON issues for a warning-only file", async () => {
 });
 
 test("todos validate reports a generic read failure for a directory", async () => {
-  await assert.rejects(
+  await withForeignErrorConstructor(() => assert.rejects(
     () => harness.runCommand({ command: "todos validate", args: [root], pmRoot: tracker }),
-    (err: unknown) => err instanceof Error && /Failed to read file/.test(err.message) && !/ENOENT/.test(err.message),
-  );
+    (err: unknown) => typeof err === "object" && err !== null && "message" in err && /Failed to read file/.test(String(err.message)) && !/ENOENT/.test(String(err.message)),
+  ));
 });
 
 test("todos validate with --format todotxt/jsonl/todojson/checkbox", async () => {
@@ -350,10 +364,10 @@ test("todos sync throws USAGE when no file and NOT_FOUND for missing file", asyn
     () => harness.runCommand({ command: "todos sync", args: [join(root, "nope.md")], pmRoot: tracker }),
     (err: unknown) => err instanceof Error && /Failed to read sync file/.test(err.message),
   );
-  await assert.rejects(
+  await withForeignErrorConstructor(() => assert.rejects(
     () => harness.runCommand({ command: "todos sync", args: [root], pmRoot: tracker }),
-    (err: unknown) => err instanceof Error && /Failed to read sync file/.test(err.message) && !/ENOENT/.test(err.message),
-  );
+    (err: unknown) => typeof err === "object" && err !== null && "message" in err && /Failed to read sync file/.test(String(err.message)) && !/ENOENT/.test(String(err.message)),
+  ));
 });
 
 // ---------------------------------------------------------------------------
@@ -607,12 +621,12 @@ test("todos sync preserves a dropped report when re-export also fails", async ()
   const beforeExitCode = process.exitCode;
   try {
     const file = tempFile("s-drop-export.md", "# TODO\n\n- [ ] SyncDropExport\n");
-    const result = await harness.runCommand({
+    const result = await withForeignErrorConstructor(() => harness.runCommand({
       command: "todos sync",
       args: [file],
       options: { type: "DefinitelyMissingType", "group-by": "not-a-group" },
       pmRoot: tracker,
-    });
+    }));
     const receipt = result.result as { dropped?: Array<{ title: string }>; reexport_error?: string };
     assert.equal(receipt.dropped?.[0]?.title, "SyncDropExport");
     assert.match(receipt.reexport_error ?? "", /Unknown --group-by/);
