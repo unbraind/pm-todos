@@ -2312,7 +2312,7 @@ export function assertListAllComplete(envelope: unknown, usedFor: string): void 
 }
 
 /** Fetch current workspace items for either upsert indexing or TODO export. */
-function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
+export function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
   const maxBuffer = pmJsonMaxBuffer();
   const result = runPmCommand(["--pm-path", pmRoot, ...COMPLETE_LIST_COMMAND_ARGUMENTS], maxBuffer);
   if (result.error) {
@@ -2363,7 +2363,7 @@ export function buildJsonlImportFieldArgs(todo: Pick<NormalizedTodo,
  * Read, parse and (unless dry-run) create pm items for every TODO found across
  * the given files. Single code path shared by the command and the importer.
  */
-function runTodoImport(opts: TodoImportOptions): TodoImportResult {
+export function runTodoImport(opts: TodoImportOptions): TodoImportResult {
   let imported = 0;
   let skipped = 0;
   let updated = 0;
