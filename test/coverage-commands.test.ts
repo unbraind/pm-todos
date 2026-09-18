@@ -160,6 +160,12 @@ test("todos validate reports a generic read failure for a directory", async () =
   ));
 });
 
+test("todos validate explicitly returns the non-JSON report shape", async () => {
+  const file = tempFile("v-report.md", "- [ ] Report task\n");
+  const result = await harness.runCommand({ command: "todos validate", args: [file], global: { json: false }, pmRoot: tracker });
+  assert.equal("issues" in (result.result as Record<string, unknown>), false);
+});
+
 test("todos validate with --format todotxt/jsonl/todojson/checkbox", async () => {
   // todotxt
   const f1 = tempFile("v3.txt", "(A) Task +proj due:2026-07-01\nx Done\n");
@@ -639,6 +645,22 @@ test("todos sync preserves a dropped report when re-export also fails", async ()
 // ---------------------------------------------------------------------------
 // Importer: todos-import (legacy alias)
 // ---------------------------------------------------------------------------
+
+test("todos sync dropped re-export uses the native Error arm too", async () => {
+  const beforeExitCode = process.exitCode;
+  try {
+    const file = tempFile("s-drop-export-native.md", "# TODO\n\n- [ ] SyncDropNative\n");
+    const result = await harness.runCommand({
+      command: "todos sync", args: [file],
+      options: { type: "DefinitelyMissingType", "group-by": "not-a-group" }, pmRoot: tracker,
+    });
+    const receipt = result.result as { dropped?: Array<{ title: string }>; reexport_error?: string };
+    assert.equal(receipt.dropped?.[0]?.title, "SyncDropNative");
+    assert.match(receipt.reexport_error ?? "", /Unknown --group-by/);
+  } finally {
+    process.exitCode = beforeExitCode;
+  }
+});
 
 test("todos-import legacy importer creates items from file option", async () => {
   const file = tempFile("li1.md", "# TODO\n\n- [ ] Legacy task\n");
