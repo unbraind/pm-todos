@@ -429,12 +429,20 @@ test("sortItems covers missing, equal, and ordered priority/deadline values", ()
   ], "deadline").map((item) => item.id), ["dated", "none"]);
 });
 
+test("sortItems handles absent titles in its title comparator", () => {
+  const missing = { id: "missing", title: undefined as unknown as string, status: "open" };
+  assert.equal(sortItems([missing, { id: "named", title: "Named", status: "open" }], "title")[0]?.id, "missing");
+  assert.equal(sortItems([{ id: "named", title: "Named", status: "open" }, missing], "title")[0]?.id, "missing");
+});
+
 test("sortItemsForContext breaks a complete urgency tie by title and handles unknown fields", () => {
   const items = [
     { id: "b", title: "Zulu", status: "mystery", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
     { id: "a", title: "alpha", status: "mystery", priority: 1, deadline: "2026-06-10", updated_at: "2026-06-01" },
   ];
   assert.deepEqual(sortItemsForContext(items).map((item) => item.id), ["a", "b"]);
+  const missingTitle = { id: "missing-title", title: undefined as unknown as string, status: "open" };
+  sortItemsForContext([missingTitle, { id: "named-title", title: "Named", status: "open" }]);
   const contextPairs = [
     [{ id: "known", title: "Known", status: "open", priority: 1 }, { id: "missing", title: "Missing", status: "mystery" }],
     [{ id: "missing", title: "Missing", status: "mystery" }, { id: "known", title: "Known", status: "open", priority: 1 }],
@@ -450,9 +458,10 @@ test("buildTodoContextSnapshot uses unknown status/type fallbacks", () => {
   const snapshot = buildTodoContextSnapshot([
     { id: "unknown", title: "Unknown", status: " ", type: " " },
     { id: "open", title: "Open", status: "open", type: "Task" },
+    { id: "missing-fields", title: "Missing", status: undefined as unknown as string, type: undefined },
   ], { limit: 2, nowIso: "2026-06-10T00:00:00.000Z" });
-  assert.equal(snapshot.counts.byStatus["(unknown)"], 1);
-  assert.equal(snapshot.counts.byType["(none)"], 1);
+  assert.equal(snapshot.counts.byStatus["(unknown)"], 2);
+  assert.equal(snapshot.counts.byType["(none)"], 2);
 });
 
 test("buildTodoContextSnapshot counts an invalid normalized deadline as without-deadline", () => {
@@ -523,13 +532,21 @@ test("serializePiTodoDetails resolves equal timestamps, ids, and titles determin
   assert.deepEqual(output.todos.map((todo) => todo.text), ["No id", "Same", "Same"]);
 });
 
-test("groupItems compares two unassigned buckets without throwing", () => {
+test("groupItems compares unassigned and assigned buckets in either order", () => {
   const groups = groupItems([
     { id: "a", title: "A", status: "open" },
-    { id: "b", title: "B", status: "open" },
+    { id: "b", title: "B", status: "open", sprint: "S1" },
   ], "sprint");
-  assert.equal(groups.length, 1);
-  assert.equal(groups[0]?.heading, "(unassigned)");
+  assert.equal(groups.at(-1)?.heading, "(unassigned)");
+  const reversed = groupItems([
+    { id: "b", title: "B", status: "open", sprint: "S1" },
+    { id: "a", title: "A", status: "open" },
+  ], "sprint");
+  assert.equal(reversed.at(-1)?.heading, "(unassigned)");
+});
+
+test("filterBySection treats a missing section as empty", () => {
+  assert.deepEqual(filterBySection([{ checked: false, text: "No section", indent: 0, lineNumber: 1 }], "Backlog"), []);
 });
 
 test("preflight reports file-level todojson errors without line text", () => {
@@ -845,6 +862,19 @@ test("readCompletePmItems rejects non-JSON stdout from a successful pm process",
     else process.env.PATH = before;
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("runTodoImport applies a section filter to a task without a heading", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pm-todos-section-"));
+  const file = join(dir, "tasks.md");
+  writeFileSync(file, "- [ ] No section\n");
+  type ImportOptions = Parameters<typeof runTodoImport>[0];
+  const options: ImportOptions = {
+    files: [file], itemType: "Task", closedAs: "closed", extraTags: [], sectionTags: true,
+    section: "Backlog", dryRun: true, pmRoot: "/tmp/unused", format: "markdown",
+  };
+  assert.equal(runTodoImport(options).imported, 0);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("runTodoImport reports a missing source file before any pm write", () => {

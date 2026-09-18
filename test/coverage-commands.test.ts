@@ -24,7 +24,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { before } from "node:test";
@@ -220,6 +220,12 @@ test("todos sync imports and re-exports a markdown file", async () => {
   assert.match(readFileSync(file, "utf-8"), /<!-- pm-/);
 });
 
+test("todos sync accepts the file option when no positional argument is supplied", async () => {
+  const file = tempFile("s-option.md", "# TODO\n\n- [ ] Option file\n");
+  const result = await harness.runCommand({ command: "todos sync", options: { file }, pmRoot: tracker });
+  assert.equal((result.result as { imported: number }).imported, 1);
+});
+
 test("todos sync with --dry-run does not write", async () => {
   const file = tempFile("s2.md", "# TODO\n\n- [ ] Task\n");
   const before = readFileSync(file, "utf-8");
@@ -389,6 +395,12 @@ test("todos import with --upsert updates existing items", async () => {
   assert.equal((result.result as { imported: number; updated: number }).updated, 1);
 });
 
+test("todos import accepts the file option when no positional argument is supplied", async () => {
+  const file = tempFile("i-option.md", "- [ ] Option file\n");
+  const result = await harness.runImporter({ importer: "todos", options: { file }, pmRoot: tracker });
+  assert.equal((result.result as { imported: number }).imported, 1);
+});
+
 test("todos import with --glob matches files", async () => {
   tempFile("a.todo.md", "- [ ] task a\n");
   tempFile("b.todo.md", "- [ ] task b\n");
@@ -466,18 +478,52 @@ test("todos import with no items found reports zero", async () => {
   assert.equal((result.result as { imported: number; skipped: number }).imported, 0);
 });
 
-test("todos import reports a fallback create failure when pm returns no stderr", async () => {
+test("todos import reports both empty and non-empty pm create failures", () => {
   const fakeBin = mkdtempSync(join(root, "false-pm-"));
-  symlinkSync("/bin/false", join(fakeBin, "pm"));
+  const pmPath = join(fakeBin, "pm");
+  const file = tempFile("i-fallback.md", "- [ ] Fallback failure\n");
+  const options = {
+    files: [file], format: "markdown" as const, pmRoot: tracker, upsert: false, dryRun: false,
+    itemType: "Task", closedAs: "closed", extraTags: [], sectionTags: true,
+  };
+  const oldPath = process.env.PATH;
+  try {
+    symlinkSync("/bin/false", pmPath);
+    process.env.PATH = fakeBin;
+    assert.equal(runTodoImport(options).dropped[0]?.reason, "pm create failed");
+    rmSync(pmPath);
+    writeFileSync(pmPath, "#!/bin/sh\necho rejected >&2\nexit 1\n");
+    chmodSync(pmPath, 0o755);
+    assert.equal(runTodoImport(options).dropped[0]?.reason, "rejected\n");
+  } finally {
+    process.env.PATH = oldPath;
+    rmSync(fakeBin, { recursive: true, force: true });
+  }
+});
+
+test("todos import reports a non-empty pm update failure", () => {
+  const fakeBin = mkdtempSync(join(root, "update-fail-pm-"));
+  const pmPath = join(fakeBin, "pm");
+  const envelope = JSON.stringify({
+    items: [{ id: "pm-existing", title: "Update error", status: "open" }], count: 1, total: 1,
+    has_more: false, truncated: false, next_cursor: null,
+    filters: { status: "all", include_body: true, no_truncate: true, strict_read: true, runtime_filters: {} },
+    limit: null, requested_limit: null, effective_limit: null, source: null,
+    completeness: { status: "complete", unreadable_item_count: 0, unreadable_directory_count: 0 },
+    projection: { mode: "full", fields: null }, omission_receipt: { has_omissions: false, omitted_field_group_count: 0, omitted_field_groups: [] },
+    read_output: { contract_version: 1, command: "list", requested_dimensions: ["include", "amount", "cost"], within_budget: true, strings_compacted: false, rows_compacted: false, result_omitted: false },
+  });
+  writeFileSync(pmPath, `#!/bin/sh\ncase "$*" in\n  *list*) printf '%s' '${Buffer.from(envelope).toString("base64")}' | /usr/bin/base64 -d ;;\n  *) echo 'update rejected' >&2; exit 1 ;;\nesac\n`);
+  chmodSync(pmPath, 0o755);
   const oldPath = process.env.PATH;
   try {
     process.env.PATH = fakeBin;
-    const file = tempFile("i-fallback.md", "- [ ] Fallback failure\n");
+    const file = tempFile("i-update-failure.md", "- [ ] Update error\n");
     const result = runTodoImport({
-      files: [file], format: "markdown", pmRoot: tracker, upsert: false, dryRun: false,
+      files: [file], format: "markdown", pmRoot: tracker, upsert: true, dryRun: false,
       itemType: "Task", closedAs: "closed", extraTags: [], sectionTags: true,
     });
-    assert.equal(result.dropped?.[0]?.reason, "pm create failed");
+    assert.equal(result.dropped[0]?.reason, "update rejected\n");
   } finally {
     process.env.PATH = oldPath;
     rmSync(fakeBin, { recursive: true, force: true });
@@ -547,6 +593,14 @@ test("todos sync reports dropped lines and preserves the source file", async () 
   } finally {
     process.exitCode = beforeExitCode;
   }
+});
+
+test("todos sync propagates a re-export failure when no line was dropped", async () => {
+  const file = tempFile("s-export-fail.md", "# TODO\n\n- [ ] Export failure\n");
+  await assert.rejects(
+    () => harness.runCommand({ command: "todos sync", args: [file], options: { "group-by": "not-a-group" }, pmRoot: tracker }),
+    (err: unknown) => err instanceof Error && /Unknown --group-by/.test(err.message),
+  );
 });
 
 test("todos sync preserves a dropped report when re-export also fails", async () => {
@@ -711,4 +765,20 @@ test("preflight override resolves --glob files", async () => {
     pm_root: tracker, decision: preflightDecision,
   });
   assert.equal(result.overridden, true);
+});
+
+test("preflight override covers omitted decisions, file option, and cwd glob", async () => {
+  const file = tempFile("pf-option.md", "- [ ] task\n");
+  const fromFile = await harness.runPreflightOverride({
+    command: "todos import", args: [], options: { file },
+    global: { json: true, quiet: true } as Record<string, unknown>,
+    pm_root: tracker, decision: {} as typeof preflightDecision,
+  });
+  assert.equal(fromFile.overridden, true);
+  const fromCwd = await harness.runPreflightOverride({
+    command: "todos import", args: [], options: { glob: "package.json" },
+    global: { json: true, quiet: true } as Record<string, unknown>,
+    pm_root: tracker, decision: {} as typeof preflightDecision,
+  });
+  assert.equal(fromCwd.overridden, true);
 });
