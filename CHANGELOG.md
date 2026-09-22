@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A publish that npm accepts late is reported as failed and the GitHub Release is skipped on bun mirror lag ([pm-todos-nxi4](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-nxi4.toon))
+
+### Other
+
+- Certify pm CLI 2026.9.21 and install merge drivers through the canonical pm-ops launcher ([pm-todos-cmx2](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-cmx2.toon))
+
 ## 2026.9.18 - 2026-09-18
 
 ### Other
