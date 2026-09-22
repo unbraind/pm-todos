@@ -59,9 +59,6 @@ jobs:
             rm -f "${managed_registry}"
           fi
 
-      - name: Install pm merge drivers
-        run: ./node_modules/.bin/pm merge install
-
       - name: Verify tracked pm project health
         shell: bash
         run: |
