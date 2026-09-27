@@ -6,7 +6,7 @@ status: in_progress
 priority: 1
 tags[3]: agent-ux,"area:github","area:release"
 created_at: "2026-09-27T08:15:15.176Z"
-updated_at: "2026-09-27T08:27:21.238Z"
+updated_at: "2026-09-27T08:35:54.190Z"
 assignee: codex
 author: codex
 acceptance_criteria: "Package and lock pins updated to published CLI, pm-ops and pm-changelog; managed pm-github source exact 2026.9.26; canonical launcher and real broken-install child tests pass; strict health and full release gate pass; sync stays disabled pending privacy gate; exact-head CI and review complete."
@@ -15,9 +15,10 @@ expected_result: Project-local CLI/SDK 2026.9.27 and managed pm-github 2026.9.26
 actual_result: Main has old SDK linkage and workflow installs can drift to future unreviewed versions.
 dependencies[1]{id,kind,created_at,author,source_kind,author_source}:
   pm-todos-p60g,related,"2026-09-27T08:22:58.654Z",codex,"cli:update:dep",detected
-notes[2]{created_at,author,text}:
+notes[3]{created_at,author,text}:
   "2026-09-27T08:17:04.004Z",codex,"2026-09-27: Published CLI/SDK 2026.9.27 and pm-github 2026.9.26 installed through the project-local CLI; strict health passes with stale-item advisories. The published pm-ops launcher byte-identity test failed before copying its 2026.9.26 template, then the focused child-checkout suite passed 7/7 including incomplete directory and dangling link. Following a valid CodeRabbit privacy finding on the sibling pm-jira candidate, the checked-in scheduled sync job now has an if: false guard in addition to GitHub disabled_manually. The separate pre-push privacy gate is still absent; sync must not be enabled."
   "2026-09-27T08:27:21.211Z",codex,"2026-09-27 final guarded candidate: npm run release:check exits 0 after sync job if: false and PM link updates. 280/280 source tests pass with zero skips; index.ts honestly measures 97.87% lines, 93.33% branches, and 98.46% functions, with no statement metric. Docstring gate documents 81/81 declarations; zero production npm audit findings. Packed npm-current and bun-current against CLI/SDK 2026.9.27 and npm-minimum and bun-minimum against 2026.8.20 each imported 1 and exported 2 real fixture rows. The separate coverage item pm-todos-p60g remains open; the checked-in and GitHub scheduled sync are inert pending a fail-closed pre-push privacy gate. Exact-head CI and bot review remain to be completed after push."
+  "2026-09-27T08:35:54.168Z",codex,"2026-09-27 exact-head Greptile P1 is valid: an incomplete ancestor node_modules/pm-ops can be treated as omit-dev by the published pm-ops 2026.9.26 launcher. The canonical source issue ops-jzp5 in unmerged pm-ops #124 already scans ancestor resolution paths and tests a real hoisted incomplete install. Keep this consumer PR open until the reviewed source is published, update the pin and byte-identical template, rerun full release and packed npm/Bun acceptance, and request a fresh exact-head review. CodeRabbit reported no actionable issue, but Greptile check fails on this head."
 files[6]{path,scope,note}:
   .agents/pm/extensions/.managed-extensions.json,project,Exact managed pm-github source
   .github/workflows/ci.yml,project,CI pinned extension install
@@ -28,4 +29,7 @@ files[6]{path,scope,note}:
 tests[2]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
   "npm run release:check",project,900,codex,"2026-09-27T08:20:15.063Z",local_mutation,fix/pm-todos-cli-2026-09-27-github-pin
   node --test test/prepare-merge-driver.test.ts,project,120,codex,"2026-09-27T08:20:15.063Z",local_mutation,fix/pm-todos-cli-2026-09-27-github-pin
+docs[2]{path,scope,note}:
+  "https://github.com/unbraind/pm-ops/blob/main/.agents/pm/issues/ops-jzp5.toon",global,Canonical hoisted broken-install source issue
+  "https://github.com/unbraind/pm-ops/pull/124",global,Canonical source fix candidate pending publication
 body: ""
