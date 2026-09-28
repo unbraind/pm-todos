@@ -6,8 +6,9 @@ status: in_progress
 priority: 1
 tags[3]: agent-ux,"area:github","area:release"
 created_at: "2026-09-27T08:15:15.176Z"
-updated_at: "2026-09-28T06:20:10.124Z"
-assignee: codex
+updated_at: "2026-09-28T06:30:29.482Z"
+assignee: claude-hub
+claim_principal: claude-hub
 author: codex
 acceptance_criteria: "Package and lock pins updated to published CLI, pm-ops and pm-changelog; managed pm-github source exact 2026.9.26; canonical launcher and real broken-install child tests pass; strict health and full release gate pass; sync stays disabled pending privacy gate; exact-head CI and review complete."
 repro_steps: "On main, run pm health --strict-exit --json under host CLI 2026.9.27 and observe extension_host_pm_cli_version_skew; inspect CI and sync workflow unversioned extension installs. After updating pm-ops, the existing canonical launcher byte-identity test fails until its published template is copied."
