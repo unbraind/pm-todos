@@ -6,7 +6,7 @@ status: in_progress
 priority: 1
 tags[3]: agent-ux,"area:github","area:release"
 created_at: "2026-09-27T08:15:15.176Z"
-updated_at: "2026-09-27T08:35:54.190Z"
+updated_at: "2026-09-28T06:20:10.124Z"
 assignee: codex
 author: codex
 acceptance_criteria: "Package and lock pins updated to published CLI, pm-ops and pm-changelog; managed pm-github source exact 2026.9.26; canonical launcher and real broken-install child tests pass; strict health and full release gate pass; sync stays disabled pending privacy gate; exact-head CI and review complete."
@@ -15,6 +15,8 @@ expected_result: Project-local CLI/SDK 2026.9.27 and managed pm-github 2026.9.26
 actual_result: Main has old SDK linkage and workflow installs can drift to future unreviewed versions.
 dependencies[1]{id,kind,created_at,author,source_kind,author_source}:
   pm-todos-p60g,related,"2026-09-27T08:22:58.654Z",codex,"cli:update:dep",detected
+comments[1]{created_at,author,text}:
+  "2026-09-28T06:20:10.124Z",claude-hub,"2026-09-28: pinned pm-ops 2026.9.28 and re-copied its templates/prepare-merge-driver.ts (pm-ops#124: the omit-dev skip now checks every Node resolution path for an incomplete hoisted pm-ops, so a broken ancestor install fails instead of silently skipping the merge drivers). release:check and changelog:check pass on this branch."
 notes[3]{created_at,author,text}:
   "2026-09-27T08:17:04.004Z",codex,"2026-09-27: Published CLI/SDK 2026.9.27 and pm-github 2026.9.26 installed through the project-local CLI; strict health passes with stale-item advisories. The published pm-ops launcher byte-identity test failed before copying its 2026.9.26 template, then the focused child-checkout suite passed 7/7 including incomplete directory and dangling link. Following a valid CodeRabbit privacy finding on the sibling pm-jira candidate, the checked-in scheduled sync job now has an if: false guard in addition to GitHub disabled_manually. The separate pre-push privacy gate is still absent; sync must not be enabled."
   "2026-09-27T08:27:21.211Z",codex,"2026-09-27 final guarded candidate: npm run release:check exits 0 after sync job if: false and PM link updates. 280/280 source tests pass with zero skips; index.ts honestly measures 97.87% lines, 93.33% branches, and 98.46% functions, with no statement metric. Docstring gate documents 81/81 declarations; zero production npm audit findings. Packed npm-current and bun-current against CLI/SDK 2026.9.27 and npm-minimum and bun-minimum against 2026.8.20 each imported 1 and exported 2 real fixture rows. The separate coverage item pm-todos-p60g remains open; the checked-in and GitHub scheduled sync are inert pending a fail-closed pre-push privacy gate. Exact-head CI and bot review remain to be completed after push."
