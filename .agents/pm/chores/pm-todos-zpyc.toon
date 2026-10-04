@@ -1,45 +1,60 @@
 id: pm-todos-zpyc
-title: Certify pm-todos on CLI 2026.9.27 and pinned GitHub extension
-description: "Main pins PM CLI, pm-ops, and pm-changelog 2026.9.23 and manages pm-github 2026.8.18. Host CLI 2026.9.27 reports extension SDK-link skew. CI and the disabled scheduled sync install unversioned pm-github through an obsolete npm 10 shim and rewrite its manifest. Align published tool pins and managed extension source in both workflows, and retain the disabled sync boundary until a separate pre-push privacy gate passes."
-type: Issue
-status: blocked
+title: Certify pm-todos on PM CLI/SDK 2026.10.4 and consolidate pending dependency updates
+description: "Certify the published PM CLI/SDK 2026.10.4 with exact latest development tools, canonical pm-ops launcher, Dependabot CodeQL consolidation, strict health, full release gate, packed acceptance and real tracker npm/native-Bun dogfood. Preserve minimum host 2026.8.20, existing coverage thresholds and disabled GitHub issue-sync boundary."
+type: Chore
+status: in_progress
 priority: 1
 tags[3]: agent-ux,"area:github","area:release"
 created_at: "2026-09-27T08:15:15.176Z"
-updated_at: "2026-10-02T22:49:13.270Z"
+updated_at: "2026-10-04T11:36:08.511Z"
 author: codex
 acceptance_criteria: "Package and lock pins updated to published CLI, pm-ops and pm-changelog; managed pm-github source exact 2026.9.26; canonical launcher and real broken-install child tests pass; strict health and full release gate pass; sync stays disabled pending privacy gate; exact-head CI and review complete."
 repro_steps: "On main, run pm health --strict-exit --json under host CLI 2026.9.27 and observe extension_host_pm_cli_version_skew; inspect CI and sync workflow unversioned extension installs. After updating pm-ops, the existing canonical launcher byte-identity test fails until its published template is copied."
-expected_result: Project-local CLI/SDK 2026.9.27 and managed pm-github 2026.9.26 pass strict health; both workflows install exact source; full release and packed acceptance pass; sync stays disabled.
-actual_result: Main has old SDK linkage and workflow installs can drift to future unreviewed versions.
+expected_result: "Pinned 2026.10.4 tooling passes existing gates, health, packed consumers and read-only GitHub preview; PR stays open for orchestrator review/merge."
+actual_result: "2026-10-04: full locked release:check passed 280/280 tests, zero skips; 97.87% lines/93.33% branches/98.46% functions across index.ts (no separate statement metric). Canonical-reader, audits, package pack, four current/minimum npm/Bun packed scenarios, changelog/date/attestation gates pass. Strict health passed; GitHub atomic dry-run proposed 0 imports/2 updates/0 skips. Real tracker npx/native-Bun dogfood exported and updated all 83 items; scratch deleted. Exact-head CI and reviews remain pending; orchestrator owns merge and closure."
 dependencies[1]{id,kind,created_at,author,source_kind,author_source}:
   pm-todos-p60g,related,"2026-09-27T08:22:58.654Z",codex,"cli:update:dep",detected
-comments[4]{created_at,author,text}:
+comments[10]{created_at,author,text}:
   "2026-09-28T06:20:10.124Z",claude-hub,"2026-09-28: pinned pm-ops 2026.9.28 and re-copied its templates/prepare-merge-driver.ts (pm-ops#124: the omit-dev skip now checks every Node resolution path for an incomplete hoisted pm-ops, so a broken ancestor install fails instead of silently skipping the merge drivers). release:check and changelog:check pass on this branch."
   "2026-10-02T22:10:28.268Z",codex-sol,"Restart by codex-sol: preserved remote PR #103 and all existing bot replies/reactions were inspected. Branch is already current with origin/main. No new actionable unresolved inline finding is present. Retain documented coverage/health/publication blockers; rerun unchanged full CI gate with the host-wide flock. No merge, publish or item closure."
   "2026-10-02T22:36:28.489Z",codex-sol,"Restart: reproduced CI exact project-local npm:pm-github@2026.9.26 installation and verified package version; restored the tracked managed registry exactly as CI does. Locked npm ci and unchanged release:check pass 280/280 tests, zero skips, measured index.ts 97.87% lines / 93.33% branches / 98.46% functions; statements are not separately reported. Canonical-reader, production audit, packed npm/Bun current/minimum host acceptance, changelog/date/attestation gates pass. The linked prepare suite initially refused foreign-ref trust; acknowledged authorized commands and reran successfully. Published canonical-template identity continues to cover ancestor-install handling. Coverage pm-todos-p60g and fail-closed pre-push privacy prerequisites remain open; issue-sync workflow stays disabled. No merge, publish or close; release claim for orchestrator."
   "2026-10-02T22:48:37.309Z",codex-sol,"Valid CodeRabbit/Cubic tracking correction: the #124 link note was stale, not a current publication blocker. Updated only the current doc-link note to identify pinned published pm-ops 2026.9.28; preserved every dated comment/note/history line. Full gate at 309a379 passed 280/280 plus canonical reader and packed npm/Bun. Coverage and pre-push privacy blockers remain."
+  "2026-10-04T10:50:21.519Z",codex-sol,"2026-10-04 codex-sol: isolated certification worktree from origin/main 64552c7. Reuse this certification item, consolidate Dependabot #104 CodeQL SHA, exact latest dev pins, preserve minimum host 2026.8.20 and existing coverage thresholds; no open Dependabot alerts. Scheduled issue sync remains disabled. Orchestrator owns merge and closure."
+  "2026-10-04T10:54:06.854Z",codex-sol,"Exact dependencies installed: CLI/SDK, pm-ops, pm-changelog 2026.10.4; @types/node 26.6.4; TypeScript 7.0.2. Both npm audit --omit=dev and npm audit report zero vulnerabilities. Existing canonical byte-identity regression failed before copying the published pm-ops template, then node --test test/prepare-merge-driver.test.ts passed 7/7, zero skips. Shared host lock serializes extension restore and release acceptance."
+  "2026-10-04T11:01:06.457Z",codex-sol,"Full gate failed test-first: CLI 2026.10.4 correctly refuses incomplete 10,000-entry local checkout installs (extension_install_incomplete_source_scan) in coverage-commands, import-close-reason and rich JSONL integration fixtures. Replace checkout scanning with npm pack --ignore-scripts distribution artifacts and canonical package install; preserve all original behavior/doctor assertions and coverage thresholds. No upstream defect: this is the intended fail-closed installer behavior."
+  "2026-10-04T11:10:07.880Z",codex-sol,"Real tracker packed dogfood passed under npx -y @unbrained/pm-cli@2026.10.4 and bunx --bun @unbrained/pm-cli@2026.10.4: version=2026.10.4; --json todos export --format jsonl --output <scratch>/real-<launcher>.jsonl exported all 83 parseable rows; --json todos import <file> --format jsonl --upsert --dry-run proposed 0 imports/83 updates/0 skips; actual upsert reported 0 imports/83 updates/0 skips. Only scratch copies were mutated and the scratch root was deleted. Exact command suffixes and receipts are in docs/certification-2026.10.4.md."
+  "2026-10-04T11:16:49.942Z",codex-sol,"Second full gate: 280/280 tests, zero skips; index.ts 97.87% lines/93.33% branches/98.46% functions, canonical-reader and audit pass. Packed acceptance failed test-first because pm test exports PM_PATH for its tracker sandbox and accept-packed inherited it into independent scenarios. Scope PM_PATH explicitly to each scenario-local .agents/pm so no ambient tracker can be reinitialized; preserve all four current/minimum npm/Bun scenarios and exact assertions."
+  "2026-10-04T11:36:06.433Z",codex-sol,"Final full gate passed via npx pm test pm-todos-zpyc --run --only-index 3 --progress --pm-context tracker --override-linked-pm-context; linked command is flock /tmp/claude-1000/heavy-gate.lock npm run release:check. 280/280 tests, zero skips; 97.87/93.33/98.46 measured line/branch/function coverage; four packed current/minimum npm/Bun scenarios pass. Releasing claim for orchestrator; item stays in_progress and open for review/merge verification."
 notes[3]{created_at,author,text}:
   "2026-09-27T08:17:04.004Z",codex,"2026-09-27: Published CLI/SDK 2026.9.27 and pm-github 2026.9.26 installed through the project-local CLI; strict health passes with stale-item advisories. The published pm-ops launcher byte-identity test failed before copying its 2026.9.26 template, then the focused child-checkout suite passed 7/7 including incomplete directory and dangling link. Following a valid CodeRabbit privacy finding on the sibling pm-jira candidate, the checked-in scheduled sync job now has an if: false guard in addition to GitHub disabled_manually. The separate pre-push privacy gate is still absent; sync must not be enabled."
   "2026-09-27T08:27:21.211Z",codex,"2026-09-27 final guarded candidate: npm run release:check exits 0 after sync job if: false and PM link updates. 280/280 source tests pass with zero skips; index.ts honestly measures 97.87% lines, 93.33% branches, and 98.46% functions, with no statement metric. Docstring gate documents 81/81 declarations; zero production npm audit findings. Packed npm-current and bun-current against CLI/SDK 2026.9.27 and npm-minimum and bun-minimum against 2026.8.20 each imported 1 and exported 2 real fixture rows. The separate coverage item pm-todos-p60g remains open; the checked-in and GitHub scheduled sync are inert pending a fail-closed pre-push privacy gate. Exact-head CI and bot review remain to be completed after push."
   "2026-09-27T08:35:54.168Z",codex,"2026-09-27 exact-head Greptile P1 is valid: an incomplete ancestor node_modules/pm-ops can be treated as omit-dev by the published pm-ops 2026.9.26 launcher. The canonical source issue ops-jzp5 in unmerged pm-ops #124 already scans ancestor resolution paths and tests a real hoisted incomplete install. Keep this consumer PR open until the reviewed source is published, update the pin and byte-identical template, rerun full release and packed npm/Bun acceptance, and request a fresh exact-head review. CodeRabbit reported no actionable issue, but Greptile check fails on this head."
-files[6]{path,scope,note}:
+files[10]{path,scope,note}:
   .agents/pm/extensions/.managed-extensions.json,project,Exact managed pm-github source
   .github/workflows/ci.yml,project,CI pinned extension install
+  .github/workflows/codeql.yml,project,Dependabot #104 exact pinned SHA
   .github/workflows/pm-github-sync.yml,project,Disabled and inert issue-sync job
+  package-lock.json,project,Exact npm resolution for certification
   package.json,project,Published CLI and quality-tool pins
+  scripts/accept-packed.ts,project,Isolate scenario tracker from linked-test PM_PATH
   scripts/prepare-merge-driver.ts,project,Published pm-ops launcher template
+  test/packed-fixture.ts,project,Shared packed-artifact fixture for fail-closed 2026.10.4 installer
   test/prepare-merge-driver.test.ts,project,Real incomplete and dangling install fixtures
-tests[2]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
+tests[4]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
   "npm run release:check",project,900,codex,"2026-09-27T08:20:15.063Z",local_mutation,fix/pm-todos-cli-2026-09-27-github-pin
   node --test test/prepare-merge-driver.test.ts,project,120,codex,"2026-09-27T08:20:15.063Z",local_mutation,fix/pm-todos-cli-2026-09-27-github-pin
-docs[3]:
+  "flock /tmp/claude-1000/heavy-gate.lock npm run release:check",project,2400,codex-sol,"2026-10-04T10:51:32.568Z",local_mutation,chore/pm-todos-pm-cli-2026-10-4
+  "flock /tmp/claude-1000/heavy-gate.lock npm run accept:packed",project,2400,codex-sol,"2026-10-04T11:16:53.205Z",local_mutation,chore/pm-todos-pm-cli-2026-10-4
+docs[4]:
   - path: "https://github.com/unbraind/pm-ops/blob/main/.agents/pm/issues/ops-jzp5.toon"
     scope: global
     note: Canonical hoisted broken-install source issue
   - path: "https://github.com/unbraind/pm-ops/pull/124"
     scope: global
-    note: Canonical source fix published in pinned pm-ops 2026.9.28
+    note: Canonical source fix included in pinned published pm-ops 2026.10.4
+  - path: docs/certification-2026.10.4.md
+    scope: project
+    note: Gate and real tracker packed npm/Bun receipts
   - path: README.md
     scope: project
 body: ""

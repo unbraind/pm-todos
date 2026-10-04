@@ -29,6 +29,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { before, beforeEach } from "node:test";
 
+import { packExtension } from "./packed-fixture.ts";
+
 import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
 import type { ExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
 
@@ -55,7 +57,7 @@ const env: NodeJS.ProcessEnv = {
   XDG_DATA_HOME: xdgData,
 };
 execFileSync(pmBin, ["init", tracker, "--json"], { cwd: root, env, encoding: "utf-8" });
-execFileSync(pmBin, ["--pm-path", tracker, "install", process.cwd(), "--project", "--json"], {
+execFileSync(pmBin, ["--pm-path", tracker, "package", "install", packExtension(root), "--project", "--json"], {
   cwd: root, env, encoding: "utf-8",
 });
 

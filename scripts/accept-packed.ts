@@ -123,6 +123,9 @@ try {
     mkdirSync(isolatedData);
     const scenarioEnvironment: NodeJS.ProcessEnv = {
       ...cleanEnvironment,
+      // A linked pm test exports its own tracker path; each consumer must
+      // initialize and exercise only its scenario-local tracker.
+      PM_PATH: join(scenarioRoot, ".agents", "pm"),
       PM_GLOBAL_PATH: join(scenarioRoot, "global-pm"),
       XDG_CONFIG_HOME: isolatedConfig,
       XDG_DATA_HOME: isolatedData,

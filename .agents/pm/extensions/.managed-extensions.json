@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "updated_at": "2026-09-27T08:13:55.807Z",
+  "updated_at": "2026-10-04T10:56:46.221Z",
   "entries": [
     {
       "name": "pm-github",
       "directory": "pm-github",
       "scope": "project",
-      "manifest_version": "2026.9.26",
+      "manifest_version": "2026.10.4",
       "manifest_entry": "./dist/index.js",
       "capabilities": [
         "commands",
@@ -94,13 +94,13 @@
         ]
       },
       "installed_at": "2026-08-28T20:03:22.833Z",
-      "updated_at": "2026-09-27T08:13:55.772Z",
+      "updated_at": "2026-10-04T10:56:46.095Z",
       "source": {
         "kind": "npm",
-        "input": "npm:pm-github@2026.9.26",
+        "input": "npm:pm-github@2026.10.4",
         "location": "package",
         "package": "pm-github",
-        "version": "2026.9.26"
+        "version": "2026.10.4"
       }
     }
   ]
