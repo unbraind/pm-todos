@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Other
+
+- Auto-merge green Dependabot updates and group the pm toolchain into one daily PR ([pm-todos-jvp5](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-jvp5.toon))
+
 ## 2026.9.26 - 2026-09-26
 
 ### Other
