@@ -53,3 +53,14 @@ only. Both exported files contained 83 parseable JSONL rows. All commands exited
 0. The scratch copy was deleted afterward. This establishes command operation
 on the real tracker; rich-field fidelity remains covered separately by the
 integration fixture. All heavy commands held the shared host lock.
+
+Greptile review follow-up: a malformed lookup-path child fixture (node_modules
+as a regular file) fails against the old launcher with ENOTDIR and passes the
+unchanged canonical pm-ops 2026.10.4 template with MODULE_NOT_FOUND and no skip
+notice. The scoped launcher suite passes 8/8. The subsequent full PM-linked
+locked release gate passes **281/281 tests, zero skips**, with unchanged
+97.87% lines / 93.33% branches / 98.46% functions and all four packed scenarios.
+Statements remain unmeasured. Acceptance criteria now name managed pm-github
+2026.10.4; the linked gate creates `/tmp/claude-1000` before acquiring the same
+mandatory heavy lock. Sourcery weekly and Cubic monthly quota notices remain
+missing substantive review evidence.
