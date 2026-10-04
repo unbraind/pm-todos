@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { packExtension } from "./packed-fixture.ts";
+
 test("installed package preserves rich JSONL context through the pm store", () => {
   const root = mkdtempSync(join(tmpdir(), "pm-todos-jsonl-"));
   const tracker = join(root, "tracker");
@@ -34,9 +36,9 @@ test("installed package preserves rich JSONL context through the pm store", () =
 
   try {
     runPm(["init", tracker, "--json"]);
-    runPm(["--pm-path", tracker, "install", process.cwd(), "--project", "--json"]);
+    runPm(["--pm-path", tracker, "package", "install", packExtension(root), "--project", "--json"]);
     const doctor = JSON.parse(runPm(["--pm-path", tracker, "package", "doctor", "--project", "--detail", "deep", "--json"]));
-    // This fixture installs the package from a local directory, which has no GitHub
+    // This fixture installs a packed archive, which has no GitHub
     // release feed, so the update-health probe cannot cover it. pm-cli 2026.9.8
     // (GH-1219) began reporting that skip instead of counting it as covered, so the
     // truthful result here is exactly one partial-coverage warning naming the reason.

@@ -20,6 +20,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { packExtension } from "./packed-fixture.ts";
+
 /** The pm binary shipped with the installed dev dependency. */
 const pmBin = join(process.cwd(), "node_modules", ".bin", "pm");
 
@@ -98,11 +100,11 @@ function freshWorkspace(): {
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   };
   // Bootstrap the tracker and install this package as a project extension.
-  // The package is installed from its own source (process.cwd()), so the test
-  // exercises the code in this repository, not a stale published build.
+  // The artifact is packed from this checkout after the test script builds it,
+  // so the fixture exercises this repository rather than a published build.
   assert.equal(run(["init", tracker, "--json"]).status, 0, "pm init must succeed");
   assert.equal(
-    run(["--pm-path", tracker, "install", process.cwd(), "--project", "--json"]).status,
+    run(["--pm-path", tracker, "package", "install", packExtension(root), "--project", "--json"]).status,
     0,
     "pm install of this package must succeed",
   );
