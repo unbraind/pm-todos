@@ -64,3 +64,19 @@ Statements remain unmeasured. Acceptance criteria now name managed pm-github
 2026.10.4; the linked gate creates `/tmp/claude-1000` before acquiring the same
 mandatory heavy lock. Sourcery weekly and Cubic monthly quota notices remain
 missing substantive review evidence.
+
+CodeRabbit Windows pack follow-up: npm.cmd with shell mode can split a spaced
+pack destination. The helper now invokes npm's JavaScript entrypoint through
+Node on Windows with `shell: false`, retaining literal arguments on POSIX. Four
+regressions cover Windows entrypoint selection, fallback, unchanged POSIX argv
+and a real subprocess with a spaced entrypoint and ampersand/percent destination.
+Three Windows cases failed before the fix; all four pass afterwards. This is a
+portable invocation/argv test, not native Windows execution. The separate packed
+linked command now also creates the shared-lock parent before flock.
+
+The final full PM-linked gate passes **285/285 tests, zero skips**, with unchanged
+97.87% lines / 93.33% branches / 98.46% functions and all four current/minimum
+npm/Bun packed scenarios. Statements remain unmeasured. Exact runner:
+`npx pm test pm-todos-zpyc --run --only-index 3 --progress --pm-context tracker
+--override-linked-pm-context`, executing `mkdir -p /tmp/claude-1000 && flock
+/tmp/claude-1000/heavy-gate.lock npm run release:check`.
