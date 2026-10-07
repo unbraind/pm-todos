@@ -6,7 +6,7 @@ status: closed
 priority: 2
 tags: []
 created_at: "2026-10-07T12:47:36.501Z"
-updated_at: "2026-10-07T18:39:52.277Z"
+updated_at: "2026-10-07T22:36:39.140Z"
 closed_at: "2026-10-07T18:39:51.762Z"
 completed_at: "2026-10-07T18:39:51.762Z"
 author: codex-sol
@@ -62,5 +62,5 @@ tests[4]:
 docs[2]{path,scope}:
   docs/todotxt-fidelity.md,project
   README.md,project
-close_reason: "Merged in #110 (fc4c11f). Explicit --todotxt-mapping fidelity on import, export and sync keeps +project vs @context, spelling, duplicates, token order, source dates, key:value tokens and A-Z priorities; the default mapping is unchanged. Review found a pre-existing data-loss path: rows sharing a title signature or resolving to one item collapsed into one exported row. The upsert preflight now refuses ambiguous signatures and shared targets before any write. Orchestrator verification: 2000/2000 generated lines round-trip exactly in fidelity mode; default output byte-identical to main on the same lines; preflight and target-check revert proofs; npm+Bun release:check; CodeRabbit full review at 43998fb: no actionable comments."
+close_reason: "Merged in #110 (fc4c11f). Explicit --todotxt-mapping fidelity on import, export and sync keeps +project vs @context, spelling, duplicates, token order, source dates, key:value tokens and A-Z priorities; the default mapping is unchanged. Review found a pre-existing data-loss path: rows sharing a title signature or resolving to one item collapsed into one exported row; the upsert preflight now refuses ambiguous signatures and shared targets before any write. Committed evidence: the fidelity test's generator round-trips 312/312 cases (test/todotxt-fidelity.test.ts), preflight and target-check tests fail on behavioural revert, npm+Bun release:check pass, and CodeRabbit's full review at 43998fb had no actionable comments. Additional out-of-tree orchestrator checks (scripts not committed): 2000/2000 independently generated lines round-tripped exactly in fidelity mode, and default-mode output matched main byte-for-byte on the same lines."
 body: ""
