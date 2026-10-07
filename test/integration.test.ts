@@ -45,7 +45,7 @@ test("installed package preserves rich JSONL context through the pm store", () =
     // Asserting the exact list rather than merely tolerating warnings keeps any OTHER
     // warning — the ones this test exists to catch — a failure.
     assert.deepEqual(doctor.warnings, ["extension_update_health_partial_coverage:skipped_non_github:1"]);
-    assert.equal(doctor.details.deep.activation.registration_counts.item_fields, 5);
+    assert.equal(doctor.details.deep.activation.registration_counts.item_fields, 6);
 
     runPm(["--pm-path", tracker, "todos", "import", input, "--format", "jsonl", "--upsert", "--json"]);
     runPm(["--pm-path", tracker, "todos", "export", "--format", "jsonl", "--output", output, "--json"]);

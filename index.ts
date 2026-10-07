@@ -95,6 +95,8 @@ interface PmItem {
   kv?: Record<string, string>;
   /** pm-todos extension fields used to preserve source-only JSONL metadata. */
   todos_kv?: Record<string, string>;
+  /** Original todo.txt line, retained only by the explicit fidelity mapping. */
+  todos_todotxt?: string;
   todos_creation_date?: string;
   todos_completion_date?: string;
   todos_source_created_at?: string;
@@ -116,6 +118,9 @@ interface PiTodoDetails {
 
 type TodoImportFormat = "markdown" | "todotxt" | "todojson" | "jsonl" | "checkbox";
 type TodoExportFormat = "markdown" | "todotxt" | "tasklist" | "todojson" | "jsonl" | "checkbox";
+
+/** todo.txt mapping: legacy folded tags, or ordered source provenance. */
+export type TodoTxtMapping = "tags" | "fidelity";
 
 /** Priority-rendering scheme for markdown/tasklist metadata tokens. */
 type PriorityMapScheme = "number" | "letter";
@@ -234,6 +239,13 @@ function readExportFormat(options: Record<string, unknown>): TodoExportFormat {
     return "checkbox";
   }
   throw new CommandError(`Unknown --format '${raw}' (expected markdown|todotxt|tasklist|todojson|jsonl|checkbox)`, EXIT_CODE.USAGE);
+}
+
+/** Read the shared SDK/CLI todo.txt mapping policy; reject unknown modes. */
+function readTodoTxtMapping(options: Record<string, unknown>): TodoTxtMapping {
+  const raw = readStringOption(options, "todotxt-mapping", "todotxtMapping") ?? "tags";
+  if (raw === "tags" || raw === "fidelity") return raw;
+  throw new CommandError(`Unknown --todotxt-mapping '${raw}' (expected tags|fidelity)`, EXIT_CODE.USAGE);
 }
 
 /**
@@ -945,6 +957,10 @@ export function withDroppedReport<T extends object>(
  *   - everything else is the description text
  */
 interface TodoTxtItem {
+  /** Original line, with whitespace normalized on fidelity export. */
+  raw: string;
+  /** Ordered description tokens before projects/contexts/metadata are removed. */
+  bodyTokens: string[];
   done: boolean;
   /** Priority letter A..Z (uppercase) or undefined. */
   priorityLetter?: string;
@@ -1095,6 +1111,8 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
   }
 
   return {
+    raw: line.trim(),
+    bodyTokens: words,
     done,
     priorityLetter,
     text: textWords.join(" ").trim(),
@@ -1138,75 +1156,90 @@ export function parseTodoTxt(content: string): TodoTxtItem[] {
 }
 
 /**
- * Serialize a single pm item to a todo.txt line. `+project`/`@context` are
- * derived from tags (todo.txt has no separate notion), `due:` from deadline.
+ * Serialize a PM item using legacy tags by default. Fidelity mode retains
+ * source token order and spelling while reflecting current PM edits. New tags
+ * append as projects; a changed title moves ahead of the retained metadata.
  */
-export function serializeTodoTxtLine(item: PmItem): string {
+export function serializeTodoTxtLine(item: PmItem, mapping: TodoTxtMapping = "tags"): string {
+  const source = mapping === "fidelity" && item.todos_todotxt
+    ? parseTodoTxtLine(item.todos_todotxt) : null;
   const parts: string[] = [];
   const done = mapPmStatusToChecked(item.status);
+  const completionDate = item.todos_completion_date ?? item.completionDate;
+  const creationDate = item.todos_creation_date ?? item.creationDate;
+  const kv = item.todos_kv ?? item.kv;
   if (done) parts.push("x");
+  if (done && completionDate && DATE_RE.test(completionDate)) parts.push(completionDate);
 
-  // Completion date follows the `x` marker (todo.txt: `x <completion> …`).
-  // Only meaningful for done items.
-  if (done && item.completionDate && DATE_RE.test(item.completionDate)) {
-    parts.push(item.completionDate);
+  const letter = source && (priorityLetterToPm(source.priorityLetter) ?? 2) === item.priority
+    ? source.priorityLetter : pmPriorityToLetter(item.priority);
+  if (letter && (!done || source)) parts.push(`(${letter})`);
+  if (creationDate && DATE_RE.test(creationDate)) parts.push(creationDate);
+
+  const tags = item.tags ?? [];
+  const due = item.deadline && DATE_RE.test(item.deadline.slice(0, 10)) ? item.deadline.slice(0, 10) : undefined;
+  const seenTags = new Set<string>();
+  const seenKeys = new Set<string>();
+  if (source) {
+    if (item.title !== source.text) parts.push(item.title);
+    for (const token of source.bodyTokens) {
+      if (token.length > 1 && (token[0] === "+" || token[0] === "@")) {
+        const tag = token.slice(1).toLowerCase();
+        if (tags.some((current) => current.toLowerCase() === tag)) parts.push(token);
+        seenTags.add(tag);
+      } else if (/^[^\s:]+:[^\s:]+$/.test(token)) {
+        const [key, value] = token.split(":");
+        const current = key === "due" ? due : kv?.[key];
+        const original = key === "due" ? source.due : source.kv[key];
+        if (current) parts.push(`${key}:${current === original ? value : current}`);
+        seenKeys.add(key);
+      } else if (item.title === source.text) {
+        parts.push(token);
+      }
+    }
+  } else {
+    parts.push(item.title);
   }
-
-  const letter = pmPriorityToLetter(item.priority);
-  if (letter && !done) parts.push(`(${letter})`);
-
-  // Creation date sits before the description (after priority on an open item,
-  // after the completion date on a done item) — the position the parser reads.
-  if (item.creationDate && DATE_RE.test(item.creationDate)) {
-    parts.push(item.creationDate);
+  for (const tag of tags) {
+    if (!seenTags.has(tag.toLowerCase())) parts.push(`+${tag}`);
   }
-
-  parts.push(item.title);
-
-  for (const tag of item.tags ?? []) {
-    parts.push(`+${tag}`);
-  }
-  if (item.deadline) {
-    const date = item.deadline.slice(0, 10);
-    if (DATE_RE.test(date)) parts.push(`due:${date}`);
-  }
-  // Arbitrary key:value metadata preserved verbatim (sorted for stable output).
-  if (item.kv) {
-    for (const key of Object.keys(item.kv).sort()) {
-      const val = item.kv[key];
-      if (val !== undefined && val !== "") parts.push(`${key}:${val}`);
+  if (due && !seenKeys.has("due")) parts.push(`due:${due}`);
+  if (kv) {
+    for (const key of Object.keys(kv).sort()) {
+      const value = kv[key];
+      if (!seenKeys.has(key) && value !== undefined && value !== "") parts.push(`${key}:${value}`);
     }
   }
   return parts.join(" ");
 }
 
 /**
- * Convert a parsed todo.txt item into the PmItem shape used by the serializer.
- * Preserves the structured fields (priority, projects/contexts as tags, due as
- * deadline, creation/completion dates, and arbitrary key:value metadata) so a
- * `parse → toPm → serialize` cycle is lossless on all captured fields. Used for
- * round-trip fidelity (and testing); not a pm persistence path.
+ * Convert a parsed todo.txt item under the same policy as persisted imports.
+ * Tags mode folds projects/contexts together and clamps priorities to A..E.
+ * Fidelity mode also carries ordered source provenance, including duplicates
+ * and priorities A..Z. Serialization requires the same explicit mapping.
  */
-export function todoTxtItemToPm(item: TodoTxtItem, id = ""): PmItem {
+export function todoTxtItemToPm(item: TodoTxtItem, id = "", mapping: TodoTxtMapping = "tags"): PmItem {
   return {
     id,
     title: item.text,
     status: item.done ? "closed" : "open",
-    priority: priorityLetterToPm(item.priorityLetter),
+    priority: priorityLetterToPm(item.priorityLetter) ?? (mapping === "fidelity" ? 2 : undefined),
     tags: [...item.projects, ...item.contexts],
     deadline: item.due,
     creationDate: item.creationDate,
     completionDate: item.completionDate,
     kv: Object.keys(item.kv).length > 0 ? { ...item.kv } : undefined,
+    ...(mapping === "fidelity" ? { todos_todotxt: item.raw } : {}),
   };
 }
 
 /**
  * Serialize pm items to a todo.txt document (one line per item, trailing NL).
  */
-export function serializeTodoTxt(items: PmItem[]): string {
+export function serializeTodoTxt(items: PmItem[], mapping: TodoTxtMapping = "tags"): string {
   if (items.length === 0) return "";
-  return items.map(serializeTodoTxtLine).join("\n") + "\n";
+  return items.map((item) => serializeTodoTxtLine(item, mapping)).join("\n") + "\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -1397,7 +1430,7 @@ export function serializePiTodoDetails(items: PmItem[]): string {
 const JSONL_KEYS = [
   "id", "title", "description", "status", "type", "priority",
   "tags", "deadline", "assignee", "sprint", "created_at", "updated_at",
-  "creationDate", "completionDate", "kv",
+  "creationDate", "completionDate", "kv", "todos_todotxt",
 ] as const;
 
 /**
@@ -1475,6 +1508,7 @@ export function parseJsonl(content: string): PmItem[] {
     if (typeof parsed.sprint === "string") item.sprint = parsed.sprint;
     if (typeof parsed.created_at === "string") item.created_at = parsed.created_at;
     if (typeof parsed.updated_at === "string") item.updated_at = parsed.updated_at;
+    if (typeof parsed.todos_todotxt === "string") item.todos_todotxt = parsed.todos_todotxt;
     if (typeof parsed.creationDate === "string") item.creationDate = parsed.creationDate;
     if (typeof parsed.completionDate === "string") item.completionDate = parsed.completionDate;
     if (isRecord(parsed.kv)) {
@@ -1857,6 +1891,8 @@ interface TodoImportOptions {
   pmRoot: string;
   /** Source format: markdown checkboxes (default) or todo.txt. */
   format: TodoImportFormat;
+  /** todo.txt provenance policy shared with the SDK conversion. */
+  todoTxtMapping?: TodoTxtMapping;
   /**
    * When true, re-importing matches existing pm items and UPDATES them instead
    * of creating duplicates. Matching keys (in order): the embedded
@@ -1900,6 +1936,7 @@ interface NormalizedTodo {
   creationDate?: string;
   completionDate?: string;
   kv?: Record<string, string>;
+  todoTxtSource?: string;
 }
 
 /**
@@ -1910,6 +1947,7 @@ function parseFileToNormalized(
   md: string,
   file: string | undefined,
   format: TodoImportFormat,
+  mapping: TodoTxtMapping = "tags",
 ): NormalizedTodo[] {
   if (format === "todojson") {
     return parsePiTodoDetails(md).todos.map((item) => ({
@@ -1946,6 +1984,7 @@ function parseFileToNormalized(
       creationDate: item.creationDate,
       completionDate: item.completionDate,
       kv: item.kv,
+      todoTxtSource: item.todos_todotxt,
     }));
   }
 
@@ -1955,13 +1994,19 @@ function parseFileToNormalized(
     for (let i = 0; i < lines.length; i++) {
       const item = parseTodoTxtLine(lines[i]);
       if (!item) continue;
-      const tags = [...item.projects, ...item.contexts];
+      const mapped = todoTxtItemToPm(item, "", mapping);
       out.push({
         checked: item.done,
         text: item.text,
-        priority: priorityLetterToPm(item.priorityLetter),
-        tags,
-        deadline: item.due,
+        priority: mapped.priority,
+        tags: mapped.tags ?? [],
+        deadline: mapped.deadline,
+        ...(mapping === "fidelity" ? {
+          creationDate: mapped.creationDate,
+          completionDate: mapped.completionDate,
+          kv: mapped.kv,
+          todoTxtSource: mapped.todos_todotxt,
+        } : {}),
         indent: 0,
         lineNumber: i + 1,
         file,
@@ -2260,7 +2305,7 @@ export function readItemsFromListAll(parsed: unknown, usedFor = "the TODO operat
       throw new CommandError(`Refusing unverifiable pm list --all output: item ${item.id} needs string title and status.`);
     }
     const row: PmItem = { id: item.id, title: item.title, status: item.status };
-    for (const field of ["description", "type", "deadline", "assignee", "sprint", "created_at", "updated_at", "todos_creation_date", "todos_completion_date", "todos_source_created_at", "todos_source_updated_at"] as const) {
+    for (const field of ["description", "type", "deadline", "assignee", "sprint", "created_at", "updated_at", "todos_creation_date", "todos_completion_date", "todos_source_created_at", "todos_source_updated_at", "todos_todotxt"] as const) {
       if (item[field] !== undefined && typeof item[field] !== "string") {
         throw new CommandError(`Refusing unverifiable pm list --all output: item ${item.id} field ${field} must be a string when present.`);
       }
@@ -2315,16 +2360,17 @@ function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
 }
 
 /**
- * Convert JSONL-only metadata into namespaced extension fields. pm owns its
+ * Convert source metadata into namespaced extension fields for JSONL or todo.txt. pm owns its
  * audit timestamps and reserved `kv` slot, so imports must not overwrite those
  * internals. Namespaced fields preserve the source payload losslessly and the
  * JSONL serializer maps them back to the public JSONL keys on export.
  */
 export function buildJsonlImportFieldArgs(todo: Pick<NormalizedTodo,
-  "kv" | "creationDate" | "completionDate" | "createdAt" | "updatedAt"
+  "kv" | "creationDate" | "completionDate" | "createdAt" | "updatedAt" | "todoTxtSource"
 >): string[] {
   const fields: Array<[string, string | Record<string, string> | undefined]> = [
     ["todos_kv", todo.kv],
+    ["todos_todotxt", todo.todoTxtSource],
     ["todos_creation_date", todo.creationDate],
     ["todos_completion_date", todo.completionDate],
     ["todos_source_created_at", todo.createdAt],
@@ -2384,7 +2430,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
       throw new CommandError(`Failed to read file ${file}: ${msg}`, exitCode);
     }
 
-    let todos = parseFileToNormalized(md, file, opts.format);
+    let todos = parseFileToNormalized(md, file, opts.format, opts.todoTxtMapping);
     if (opts.section && opts.format === "markdown") {
       const want = opts.section.trim().toLowerCase();
       todos = todos.filter((t) => (t.section ?? "").toLowerCase() === want);
@@ -2498,13 +2544,28 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             }
           }
           if (priority !== undefined && priority !== "") updArgs.push("--priority", priority);
-          if (tags.length > 0) updArgs.push("--tags", tags.join(",")); // --tags replaces
+          if (tags.length > 0 || (opts.format === "todotxt" && opts.todoTxtMapping === "fidelity")) updArgs.push("--tags", tags.join(",")); // --tags replaces
           if (todo.deadline) updArgs.push("--deadline", todo.deadline);
           if (opts.format === "jsonl") {
             if (todo.description !== undefined) updArgs.push("--description", todo.description);
             if (todo.assignee) updArgs.push("--assignee", todo.assignee);
             if (todo.sprint) updArgs.push("--sprint", todo.sprint);
             updArgs.push(...buildJsonlImportFieldArgs(todo));
+          }
+          if (opts.format === "todotxt") {
+            if (opts.todoTxtMapping === "fidelity") {
+              if (priority === undefined) updArgs.push("--priority", "2");
+              if (!todo.deadline) updArgs.push("--unset", "deadline");
+            }
+            updArgs.push(...buildJsonlImportFieldArgs(todo));
+            for (const [field, value] of [
+              ["todos_todotxt", todo.todoTxtSource],
+              ["todos_creation_date", todo.creationDate],
+              ["todos_completion_date", todo.completionDate],
+              ["todos_kv", todo.kv],
+            ] as const) {
+              if (value === undefined) updArgs.push("--unset", field);
+            }
           }
           const todojsonTodoId = opts.format === "todojson" ? todo.todoId : undefined;
           const todojsonDescription = todojsonTodoId !== undefined
@@ -2560,6 +2621,8 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             spawnArgs.push(...buildJsonlImportFieldArgs(todo));
           }
 
+          if (opts.format === "todotxt") spawnArgs.push(...buildJsonlImportFieldArgs(todo));
+
           const result = runPmCommand(spawnArgs);
           if (result.status !== 0) {
             throw new Error(result.stderr || "pm create failed");
@@ -2610,6 +2673,8 @@ interface TodoExportOptions {
   pmRoot: string;
   /** Output format: markdown (default), todotxt, tasklist, todojson, jsonl, or checkbox. */
   format?: TodoExportFormat;
+  /** Explicit todo.txt serialization policy. */
+  todoTxtMapping?: TodoTxtMapping;
   /** Section grouping for markdown/tasklist: status (default) | sprint | type. */
   groupBy?: string;
   /** Optional ordering applied after filtering: priority | deadline | title. */
@@ -2726,7 +2791,7 @@ function buildTodoMarkdown(opts: TodoExportOptions): { markdown: string; count: 
   const priorityMap = opts.priorityMap ?? "number";
 
   if (format === "todotxt") {
-    return { markdown: serializeTodoTxt(items), count: items.length };
+    return { markdown: serializeTodoTxt(items, opts.todoTxtMapping), count: items.length };
   }
   if (format === "todojson") {
     return { markdown: serializePiTodoDetails(items), count: items.length };
@@ -2768,6 +2833,7 @@ export default defineExtension({
   activate(api: ExtensionApi) {
     api.registerItemFields([
       { name: "todos_kv", type: "object", optional: true },
+      { name: "todos_todotxt", type: "string", optional: true },
       { name: "todos_creation_date", type: "string", optional: true },
       { name: "todos_completion_date", type: "string", optional: true },
       { name: "todos_source_created_at", type: "string", optional: true },
@@ -2929,6 +2995,7 @@ export default defineExtension({
       flags: [
         { long: "--file", value_name: "path", description: "Path to the TODO file (alternative to the positional argument)" },
         { long: "--format", value_name: "fmt", description: "File format: markdown (default), todotxt, todojson, jsonl, or checkbox" },
+        { long: "--todotxt-mapping", value_name: "mode", description: "todo.txt mapping: tags (default, lossy) | fidelity (retain ordered source tokens)" },
         { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
         { long: "--closed-as", value_name: "status", description: "Status for checked items (default: closed)" },
         { long: "--status", value_name: "status", description: "Status for open/unchecked items (default: open)" },
@@ -3014,6 +3081,7 @@ export default defineExtension({
           dryRun,
           pmRoot: ctx.pm_root,
           format: importFormat,
+          todoTxtMapping: readTodoTxtMapping(ctx.options),
           upsert: true,
           statusFilter: syncFilter?.status,
           typeFilter: syncFilter?.type,
@@ -3041,6 +3109,7 @@ export default defineExtension({
             typeFilter: syncFilter?.type,
             pmRoot: ctx.pm_root,
             format: exportFormat,
+            todoTxtMapping: readTodoTxtMapping(ctx.options),
             groupBy: readGroupBy(ctx.options),
             sort: readSort(ctx.options),
             metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
@@ -3196,6 +3265,7 @@ export default defineExtension({
         dryRun,
         pmRoot: ctx.pm_root,
         format,
+        todoTxtMapping: readTodoTxtMapping(ctx.options),
         upsert,
         statusFilter: importFilter?.status,
         typeFilter: importFilter?.type,
@@ -3250,6 +3320,7 @@ export default defineExtension({
         { long: "--file", value_name: "path", description: "Path to the TODO file (alternative to the positional argument)" },
         { long: "--glob", value_name: "pattern", description: "Import every file matching this glob pattern" },
         { long: "--format", value_name: "fmt", description: "File format: markdown (default), todotxt, todojson, jsonl, or checkbox" },
+        { long: "--todotxt-mapping", value_name: "mode", description: "todo.txt mapping: tags (default, lossy) | fidelity (retain ordered source tokens)" },
         { long: "--type", value_name: "type", description: "Item type for newly created items (default: Task)" },
         { long: "--closed-as", value_name: "status", description: "Status for checked/closed items (default: closed)" },
         { long: "--status", value_name: "status", description: "Status for open/unchecked items (default: open)" },
@@ -3277,6 +3348,7 @@ export default defineExtension({
         typeFilter: filter.type,
         pmRoot: ctx.pm_root,
         format: readExportFormat(ctx.options),
+        todoTxtMapping: readTodoTxtMapping(ctx.options),
         groupBy: readGroupBy(ctx.options),
         sort: readSort(ctx.options),
         metadata: readBoolOption(ctx.options, "metadata", "include-metadata", "includeMetadata"),
@@ -3311,6 +3383,7 @@ export default defineExtension({
       flags: [
         { long: "--output", value_name: "path", description: "Write the export to this file (default: stdout)" },
         { long: "--format", value_name: "fmt", description: "Output format: markdown (default), todotxt, tasklist, todojson, jsonl, or checkbox" },
+        { long: "--todotxt-mapping", value_name: "mode", description: "todo.txt mapping: tags (default, lossy) | fidelity (retain ordered source tokens)" },
         { long: "--status", value_name: "status", description: "Only export items with this status" },
         { long: "--type", value_name: "type", description: "Only export items of this type" },
         { long: "--filter", value_name: "expr", description: "Only export items matching status/type (e.g. status=open,type=Task)" },
@@ -3347,6 +3420,7 @@ export default defineExtension({
         dryRun: false,
         pmRoot: ctx.pm_root,
         format: readImportFormat(ctx.options),
+        todoTxtMapping: readTodoTxtMapping(ctx.options),
       });
 
       const droppedLines = dropped;

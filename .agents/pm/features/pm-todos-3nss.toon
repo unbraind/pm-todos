@@ -1,0 +1,29 @@
+id: pm-todos-3nss
+title: Preserve todo.txt project and context fidelity
+description: "Implement explicit fidelity mapping for SDK conversion and persisted import/export; preserve legacy tags and sparse Markdown. Linked issue: https://github.com/unbraind/pm-todos/issues/108"
+type: Feature
+status: in_progress
+priority: 2
+tags: []
+created_at: "2026-10-07T12:47:36.501Z"
+updated_at: "2026-10-07T13:07:39.626Z"
+author: codex-sol
+acceptance_criteria: Separate projects and contexts including same-name tokens; stable token order; real tracker round-trip and generated cases; documented compatibility mode; Node and Bun release gates pass
+comments[5]{created_at,author,text}:
+  "2026-10-07T12:48:22.484Z",codex-sol,"Built-package reproduction confirms context loss: Fixture task +project @ctx exports as Fixture task +project +ctx. Preserve the default tags mapping; add explicit fidelity mode shared by SDK and CLI, with namespaced source provenance, stable body token order, and persisted dates and key:value metadata. Issue #108 acceptance will be verified with real temp trackers and behavioural function reverts."
+  "2026-10-07T12:52:18.325Z",codex-sol,"Implemented tags/fidelity mapping parity in public SDK conversion, persisted import/export, sync and the legacy importer. Fidelity stores ordered source provenance and namespaced dates/key:value metadata, reconciles current PM edits and keeps generic tags and sparse Markdown compatible. Added 312 deterministic generated SDK cases plus installed-package and in-process real SDK tracker tests."
+  "2026-10-07T12:53:13.643Z",codex-sol,"Real tracker tests found a PM SDK/CLI gap: update rejects --unset priority. Fidelity maps an absent source priority to PM default 2 and omits its marker until that numeric value changes; upsert resets to that default. This limitation is documented; no upstream issue was filed."
+  "2026-10-07T12:55:11.860Z",codex-sol,"Behavioural revert proof: replaced only serializeTodoTxtLine body with baseline main implementation, preserving signature and tests. npm run build passed; node --test --test-name-pattern \"fidelity SDK|fidelity persists\" test/todotxt-fidelity.test.ts loaded two tests and failed both assertions (context/project loss and persisted CLI fidelity loss). Restored only that body and verified restoration byte-for-byte. Evidence: docs/todotxt-fidelity.md."
+  "2026-10-07T13:07:38.801Z",codex-sol,"Final verification passed: node --test test/todotxt-fidelity.test.ts (4 tests), also via pm test --run --progress; npm run release:check and bun run release:check (each 289 tests, zero failures/skips). Coverage index.ts: lines 97.92%, branches 93.92%, functions 98.50%; unchanged thresholds 97/93/98. Both gates passed canonical-reader, production audit, packed npm/Bun current/minimum acceptance, changelog and release workflow verifiers. Details and behavioural revert proof: docs/todotxt-fidelity.md. PM priority-clearing gap tracked locally in pm-todos-9pyr. Work complete for PR review; item stays in_progress."
+files[3]{path,scope}:
+  index.ts,project
+  test/integration.test.ts,project
+  test/todotxt-fidelity.test.ts,project
+tests[3]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+  node --test test/todotxt-fidelity.test.ts,project,codex-sol,"2026-10-07T12:52:17.530Z",local_mutation,feat/todotxt-fidelity
+  "npm run release:check",project,codex-sol,"2026-10-07T12:55:12.426Z",local_mutation,feat/todotxt-fidelity
+  "bun run release:check",project,codex-sol,"2026-10-07T12:55:12.965Z",local_mutation,feat/todotxt-fidelity
+docs[2]{path,scope}:
+  docs/todotxt-fidelity.md,project
+  README.md,project
+body: ""
