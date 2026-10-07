@@ -394,8 +394,8 @@ export` routes above and can also be driven programmatically:
 }
 ```
 
-The `todos` exporter accepts `output`, `status`, `type`, `format`, `group-by`, `metadata`, and
-`sort`, and `todotxt-mapping` options and emits the same output produced by `pm todos export` (default
+The `todos` exporter accepts `output`, `status`, `type`, `format`, `group-by`, `metadata`, `sort`, and
+`todotxt-mapping` options and emits the same output produced by `pm todos export` (default
 markdown, or `todotxt` / `tasklist` / `todojson`). The `todos` importer additionally accepts
 `format` (`markdown` | `todotxt` | `todojson`) and `status` (status for open items, complementing
 `closed-as`).
