@@ -2,11 +2,13 @@ id: pm-todos-3nss
 title: Preserve todo.txt project and context fidelity
 description: "Implement explicit fidelity mapping for SDK conversion and persisted import/export; preserve legacy tags and sparse Markdown. Linked issue: https://github.com/unbraind/pm-todos/issues/108"
 type: Feature
-status: in_progress
+status: closed
 priority: 2
 tags: []
 created_at: "2026-10-07T12:47:36.501Z"
-updated_at: "2026-10-07T16:41:54.059Z"
+updated_at: "2026-10-07T18:39:52.277Z"
+closed_at: "2026-10-07T18:39:51.762Z"
+completed_at: "2026-10-07T18:39:51.762Z"
 author: codex-sol
 acceptance_criteria: Separate projects and contexts including same-name tokens; stable token order; real tracker round-trip and generated cases; documented compatibility mode; Node and Bun release gates pass
 comments[11]{created_at,author,text}:
@@ -60,4 +62,5 @@ tests[4]:
 docs[2]{path,scope}:
   docs/todotxt-fidelity.md,project
   README.md,project
+close_reason: "Merged in #110 (fc4c11f). Explicit --todotxt-mapping fidelity on import, export and sync keeps +project vs @context, spelling, duplicates, token order, source dates, key:value tokens and A-Z priorities; the default mapping is unchanged. Review found a pre-existing data-loss path: rows sharing a title signature or resolving to one item collapsed into one exported row. The upsert preflight now refuses ambiguous signatures and shared targets before any write. Orchestrator verification: 2000/2000 generated lines round-trip exactly in fidelity mode; default output byte-identical to main on the same lines; preflight and target-check revert proofs; npm+Bun release:check; CodeRabbit full review at 43998fb: no actionable comments."
 body: ""
