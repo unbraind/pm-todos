@@ -6,7 +6,7 @@ Import markdown checkboxes (`- [ ]` and `- [x]`) as pm items and export pm items
 
 The parser understands **nested/indented sub-tasks**, **section headers** (`## …` mapped to tags), **priority markers** (`(p1)` and `!`/`!!`/`!!!`), markdown `due:YYYY-MM-DD` metadata, and can import **multiple files at once** via a `--glob` pattern.
 
-In addition to markdown, pm-todos round-trips the de-facto [**todo.txt**](https://github.com/todotxt/todo.txt) format, exports **GitHub-flavored task lists**, **JSON Lines** (`jsonl`) and a flat **checkbox** markdown variant, imports/exports the `TodoDetails` JSON state used by the pi coding-agent `todo` tool, and **bidirectionally syncs** a file with the pm store. It can **group** exports into sections by status/sprint/type, **filter** by status/type, remap priorities (`number`/`letter`), and **validate** a TODO file without importing it.
+In addition to markdown, pm-todos imports and exports the de-facto [**todo.txt**](https://github.com/todotxt/todo.txt) format, exports **GitHub-flavored task lists**, **JSON Lines** (`jsonl`) and a flat **checkbox** markdown variant, imports/exports the `TodoDetails` JSON state used by the pi coding-agent `todo` tool, and **bidirectionally syncs** a file with the pm store. It can **group** exports into sections by status/sprint/type, **filter** by status/type, remap priorities (`number`/`letter`), and **validate** a TODO file without importing it.
 
 ---
 
@@ -113,13 +113,16 @@ growth. Each incoming line is matched to an existing pm item in this order:
    *same* items.
 2. **Title signature** — a stable, case-/whitespace-insensitive match on the item
    title, for hand-written files that were never exported (no embedded id). The
-   oldest matching item wins.
+   signature must match at most one existing item.
 
 On a match the item is **updated** (title, type, priority, tags, deadline; status
 only when it actually changed, to avoid a spurious re-close of an already-terminal
-item). On no match it is **created** as usual. Items created earlier in the same
-run are themselves matchable, so a file containing the same task twice converges
-on one item.
+item). On no match it is **created** as usual. Embedded ids use exact matching and
+never fall back to another item with the same title. Before writing, upsert
+refuses repeated title signatures among incoming rows without ids, or a title
+signature matching multiple existing items. Use distinct titles or embedded
+`<!-- pm-id -->` comments to disambiguate. The check spans all input files and
+also applies to dry-run. Plain imports without upsert still create every row.
 
 ```bash
 pm todos import TODO.md            # creates (re-run duplicates)
@@ -136,11 +139,32 @@ decision per item without writing.
 
 With `--format todotxt`, lines are parsed as [todo.txt](https://github.com/todotxt/todo.txt):
 
-- `x` at the start marks completion → status `closed` (an optional completion date is recognised and skipped).
-- `(A)`…`(Z)` priority letter → pm numeric priority (`(A)`→`0`, …, `(E)`→`4`; letters past `E` clamp to `4`). An explicit `--priority` flag still wins.
-- `+project` and `@context` tokens → tags (pm folds tags to lowercase).
-- `due:YYYY-MM-DD` → the item deadline. Other `key:value` pairs are ignored on pm import (pm has no field for them), but are **preserved through a todo.txt round-trip** at the format layer.
-- **Creation and completion dates** (`x <completion> <creation> …` for done items, `(A) <creation> …` for open items) are parsed and **re-emitted on todo.txt export**, so a todo.txt → todo.txt round-trip is lossless on dates and `key:value` metadata.
+- `x` marks completion → status `closed`; `(A)`…`(Z)` maps to PM priority `0`…`4` (letters beyond `E` clamp). Explicit `--priority` wins.
+- `due:YYYY-MM-DD` maps to the deadline.
+- **Default `--todotxt-mapping tags` is lossy:** `+project` and `@context` both become PM tags (lowercased and deduplicated in the tracker), and all tags export as `+project`. Source dates and arbitrary `key:value` pairs are captured by the parser/SDK conversion but are not persisted by this default import policy. Priorities export as `A`…`E` and completed priorities are omitted. Do not use this mode to preserve source context knowledge.
+- **Explicit `--todotxt-mapping fidelity` on import and export** retains the original project/context distinction, spelling, duplicates, and body token order, including `+x @x`. It persists source dates and arbitrary `key:value` tokens in namespaced extension fields, and retains original priorities `A`…`Z` (including completed priorities) while the mapped PM priority remains unchanged.
+
+```bash
+pm todos import todo.txt --format todotxt --todotxt-mapping fidelity
+pm todos export --format todotxt --todotxt-mapping fidelity --output todo.txt
+pm todos sync todo.txt --format todotxt --todotxt-mapping fidelity
+```
+
+The SDK uses the identical explicit policy:
+
+```ts
+const source = parseTodoTxtLine('x 2026-10-02 2026-10-01 Task +project @ctx');
+if (source) {
+  const item = todoTxtItemToPm(source, '', 'fidelity');
+  const line = serializeTodoTxtLine(item, 'fidelity');
+  // x 2026-10-02 2026-10-01 Task +project @ctx
+}
+```
+
+`serializeTodoTxt(items, 'fidelity')` applies the same mapping to a document.
+Generic PM tags without source provenance still export as projects; sparse Markdown output is unchanged. Existing imports cannot recover a context distinction that was already discarded: re-import the original todo.txt using fidelity mode.
+
+Fidelity normalizes whitespace to single spaces and document line endings to LF; it preserves each row's body token order, not the tracker order of rows (use `--sort` to choose row order). Current PM edits take precedence: removed tags remove their source tokens, new tags append as projects, changed deadlines/key:value values retain their token positions, and a changed title moves ahead of retained metadata. PM tag identity is case-insensitive, so removing a shared tag removes both `+x` and `@x`; edit/re-import the source to remove only one occurrence. Upsert in fidelity mode clears absent source dates, key:value fields and deadline. An absent source priority maps to PM default priority `2` and exports without a priority marker while that default remains unchanged (PM does not support clearing priority via `--unset`). Re-importing in tags mode clears retained fidelity provenance. This is structured fidelity for the parser's supported grammar, not arbitrary byte-for-byte preservation.
 
 #### pi coding-agent todo state (`--format todojson`)
 
@@ -242,7 +266,7 @@ a partial TODO export.
 
 The default `markdown` export (no `--group-by`, or `--group-by status`) is unchanged: a
 `# TODO` document with `## Open` / `## Done` sections. `--group-by sprint`/`type` emits a
-`## <value>` section per group. The `todotxt` exporter maps priority→letter, tags→`+project`,
+`## <value>` section per group. The `todotxt` exporter maps priority→letter, tags→`+project` by default (use `--todotxt-mapping fidelity` for retained source tokens),
 and deadline→`due:`. The `todojson` exporter emits a pi coding-agent `TodoDetails` object
 with sequential numeric todo ids, `text`, `done`, and `nextId`. The `tasklist` exporter emits `- [ ]` / `- [x]` items grouped under
 `## <heading>` sections, each carrying a `<!-- pm-id -->` comment for round-trips. The `jsonl`
@@ -282,8 +306,14 @@ pm todos sync TODO.md --dry-run
 `jsonl`, `checkbox`); `tasklist` is export-only and rejected. It accepts the same
 `--format`, `--type`, `--closed-as`, `--status`, `--priority`, `--tags`, `--section`,
 `--no-section-tags`, `--group-by`, `--metadata`, `--priority-map`, `--filter`, and `--dry-run`
-flags as import/export; `--file <path>` is an alternative to the positional file. Under
-`--dry-run` nothing is written to the pm store or the file. Sync refuses to replace a
+flags as import/export; `--file <path>` is an alternative to the positional file.
+Sync refuses ambiguous title signatures before changing the tracker or file,
+reporting the colliding file:line locations (and existing item ids when applicable).
+For example, `Task +one` and `Task @two` both have title `Task` in todo.txt;
+use distinct titles in either `tags` or `fidelity` mapping. Equal markdown titles
+need distinct titles or exact embedded `<!-- pm-id -->` comments. Under
+`--dry-run` the same ambiguity checks run and nothing is written to the pm store
+or the file. Sync refuses to replace a
 non-empty file with an empty result (for example, when a restrictive filter matches
 nothing); pass `--allow-empty` only when clearing the file is intentional.
 
@@ -364,8 +394,8 @@ export` routes above and can also be driven programmatically:
 }
 ```
 
-The `todos` exporter accepts `output`, `status`, `type`, `format`, `group-by`, `metadata`, and
-`sort` options and emits the same output produced by `pm todos export` (default
+The `todos` exporter accepts `output`, `status`, `type`, `format`, `group-by`, `metadata`, `sort`, and
+`todotxt-mapping` options and emits the same output produced by `pm todos export` (default
 markdown, or `todotxt` / `tasklist` / `todojson`). The `todos` importer additionally accepts
 `format` (`markdown` | `todotxt` | `todojson`) and `status` (status for open items, complementing
 `closed-as`).

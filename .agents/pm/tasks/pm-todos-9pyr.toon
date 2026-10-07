@@ -1,0 +1,13 @@
+id: pm-todos-9pyr
+title: Assess source priority clearing after PM supports unset priority
+description: "Follow-up from #108 real tracker acceptance: pinned PM CLI update rejects --unset priority. Fidelity currently maps absent source priority to numeric default 2 and omits the marker. Re-evaluate this documented workaround when the PM peer gains a supported priority-clearing contract; no upstream issue filed."
+type: Task
+status: open
+priority: 3
+tags: []
+created_at: "2026-10-07T12:53:36.228Z"
+updated_at: "2026-10-07T12:55:11.287Z"
+author: codex-sol
+docs[1]{path,scope}:
+  README.md,project
+body: ""

@@ -1,0 +1,63 @@
+id: pm-todos-3nss
+title: Preserve todo.txt project and context fidelity
+description: "Implement explicit fidelity mapping for SDK conversion and persisted import/export; preserve legacy tags and sparse Markdown. Linked issue: https://github.com/unbraind/pm-todos/issues/108"
+type: Feature
+status: in_progress
+priority: 2
+tags: []
+created_at: "2026-10-07T12:47:36.501Z"
+updated_at: "2026-10-07T16:41:54.059Z"
+author: codex-sol
+acceptance_criteria: Separate projects and contexts including same-name tokens; stable token order; real tracker round-trip and generated cases; documented compatibility mode; Node and Bun release gates pass
+comments[11]{created_at,author,text}:
+  "2026-10-07T12:48:22.484Z",codex-sol,"Built-package reproduction confirms context loss: Fixture task +project @ctx exports as Fixture task +project +ctx. Preserve the default tags mapping; add explicit fidelity mode shared by SDK and CLI, with namespaced source provenance, stable body token order, and persisted dates and key:value metadata. Issue #108 acceptance will be verified with real temp trackers and behavioural function reverts."
+  "2026-10-07T12:52:18.325Z",codex-sol,"Implemented tags/fidelity mapping parity in public SDK conversion, persisted import/export, sync and the legacy importer. Fidelity stores ordered source provenance and namespaced dates/key:value metadata, reconciles current PM edits and keeps generic tags and sparse Markdown compatible. Added 312 deterministic generated SDK cases plus installed-package and in-process real SDK tracker tests."
+  "2026-10-07T12:53:13.643Z",codex-sol,"Real tracker tests found a PM SDK/CLI gap: update rejects --unset priority. Fidelity maps an absent source priority to PM default 2 and omits its marker until that numeric value changes; upsert resets to that default. This limitation is documented; no upstream issue was filed."
+  "2026-10-07T12:55:11.860Z",codex-sol,"Behavioural revert proof: replaced only serializeTodoTxtLine body with baseline main implementation, preserving signature and tests. npm run build passed; node --test --test-name-pattern \"fidelity SDK|fidelity persists\" test/todotxt-fidelity.test.ts loaded two tests and failed both assertions (context/project loss and persisted CLI fidelity loss). Restored only that body and verified restoration byte-for-byte. Evidence: docs/todotxt-fidelity.md."
+  "2026-10-07T13:07:38.801Z",codex-sol,"Final verification passed: node --test test/todotxt-fidelity.test.ts (4 tests), also via pm test --run --progress; npm run release:check and bun run release:check (each 289 tests, zero failures/skips). Coverage index.ts: lines 97.92%, branches 93.92%, functions 98.50%; unchanged thresholds 97/93/98. Both gates passed canonical-reader, production audit, packed npm/Bun current/minimum acceptance, changelog and release workflow verifiers. Details and behavioural revert proof: docs/todotxt-fidelity.md. PM priority-clearing gap tracked locally in pm-todos-9pyr. Work complete for PR review; item stays in_progress."
+  "2026-10-07T14:48:53.705Z",codex-sol,"Reproduced review finding with the built, packed extension installed into two scratch pm projects. Input todo.txt: Task +one and Task @two on separate lines. Public pm todos sync with --format todotxt returned imported=1, updated=1, skipped=0, reexported=1 in both mappings. Tags output was Task +two; fidelity output was Task @two. Both commands exited successfully while replacing two source rows with one. Plan: parse/filter all incoming files before mutations; reject repeated idless title signatures and nonunique existing title matches, including dry-run; embedded ids use exact matching. Add real tracker byte-preservation and normal-path regressions, documentation, behavioural revert proof, and both release gates."
+  "2026-10-07T14:55:00.181Z",codex-sol,"Repro precision: tags sync wrote (C) Task +two; fidelity sync wrote Task @two. Implemented complete incoming-file parsing/filtering before write operations and retained all existing title-signature candidates. Ambiguity raises CommandError (usage exit 2) with source file:line locations, matching existing ids, and recovery advice. Embedded pm ids resolve exactly; missing ids do not overwrite a title match. Real fixture tests compare hashes of every tracker file including history and input bytes; fixtures first prime host-owned metadata read caches so cache creation cannot obscure data mutation checks. README explains the refusal and recovery."
+  "2026-10-07T14:58:37.819Z",codex-sol,"Behavioural revert proof: temporarily removed only the ambiguity-check block inside runTodoImport, leaving index retention, parsing, exact-id matching, and all tests intact. npm run build exited 0. node --test --test-reporter=tap --test-name-pattern=\"incoming collision|existing ambiguity\" test/ambiguous-signatures.test.ts exited 1 with six assertion failures: incoming and existing collisions for todo.txt tags, todo.txt fidelity, and markdown all returned exit 0 instead of required refusal exit 2. Restored only that function block and verified the entire index.ts SHA-256 equals the pre-probe value; no whole-file swap. Rebuilt successfully. Evidence added to docs/todotxt-fidelity.md."
+  "2026-10-07T15:00:05.791Z",codex-sol,"Restored implementation passed pm test pm-todos-3nss --run --progress --match ambiguous-signatures: all 11 real tracker regression tests passed with no failures or skips. Both collision shapes, both todo.txt mappings, markdown, dry-run, exact ids, cross-file glob refusal, and unchanged normal upsert/sync are covered. Full tracker-file SHA-256 snapshots and input bytes remain unchanged after each refusal. Proceeding with unchanged repository release thresholds under npm and Bun."
+  "2026-10-07T15:09:09.135Z",codex-sol,"Final validation: npm run release:check and bun run release:check both exited 0. Each ran 300 tests with zero failures/skips and measured index.ts coverage 97.93% lines, 93.94% branches, 98.51% functions above unchanged 97/93/98 thresholds. Both passed typecheck, docstrings, canonical-reader acceptance, production audit (zero vulnerabilities), dry-run packing, changelog consistency, release-date and publish-attestation checks. Packed npm-current, bun-current, npm-minimum, bun-minimum all passed with host versions 2026.10.4 and 2026.8.20; artifact SHA-1 b381c5160525d7310763453b0df3ce61b85192be. PM-linked real regression suite passed all 11 tests. Six collision tests failed under the behavioural revert and the original source hash was restored. Documentation and tracker evidence are ready for orchestrator verification. Leaving status in_progress, releasing the claim, regenerating changelog after PM writes, then committing and pushing this fix only."
+  "2026-10-07T16:41:54.059Z",claude-orchestrator,"CodeRabbit 4209416563 (valid, Major): rows with the same embedded id (or an id row plus an idless title match) were excluded from the ambiguity check, both updated one item, and sync re-exported one row over two. The upsert preflight now resolves every incoming row to its PM target (embedded id, or the single title match) and refuses two rows sharing a target before any write, dry-run included. New real-tracker test covers both shapes with byte-identical tracker and input after refusal; it fails with only the target check removed."
+files[5]{path,scope}:
+  index.ts,project
+  test/ambiguous-signatures.test.ts,project
+  test/formats.test.ts,project
+  test/integration.test.ts,project
+  test/todotxt-fidelity.test.ts,project
+tests[4]:
+  - command: node --test test/todotxt-fidelity.test.ts
+    scope: project
+    provenance:
+      author: codex-sol
+      created_at: "2026-10-07T12:52:17.530Z"
+      source_kind: local_mutation
+      source_ref: feat/todotxt-fidelity
+  - command: "npm run release:check"
+    scope: project
+    provenance:
+      author: codex-sol
+      created_at: "2026-10-07T12:55:12.426Z"
+      source_kind: local_mutation
+      source_ref: feat/todotxt-fidelity
+  - command: "bun run release:check"
+    scope: project
+    provenance:
+      author: codex-sol
+      created_at: "2026-10-07T12:55:12.965Z"
+      source_kind: local_mutation
+      source_ref: feat/todotxt-fidelity
+  - command: node --test --test-reporter=tap test/ambiguous-signatures.test.ts
+    scope: project
+    timeout_seconds: 300
+    provenance:
+      author: codex-sol
+      created_at: "2026-10-07T14:55:00.941Z"
+      source_kind: local_mutation
+      source_ref: feat/todotxt-fidelity
+docs[2]{path,scope}:
+  docs/todotxt-fidelity.md,project
+  README.md,project
+body: ""
