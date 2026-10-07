@@ -70,7 +70,7 @@ for (const shape of formats) {
         for (const dryRun of [false, true]) {
           const result = ws.pm(["todos", command, input, ...options, ...(command === "import" ? ["--upsert"] : []), ...(dryRun ? ["--dry-run"] : [])]);
           assert.equal(result.status, 2, result.stderr);
-          assert.match(result.stderr, /Ambiguous TODO title signatures/);
+          assert.match(result.stderr, /Ambiguous TODO rows/);
           assert.ok(result.stderr.includes(`${shape.name}:2`));
           assert.ok(result.stderr.includes(`${shape.name}:3`));
           assert.match(result.stderr, /distinct titles or embedded pm-id comments/);
@@ -81,7 +81,7 @@ for (const shape of formats) {
       // Cover the same command/importer implementation through the public
       // harness with real CLI persistence, never substituted SDK operations.
       const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
-      await assert.rejects(harness.runImporter({ importer: "todos", args: [input], options: { format: shape.format, todotxtMapping: shape.mapping, upsert: true }, pmRoot: ws.tracker }), /Ambiguous TODO title signatures/);
+      await assert.rejects(harness.runImporter({ importer: "todos", args: [input], options: { format: shape.format, todotxtMapping: shape.mapping, upsert: true }, pmRoot: ws.tracker }), /Ambiguous TODO rows/);
       assert.deepEqual(snapshot(ws.tracker), before);
     } finally {
       rmSync(ws.root, { recursive: true, force: true });
@@ -185,6 +185,35 @@ test("embedded pm ids update equal titles exactly and never fall back from a mis
     const result = await harness.runImporter({ importer: "todos", args: [input], options: { upsert: true }, pmRoot: ws.tracker });
     assert.equal((result.result as { imported: number; updated: number }).imported, 1);
     assert.equal((result.result as { updated: number }).updated, 0);
+  } finally {
+    rmSync(ws.root, { recursive: true, force: true });
+  }
+});
+
+test("rows resolving to one existing item refuse before sync or upsert writes", async () => {
+  const ws = workspace();
+  try {
+    const created = ws.pm(["create", "--title", "Shared target"]);
+    assert.equal(created.status, 0, created.stderr);
+    const id = (JSON.parse(created.stdout) as { id: string }).id;
+    const input = join(ws.root, "TODO.md");
+    // Two rows with one embedded id, and an id row plus an idless title match.
+    for (const rows of [
+      [`- [ ] Shared target <!-- ${id} -->`, `- [x] Shared target renamed <!-- ${id} -->`],
+      [`- [ ] Renamed elsewhere <!-- ${id} -->`, "- [ ] Shared target"],
+    ]) {
+      writeFileSync(input, `- [ ] Unique\n${rows.join("\n")}\n`);
+      assert.equal(ws.pm([...COMPLETE_LIST_COMMAND_ARGUMENTS]).status, 0);
+      const before = snapshot(ws.tracker);
+      const bytes = readFileSync(input);
+      for (const command of ["sync", "import"]) {
+        const result = ws.pm(["todos", command, input, "--format", "markdown", ...(command === "import" ? ["--upsert"] : [])]);
+        assert.equal(result.status, 2, result.stderr);
+        assert.match(result.stderr, new RegExp(`TODO\\.md:2 and \\S*TODO\\.md:3 resolve to the same item ${id}`));
+        assert.deepEqual(readFileSync(input), bytes);
+        assert.deepEqual(snapshot(ws.tracker), before);
+      }
+    }
   } finally {
     rmSync(ws.root, { recursive: true, force: true });
   }

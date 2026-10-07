@@ -2439,30 +2439,41 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
     parsedFiles.push(todos);
   }
 
-  // Idless rows must identify exactly one task across the entire invocation.
+  // Every row must identify exactly one task across the entire invocation.
   // This runs in dry-run too, before create/update or sync's file replacement.
   if (opts.upsert) {
     const incomingBySig = new Map<string, NormalizedTodo>();
+    // Every row's resolved PM target: two rows updating one item would collapse
+    // into one exported row, so a shared target is refused like a shared title.
+    const incomingByTarget = new Map<string, NormalizedTodo>();
     const conflicts: string[] = [];
     for (const todo of parsedFiles.flat()) {
-      if (todo.pmId) continue;
-      const sig = todoSignatureKey(todo.text);
-      if (!sig) continue;
-      const previous = incomingBySig.get(sig);
       const location = `${todo.file}:${todo.lineNumber}`;
-      if (previous) {
-        conflicts.push(`${previous.file}:${previous.lineNumber} and ${location} share a fallback title signature`);
-      } else {
-        incomingBySig.set(sig, todo);
+      const sig = todo.pmId ? undefined : todoSignatureKey(todo.text);
+      const matches = sig ? index.bySig.get(sig) : undefined;
+      if (sig) {
+        const previous = incomingBySig.get(sig);
+        if (previous) {
+          conflicts.push(`${previous.file}:${previous.lineNumber} and ${location} share a fallback title signature`);
+        } else {
+          incomingBySig.set(sig, todo);
+        }
+        if (matches && matches.length > 1) {
+          conflicts.push(`${location} matches multiple existing items: ${matches.map((item) => item.pmId).join(", ")}`);
+        }
       }
-      const matches = index.bySig.get(sig);
-      if (matches && matches.length > 1) {
-        conflicts.push(`${location} matches multiple existing items: ${matches.map((item) => item.pmId).join(", ")}`);
+      const target = todo.pmId ?? (matches?.length === 1 ? matches[0]!.pmId : undefined);
+      if (target === undefined) continue;
+      const claimant = incomingByTarget.get(target);
+      if (claimant) {
+        conflicts.push(`${claimant.file}:${claimant.lineNumber} and ${location} resolve to the same item ${target}`);
+      } else {
+        incomingByTarget.set(target, todo);
       }
     }
     if (conflicts.length > 0) {
       throw new CommandError(
-        `Ambiguous TODO title signatures: ${conflicts.join("; ")}. ` +
+        `Ambiguous TODO rows: ${conflicts.join("; ")}. ` +
         "Use distinct titles or embedded pm-id comments to identify each task, then retry. No items or source files were written.",
         EXIT_CODE.USAGE,
       );
