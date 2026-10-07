@@ -1896,7 +1896,7 @@ interface TodoImportOptions {
   /**
    * When true, re-importing matches existing pm items and UPDATES them instead
    * of creating duplicates. Matching keys (in order): the embedded
-   * `<!-- pm-id -->` comment, else a stable (title + section) signature. Default
+   * `<!-- pm-id -->` comment, else a stable title signature. Default
    * false → every item is always created (historical behaviour, unchanged).
    */
   upsert?: boolean;
@@ -2115,18 +2115,17 @@ export function todoSignatureKey(title: string, section?: string): string | unde
  * Build the two lookup indexes an `--upsert` import needs from the current
  * workspace items:
  *   - byId:  pm id  → existing item (exact match on the embedded comment id)
- *   - bySig: (title+section) signature → existing item (fallback match)
+ *   - bySig: title signature → all existing matches (fallback candidates)
  *
- * For the signature index, first write wins so the oldest matching item is the
- * stable upsert target (mirrors pm-beads' "oldest wins" rule). The id index is
- * keyed on the item's own `id`, which is exactly what the exporter embeds.
+ * Preserve every signature match so imports can refuse ambiguous titles before
+ * writing. The id index uses the exact id embedded by the exporter.
  */
 export function buildExistingTodoIndex(items: PmItem[]): {
   byId: Map<string, ExistingTodoItem>;
-  bySig: Map<string, ExistingTodoItem>;
+  bySig: Map<string, ExistingTodoItem[]>;
 } {
   const byId = new Map<string, ExistingTodoItem>();
-  const bySig = new Map<string, ExistingTodoItem>();
+  const bySig = new Map<string, ExistingTodoItem[]>();
   for (const item of items) {
     if (!item.id) continue;
     const entry: ExistingTodoItem = {
@@ -2136,12 +2135,9 @@ export function buildExistingTodoIndex(items: PmItem[]): {
       description: item.description,
     };
     byId.set(item.id, entry);
-    // The exported section heading is the pm status group (Open/Done) or a
-    // sprint/type value; a hand-edited file usually keeps the original heading.
-    // We index by title alone AND by every plausible section so the fallback
-    // tolerates a missing/renamed heading on the incoming side.
+    // Section headings do not reliably identify stored items; use title alone.
     const sigNoSection = todoSignatureKey(item.title ?? "");
-    if (sigNoSection && !bySig.has(sigNoSection)) bySig.set(sigNoSection, entry);
+    if (sigNoSection) bySig.set(sigNoSection, [...(bySig.get(sigNoSection) ?? []), entry]);
   }
   return { byId, bySig };
 }
@@ -2385,8 +2381,9 @@ export function buildJsonlImportFieldArgs(todo: Pick<NormalizedTodo,
 }
 
 /**
- * Read, parse and (unless dry-run) create pm items for every TODO found across
- * the given files. Single code path shared by the command and the importer.
+ * Parse and filter all sources, then refuse ambiguous upsert keys before any
+ * create/update. Dry-run uses the same checks; commands and importers share this
+ * path so sync cannot overwrite a source file after collapsing two tasks.
  */
 function runTodoImport(opts: TodoImportOptions): TodoImportResult {
   let imported = 0;
@@ -2405,21 +2402,10 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
   // stay empty and every item is created — the unchanged historical behaviour.
   const index = opts.upsert
     ? buildExistingTodoIndex(readCompletePmItems(opts.pmRoot, "the --upsert key index"))
-    : { byId: new Map<string, ExistingTodoItem>(), bySig: new Map<string, ExistingTodoItem>() };
+    : { byId: new Map<string, ExistingTodoItem>(), bySig: new Map<string, ExistingTodoItem[]>() };
 
-  // Resolve an incoming TODO to an existing item: prefer the embedded pm-id
-  // comment (exact), then fall back to the title signature. A stored pm item
-  // carries no reliable markdown section heading (the section becomes a
-  // case-folded tag), so the fallback keys on the title alone — matching how
-  // `buildExistingTodoIndex` builds `bySig`.
-  const resolveExisting = (todo: NormalizedTodo): ExistingTodoItem | undefined => {
-    if (!opts.upsert) return undefined;
-    if (todo.pmId && index.byId.has(todo.pmId)) return index.byId.get(todo.pmId);
-    const sig = todoSignatureKey(todo.text);
-    if (sig && index.bySig.has(sig)) return index.bySig.get(sig);
-    return undefined;
-  };
-
+  // Read and filter every source before resolving or mutating any item.
+  const parsedFiles: NormalizedTodo[][] = [];
   for (const file of opts.files) {
     let md: string;
     try {
@@ -2450,6 +2436,48 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
       });
     }
 
+    parsedFiles.push(todos);
+  }
+
+  // Idless rows must identify exactly one task across the entire invocation.
+  // This runs in dry-run too, before create/update or sync's file replacement.
+  if (opts.upsert) {
+    const incomingBySig = new Map<string, NormalizedTodo>();
+    const conflicts: string[] = [];
+    for (const todo of parsedFiles.flat()) {
+      if (todo.pmId) continue;
+      const sig = todoSignatureKey(todo.text);
+      if (!sig) continue;
+      const previous = incomingBySig.get(sig);
+      const location = `${todo.file}:${todo.lineNumber}`;
+      if (previous) {
+        conflicts.push(`${previous.file}:${previous.lineNumber} and ${location} share a fallback title signature`);
+      } else {
+        incomingBySig.set(sig, todo);
+      }
+      const matches = index.bySig.get(sig);
+      if (matches && matches.length > 1) {
+        conflicts.push(`${location} matches multiple existing items: ${matches.map((item) => item.pmId).join(", ")}`);
+      }
+    }
+    if (conflicts.length > 0) {
+      throw new CommandError(
+        `Ambiguous TODO title signatures: ${conflicts.join("; ")}. ` +
+        "Use distinct titles or embedded pm-id comments to identify each task, then retry. No items or source files were written.",
+        EXIT_CODE.USAGE,
+      );
+    }
+  }
+
+  /** Resolve embedded ids exactly; idless rows use the validated title match. */
+  const resolveExisting = (todo: NormalizedTodo): ExistingTodoItem | undefined => {
+    if (!opts.upsert) return undefined;
+    if (todo.pmId) return index.byId.get(todo.pmId);
+    const sig = todoSignatureKey(todo.text);
+    return sig ? index.bySig.get(sig)?.[0] : undefined;
+  };
+
+  for (const todos of parsedFiles) {
     for (const todo of todos) {
       const tags = [...opts.extraTags];
       // Per-item tags (todo.txt +project/@context) carry through.
@@ -2629,9 +2657,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
           }
           imported++;
 
-          // Under --upsert, record the just-created item in both indexes so a
-          // later line in the SAME run (or file) that repeats it upserts onto
-          // this item instead of creating yet another duplicate.
+          // Keep exact-id and fallback lookups current after creating an item.
           if (opts.upsert) {
             const createdId = extractCreatedTodoId(result.stdout);
             if (createdId) {
@@ -2643,7 +2669,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
               };
               index.byId.set(createdId, entry);
               const sig = todoSignatureKey(todo.text);
-              if (sig && !index.bySig.has(sig)) index.bySig.set(sig, entry);
+              if (sig) index.bySig.set(sig, [...(index.bySig.get(sig) ?? []), entry]);
             }
           }
         }

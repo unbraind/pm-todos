@@ -75,3 +75,56 @@ in both gates.
 `node --test test/todotxt-fidelity.test.ts` (four tests). The tracker has result
 tracking disabled, so this receipt is recorded here and in the item comments.
 `npm run changelog:full` was regenerated after tracker writes.
+
+## PR #110: ambiguous title signatures
+
+The built, packed extension reproduced silent row loss using two scratch
+trackers and the public CLI. With `Task +one` and `Task @two` as input,
+`pm todos sync todo.txt --format todotxt --todotxt-mapping tags` reported
+`imported=1, updated=1, skipped=0, reexported=1` and wrote `(C) Task +two`.
+The same command with `--todotxt-mapping fidelity` wrote `Task @two` with
+identical counts. Both successful commands replaced two source rows with one.
+
+Upsert now parses and filters every input file before mutations. It rejects
+repeated fallback signatures among incoming rows without embedded ids and
+signatures matching more than one existing item. The existing signature index
+retains every candidate instead of silently keeping the first. Refusals include
+source file:line locations, existing ids where applicable, and recovery advice.
+Embedded ids use exact matching; a missing id never falls back to a title match.
+Dry-run performs the same checks. Plain imports retain their create-every-row
+behaviour. README documents the sync refusal and how to recover.
+
+`test/ambiguous-signatures.test.ts` installs a packed artifact into real scratch
+trackers and exercises public CLI commands and the source importer through the
+real SDK harness. It covers both todo.txt mappings and markdown, incoming and
+existing collisions, sync/import and dry-run, cross-file glob collisions,
+normal create/update/sync, and exact ids on equal titles. A unique row preceding
+conflicts checks that refusal happens before even unrelated writes. File bytes
+and SHA-256 snapshots of every tracker file, including item history, remain
+identical after refusals. Fixtures prime the host's derived metadata read caches
+before snapshots; no tracker files are excluded from the comparisons.
+
+For the behavioural revert, only the ambiguity-check block inside
+`runTodoImport` was temporarily removed. All other changes and new tests stayed
+in place. The reverted implementation built successfully. The command
+`node --test --test-reporter=tap --test-name-pattern='incoming collision|existing ambiguity' test/ambiguous-signatures.test.ts`
+exited 1: all six collision regressions failed because the CLI exited 0 instead
+of refusing with exit 2. Only the omitted block was restored, and the complete
+source SHA-256 matched its pre-probe value. No complete source file was swapped.
+
+The restored implementation passed
+`pm test pm-todos-3nss --run --progress --match ambiguous-signatures`: all
+11 tests passed with zero failures or skips. Result tracking remains disabled;
+this receipt is recorded in the item comments instead of changing that policy.
+
+The follow-up also passed `npm run release:check` and `bun run release:check`
+(exit 0 each). Both ran 300 tests with zero failures or skips, reporting
+97.93% lines, 93.94% branches and 98.51% functions for the configured source
+`index.ts`, above unchanged 97/93/98 thresholds. These commands use Node's test
+runner. Both passed typechecking, docstrings, canonical-reader acceptance,
+production audit (zero vulnerabilities), dry-run packing, changelog consistency,
+release-date and publish-attestation checks. The four packed acceptance scenarios
+passed on npm/Bun with current host `2026.10.4` and minimum host `2026.8.20`.
+The built artifact SHA-1 was `b381c5160525d7310763453b0df3ce61b85192be` in both
+runs. Changelog was regenerated after the final tracker writes. The item
+remains in progress for orchestrator verification; no merge or publication occurs.

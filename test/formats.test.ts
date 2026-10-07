@@ -956,18 +956,18 @@ test("buildExistingTodoIndex records the stored title (for type-tag disambiguati
   assert.equal(byId.get("pm-1")!.title, "Complete [Task]");
 });
 
-test("buildExistingTodoIndex keys by id and by title signature (oldest wins on sig)", () => {
+test("buildExistingTodoIndex keys by id and retains every title signature match", () => {
   const items = [
     { id: "pm-1", title: "Write docs", status: "open" },
-    { id: "pm-2", title: "Write docs", status: "closed" }, // dup title, later → ignored in bySig
+    { id: "pm-2", title: "Write docs", status: "closed" }, // duplicate title must remain visible in bySig
     { id: "pm-3", title: "Ship it", status: "open" },
   ];
   const { byId, bySig } = buildExistingTodoIndex(items);
   assert.equal(byId.get("pm-1")!.pmId, "pm-1");
   assert.equal(byId.get("pm-2")!.status, "closed");
-  // Signature lookup matches the FIRST (oldest) item with that title.
-  assert.equal(bySig.get(todoSignatureKey("write docs")!)!.pmId, "pm-1");
-  assert.equal(bySig.get(todoSignatureKey("ship it")!)!.pmId, "pm-3");
+  // Signature lookup preserves both matches so import can reject ambiguity.
+  assert.deepEqual(bySig.get(todoSignatureKey("write docs")!)!.map((item) => item.pmId), ["pm-1", "pm-2"]);
+  assert.equal(bySig.get(todoSignatureKey("ship it")!)![0]!.pmId, "pm-3");
 });
 
 test("extractCreatedTodoId reads the id out of pm --json create output (several shapes)", () => {

@@ -113,13 +113,16 @@ growth. Each incoming line is matched to an existing pm item in this order:
    *same* items.
 2. **Title signature** — a stable, case-/whitespace-insensitive match on the item
    title, for hand-written files that were never exported (no embedded id). The
-   oldest matching item wins.
+   signature must match at most one existing item.
 
 On a match the item is **updated** (title, type, priority, tags, deadline; status
 only when it actually changed, to avoid a spurious re-close of an already-terminal
-item). On no match it is **created** as usual. Items created earlier in the same
-run are themselves matchable, so a file containing the same task twice converges
-on one item.
+item). On no match it is **created** as usual. Embedded ids use exact matching and
+never fall back to another item with the same title. Before writing, upsert
+refuses repeated title signatures among incoming rows without ids, or a title
+signature matching multiple existing items. Use distinct titles or embedded
+`<!-- pm-id -->` comments to disambiguate. The check spans all input files and
+also applies to dry-run. Plain imports without upsert still create every row.
 
 ```bash
 pm todos import TODO.md            # creates (re-run duplicates)
@@ -303,8 +306,14 @@ pm todos sync TODO.md --dry-run
 `jsonl`, `checkbox`); `tasklist` is export-only and rejected. It accepts the same
 `--format`, `--type`, `--closed-as`, `--status`, `--priority`, `--tags`, `--section`,
 `--no-section-tags`, `--group-by`, `--metadata`, `--priority-map`, `--filter`, and `--dry-run`
-flags as import/export; `--file <path>` is an alternative to the positional file. Under
-`--dry-run` nothing is written to the pm store or the file. Sync refuses to replace a
+flags as import/export; `--file <path>` is an alternative to the positional file.
+Sync refuses ambiguous title signatures before changing the tracker or file,
+reporting the colliding file:line locations (and existing item ids when applicable).
+For example, `Task +one` and `Task @two` both have title `Task` in todo.txt;
+use distinct titles in either `tags` or `fidelity` mapping. Equal markdown titles
+need distinct titles or exact embedded `<!-- pm-id -->` comments. Under
+`--dry-run` the same ambiguity checks run and nothing is written to the pm store
+or the file. Sync refuses to replace a
 non-empty file with an empty result (for example, when a restrictive filter matches
 nothing); pass `--allow-empty` only when clearing the file is intentional.
 
