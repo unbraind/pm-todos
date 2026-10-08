@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Preserve todo.txt project and context fidelity ([pm-todos-3nss](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-3nss.toon))
+
 ## 2026.10.5 - 2026-10-05
 
 ### Other

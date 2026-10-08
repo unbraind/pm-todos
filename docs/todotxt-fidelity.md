@@ -126,5 +126,6 @@ production audit (zero vulnerabilities), dry-run packing, changelog consistency,
 release-date and publish-attestation checks. The four packed acceptance scenarios
 passed on npm/Bun with current host `2026.10.4` and minimum host `2026.8.20`.
 The built artifact SHA-1 was `b381c5160525d7310763453b0df3ce61b85192be` in both
-runs. Changelog was regenerated after the final tracker writes. The item
-remains in progress for orchestrator verification; no merge or publication occurs.
+runs. Changelog was regenerated after the final tracker writes. The orchestrator
+verified the change independently and closed the item after
+[#110](https://github.com/unbraind/pm-todos/pull/110) merged.
