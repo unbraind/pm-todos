@@ -1,0 +1,13 @@
+id: pm-todos-7bk6
+title: Clear stale workflow-approval state before diagnosing release timeout
+description: Daily Release run 38043122621 ended with an awaiting-workflow-approval message after CI run 38043303831 had completed and test (22.18.0) was failing. The wait loop retains awaiting_approval from an earlier action_required observation. Recompute approval state each iteration and distinguish completed failing checks from pending approval; retain all protected merge and publication gates.
+type: Issue
+status: open
+priority: 2
+tags: []
+created_at: "2026-10-11T05:06:18.506Z"
+updated_at: "2026-10-11T05:07:21.562Z"
+author: codex-agent
+files[1]{path,scope}:
+  .github/workflows/release.yml,project
+body: ""

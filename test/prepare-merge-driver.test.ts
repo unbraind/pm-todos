@@ -1,14 +1,15 @@
 /**
  * Tests for the npm `prepare` hook `scripts/prepare-merge-driver.ts`.
  *
- * The hook must stay the canonical pm-ops launcher byte for byte, and it is
- * exercised the way npm runs it: as the entry point of a child process whose
+ * The install suffix must stay the pinned canonical pm-ops launcher byte
+ * for byte. A local guard backports the artifact boundary from pm-ops PR #152.
+ * The hook is exercised the way npm runs it: as the entry point of a child process whose
  * working directory is a consumer checkout. Every checkout is a fresh
  * `git init` with its own local config, so the drivers this repository's own
  * `npm ci` registered cannot mask a launcher that registers none.
  */
 import assert from "node:assert/strict";
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -73,8 +74,8 @@ function stubPm(name: string, status: number, body = ""): string {
 }
 
 /** Run the launcher as npm's `prepare` hook would: as the entry point, from `cwd`, with `path` as PATH. */
-function prepare(cwd: string, path: string): SpawnSyncReturns<string> {
-  return spawnSync(process.execPath, [launcher], { cwd, encoding: "utf8", env: { ...process.env, PATH: path } });
+function prepare(cwd: string, path: string, environment: NodeJS.ProcessEnv = {}): SpawnSyncReturns<string> {
+  return spawnSync(process.execPath, [launcher], { cwd, encoding: "utf8", env: { ...process.env, PATH: path, ...environment } });
 }
 
 /** The merge drivers registered in a checkout's LOCAL Git config, by name. */
@@ -88,9 +89,9 @@ function registeredDrivers(cwd: string): string[] {
   return config.stdout.split("\n").filter(Boolean).map((key) => key.split(".")[1]).sort();
 }
 
-test("the prepare launcher is the unmodified pm-ops template", () => {
+test("the install boundary retains the unmodified pinned pm-ops template", () => {
   const canonical = readFileSync(join(root, "node_modules", "pm-ops", "templates", "prepare-merge-driver.ts"), "utf8");
-  assert.equal(readFileSync(launcher, "utf8"), canonical);
+  assert.ok(readFileSync(launcher, "utf8").endsWith(canonical));
 });
 
 test("a full install registers every merge driver .gitattributes declares", posixOnly, () => {
@@ -144,4 +145,46 @@ test("a malformed lookup path preserves the original installer failure", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /MODULE_NOT_FOUND/);
   assert.doesNotMatch(result.stderr, /ENOTDIR|skipping merge-driver install/);
+});
+
+for (const command of ["pack", "publish"]) {
+  test(`${command} prepare preserves Git configuration even while its lock is held`, posixOnly, () => {
+    const directory = checkout(`artifact-${command}`, "pinned");
+    const config = join(directory, ".git", "config");
+    const lock = `${config}.lock`;
+    const before = readFileSync(config);
+    writeFileSync(lock, "another config writer owns this lock\n", { flag: "wx" });
+    const result = prepare(directory, hostPath, { npm_command: command });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, `npm ${command}: skipping merge-driver install during artifact creation\n`);
+    assert.deepEqual(readFileSync(config), before);
+    assert.equal(readFileSync(lock, "utf8"), "another config writer owns this lock\n");
+    assert.deepEqual(registeredDrivers(directory), []);
+  });
+}
+
+test("real npm packing succeeds with a held Git config lock and preserves the artifact", posixOnly, () => {
+  const directory = checkout("artifact-real-pack", "pinned");
+  mkdirSync(join(directory, "scripts"));
+  copyFileSync(launcher, join(directory, "scripts", "prepare-merge-driver.ts"));
+  writeFileSync(join(directory, "package.json"), JSON.stringify({
+    name: "artifact-real-pack", version: "1.0.0", type: "module",
+    files: ["payload.txt"], scripts: { prepare: "node scripts/prepare-merge-driver.ts" },
+  }));
+  writeFileSync(join(directory, "payload.txt"), "built distribution fixture\n");
+  const config = join(directory, ".git", "config");
+  const before = readFileSync(config);
+  writeFileSync(`${config}.lock`, "held config lock\n", { flag: "wx" });
+  const result = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["pack"], {
+    cwd: directory, encoding: "utf8", env: { ...process.env, PATH: hostPath },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  // npm itself must run `prepare` with npm_command=pack; the guard proves it saw that environment.
+  assert.match(result.stderr, /npm pack: skipping merge-driver install during artifact creation/);
+  const archive = join(directory, "artifact-real-pack-1.0.0.tgz");
+  assert.equal(execFileSync("tar", ["-xOf", archive, "package/payload.txt"], { encoding: "utf8" }), "built distribution fixture\n");
+  assert.equal(execFileSync("tar", ["-xOf", archive, "package/package.json"], { encoding: "utf8" }), readFileSync(join(directory, "package.json"), "utf8"));
+  assert.deepEqual(readFileSync(config), before);
+  assert.equal(readFileSync(`${config}.lock`, "utf8"), "held config lock\n");
+  assert.equal(readFileSync(join(directory, "payload.txt"), "utf8"), "built distribution fixture\n");
 });
