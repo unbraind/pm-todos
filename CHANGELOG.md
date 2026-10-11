@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Isolate concurrent packed fixtures from repository merge-driver configuration ([pm-todos-il19](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-il19.toon))
+
 ## 2026.10.8 - 2026-10-08
 
 ### Added
