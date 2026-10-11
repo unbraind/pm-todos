@@ -1,0 +1,26 @@
+id: pm-todos-cache-context
+title: Isolate ambiguity snapshots across CLI and SDK read contexts
+description: Local ambiguity regression snapshots fail after source-harness refusals because SDK-owned metadata-cache fingerprints and aliases change despite prior CLI cache priming. Release fix CI passes; investigate fixture environment and cache context separately from artifact-time preparation.
+type: Issue
+status: open
+priority: 1
+tags: []
+created_at: "2026-10-11T06:59:15.344Z"
+updated_at: "2026-10-11T07:42:14.790Z"
+author: codex-agent
+acceptance_criteria: "Reproduce and classify the cache-context difference with real temporary trackers; preserve refusal, item/history/input mutation assertions and unchanged release thresholds; pass npm, Bun and isolated-HOME gates."
+parent: pm-todos-3nss
+repro_steps: "Run npm run release:check on the artifact-guard fix. Inspect seven failures in test/ambiguous-signatures.test.ts after harness.runImporter rejection. Compare with Node 22.18 and Node 26 CI for the same source, then the isolated-HOME release gate."
+expected_result: "Real tracker refusal assertions remain strict and reliable across CLI and SDK environments, with any documented derived-cache writes treated explicitly without hiding item, history or input mutations."
+actual_result: "Local npm release gate: 304 tests, 297 passed, 7 failed, 0 skipped. All seven snapshot diffs name only runtime/metadata-cache files and occur after the source-harness assertion. CI Node 22.18 and Node 26 each pass 304/304. Coverage 97.91 lines, 93.98 branches, 98.51 functions meets unchanged thresholds, but test failure makes the full gate fail."
+comments[2]{created_at,author,text}:
+  "2026-10-11T07:13:51.182Z",codex-agent,"Same source at bb33acd: ordinary local npm gate on Node 24.19.0 has 297 passes and 7 cache-only ambiguity snapshot failures; isolated-HOME Node 22.18.0/npm 10.9.3 suite passes 304/304 with zero skips and met thresholds, with downstream acceptance still active. CI Node 22.18 and Node 26 also pass 304/304. Runtime and environment both differ, so do not attribute the difference to HOME alone or classify documented cache refreshes as item persistence mutations. Separate those variables with real fixtures; retain strict item/history/input refusal assertions and unchanged thresholds. Existing fidelity-owner comment already describes CLI cache priming; this follow-up concerns later source-harness cache fingerprints and aliases."
+  "2026-10-11T07:42:14.790Z",codex-agent,"Bun full release gate confirms the same existing local snapshot issue: exit 1, 304 tests, 297 passed, 7 failed, 0 skipped. Each failing-test diff contains only runtime/metadata-cache fingerprints and aliases after source-harness refusal. No threshold, refusal assertion or persistence snapshot was weakened. The independently completed isolated Node 22.18.0/npm 10.9.3 full release gate exited 0 with 304/304, canonical-reader 1/1 and packed matrix 4/4. Runtime/environment separation remains follow-up work."
+files[2]{path,scope}:
+  scripts/coverage-gate.ts,project
+  test/ambiguous-signatures.test.ts,project
+tests[1]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+  node --test test/ambiguous-signatures.test.ts,project,codex-agent,"2026-10-11T07:00:00.412Z",local_mutation,fix/release-ci-git-identity
+docs[1]{path,scope}:
+  README.md,project
+body: ""
