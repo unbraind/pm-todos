@@ -1,4 +1,19 @@
 /**
+ * Backport the artifact boundary from pm-ops PR #152 until its next release.
+ * Keep the pinned canonical installer below unchanged for install and ci.
+ */
+
+/** Whether npm is creating an artifact rather than installing this clone. */
+function isArtifactCreation(environment: NodeJS.ProcessEnv): boolean {
+  return environment.npm_command === "pack" || environment.npm_command === "publish";
+}
+
+if (isArtifactCreation(process.env)) {
+  console.error(`npm ${process.env.npm_command}: skipping merge-driver install during artifact creation`);
+  process.exit(0);
+}
+
+/**
  * npm `prepare` hook that registers pm's field-aware Git merge drivers.
  *
  * Git never clones `.git/config`, so every clone must register the drivers

@@ -1,0 +1,25 @@
+id: pm-todos-il19
+title: Isolate concurrent packed fixtures from repository merge-driver configuration
+description: "Release PR #116 failed Node 22.18.0 coverage when npm 10 ran prepare during concurrent pack calls despite ignore-scripts, contending on Git config. Daily Release run 38043122621 then timed out on the failed required check. Preserve canonical prepare semantics and pack identical built artifacts without shared repository writes."
+type: Issue
+status: in_progress
+priority: 1
+tags: []
+created_at: "2026-10-11T04:59:23.453Z"
+updated_at: "2026-10-11T05:07:46.188Z"
+assignee: codex-agent
+claim_principal: codex-agent
+author: codex-agent
+comments[4]{created_at,author,text}:
+  "2026-10-11T05:00:14.694Z",codex-agent,"CI run 38043303831 failed 1 of 301 tests: integration.test.ts packed the built package while npm ran prepare despite ignore-scripts; concurrent pack callers attempted pm merge install on the same Git config. Daily run 38043122621 passed its release gate but timed out waiting for this failed required check. Investigating a deterministic fixture boundary that preserves canonical prepare installation and package bytes."
+  "2026-10-11T05:02:21.422Z",codex-agent,"Design: backport the artifact-time prepare boundary already merged in pm-ops PR #152. A small documented predicate skips pack/publish before the unchanged pinned installer; npm ci/install still execute canonical resolution and fail on broken installers. The canonical suffix remains byte-identical. Held-lock regressions cover both lifecycle commands and real npm pack while checking Git config, lock, manifest and payload bytes. No dependency or threshold changes."
+  "2026-10-11T05:05:31.410Z",codex-agent,"Behavior-only revert proof: replaced only isArtifactCreation with return false and ran node --test --test-name-pattern=\"pack prepare preserves|publish prepare preserves\" test/prepare-merge-driver.test.ts. Exit 1: both modules/tests loaded, 0 passed and 2 assertion failures (installer status 5 instead of 0 while config lock was held). Restored the predicate; no template or test changes in the reversion. The original CI failure is a real pack prepare conflict, not an identity or coverage-threshold failure."
+  "2026-10-11T05:07:46.188Z",codex-agent,"Linked pm test run passed 11/11 with zero failures/skips in the default schema context. Automatic linked-result tracking is disabled by project policy, so this comment records the receipt. Follow-up pm-todos-7bk6 tracks the stale workflow-approval timeout diagnostic without changing the release workflow in this fix. After this fix merges, release PR #116 must be closed and regenerated from fixed main; its branch still lacks the guard and its failed release run produced no tag or publication."
+files[2]{path,scope}:
+  scripts/prepare-merge-driver.ts,project
+  test/prepare-merge-driver.test.ts,project
+tests[1]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
+  node --test test/prepare-merge-driver.test.ts,project,180,codex-agent,"2026-10-11T05:03:18.887Z",local_mutation,fix/release-ci-git-identity
+docs[1]{path,scope}:
+  README.md,project
+body: ""
