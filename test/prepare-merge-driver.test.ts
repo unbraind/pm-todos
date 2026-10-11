@@ -175,10 +175,12 @@ test("real npm packing succeeds with a held Git config lock and preserves the ar
   const config = join(directory, ".git", "config");
   const before = readFileSync(config);
   writeFileSync(`${config}.lock`, "held config lock\n", { flag: "wx" });
-  const result = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["pack", "--ignore-scripts"], {
+  const result = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["pack"], {
     cwd: directory, encoding: "utf8", env: { ...process.env, PATH: hostPath },
   });
   assert.equal(result.status, 0, result.stderr);
+  // npm itself must run `prepare` with npm_command=pack; the guard proves it saw that environment.
+  assert.match(result.stderr, /npm pack: skipping merge-driver install during artifact creation/);
   const archive = join(directory, "artifact-real-pack-1.0.0.tgz");
   assert.equal(execFileSync("tar", ["-xOf", archive, "package/payload.txt"], { encoding: "utf8" }), "built distribution fixture\n");
   assert.equal(execFileSync("tar", ["-xOf", archive, "package/package.json"], { encoding: "utf8" }), readFileSync(join(directory, "package.json"), "utf8"));
