@@ -6,16 +6,18 @@ status: open
 priority: 1
 tags: []
 created_at: "2026-10-11T06:59:15.344Z"
-updated_at: "2026-10-11T07:42:14.790Z"
+updated_at: "2026-10-14T13:56:48.905Z"
 author: codex-agent
 acceptance_criteria: "Reproduce and classify the cache-context difference with real temporary trackers; preserve refusal, item/history/input mutation assertions and unchanged release thresholds; pass npm, Bun and isolated-HOME gates."
 parent: pm-todos-3nss
 repro_steps: "Run npm run release:check on the artifact-guard fix. Inspect seven failures in test/ambiguous-signatures.test.ts after harness.runImporter rejection. Compare with Node 22.18 and Node 26 CI for the same source, then the isolated-HOME release gate."
 expected_result: "Real tracker refusal assertions remain strict and reliable across CLI and SDK environments, with any documented derived-cache writes treated explicitly without hiding item, history or input mutations."
 actual_result: "Local npm release gate: 304 tests, 297 passed, 7 failed, 0 skipped. All seven snapshot diffs name only runtime/metadata-cache files and occur after the source-harness assertion. CI Node 22.18 and Node 26 each pass 304/304. Coverage 97.91 lines, 93.98 branches, 98.51 functions meets unchanged thresholds, but test failure makes the full gate fail."
-comments[2]{created_at,author,text}:
+comments[4]{created_at,author,text}:
   "2026-10-11T07:13:51.182Z",codex-agent,"Same source at bb33acd: ordinary local npm gate on Node 24.19.0 has 297 passes and 7 cache-only ambiguity snapshot failures; isolated-HOME Node 22.18.0/npm 10.9.3 suite passes 304/304 with zero skips and met thresholds, with downstream acceptance still active. CI Node 22.18 and Node 26 also pass 304/304. Runtime and environment both differ, so do not attribute the difference to HOME alone or classify documented cache refreshes as item persistence mutations. Separate those variables with real fixtures; retain strict item/history/input refusal assertions and unchanged thresholds. Existing fidelity-owner comment already describes CLI cache priming; this follow-up concerns later source-harness cache fingerprints and aliases."
   "2026-10-11T07:42:14.790Z",codex-agent,"Bun full release gate confirms the same existing local snapshot issue: exit 1, 304 tests, 297 passed, 7 failed, 0 skipped. Each failing-test diff contains only runtime/metadata-cache fingerprints and aliases after source-harness refusal. No threshold, refusal assertion or persistence snapshot was weakened. The independently completed isolated Node 22.18.0/npm 10.9.3 full release gate exited 0 with 304/304, canonical-reader 1/1 and packed matrix 4/4. Runtime/environment separation remains follow-up work."
+  "2026-10-14T12:46:01.055Z",codex-agent,"This maintenance work reproduces the previously recorded Node 24 pattern: full npm gate 297/304, seven cache-only ambiguity snapshot diffs after source-harness refusals. No durable item/history/input changes were reported. CI declares Node 22.18 and Node 26; use the installed Node 26 runtime for actual new-head npm and Bun validation, without weakening snapshots or thresholds. This isolates runtime selection from the caller change; Node 24 cache-context reliability remains open."
+  "2026-10-14T13:56:48.905Z",codex-agent,"Node 26 also reproduced 297/304; runtime selection alone did not fix the seven failures. Root cause: CLI fixture subprocesses use the temporary HOME/XDG/global paths and working directory, while source-harness relaunches inherit the package environment. Align the source harness with that same fixture environment and restore it in finally; retain every tracker-byte, item/history/input and refusal assertion. Focused incoming-collision regression passes 1/1; reverting only the environment helper to directly invoke the operation fails 0/1 with metadata-cache snapshot differences. Fixed helper restored. No production code, cache exclusion, SDK pin or thresholds changed. Both complete isolated gates will now run with the default Node 24 runtime."
 files[2]{path,scope}:
   scripts/coverage-gate.ts,project
   test/ambiguous-signatures.test.ts,project
