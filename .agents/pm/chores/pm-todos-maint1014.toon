@@ -4,9 +4,9 @@ description: Enable the SHA-pinned fail-closed issue sync caller. Keep existing 
 type: Chore
 status: in_progress
 priority: 1
-tags: []
+tags[1]: changed
 created_at: "2026-10-14T10:24:40.229Z"
-updated_at: "2026-10-14T14:22:03.205Z"
+updated_at: "2026-10-15T12:27:53.457Z"
 author: codex-agent
 comments[5]{created_at,author,text}:
   "2026-10-14T10:24:49.283Z",codex-agent,"Plan: author this package own thin caller, pin workflow SHA and pm-github to 2026.10.13, and verify isolated npm/Bun release gates without changing thresholds. No fast-glob listed; retain existing dependency pins. No workflow dispatch, bot requests, merges, or source function changes."
