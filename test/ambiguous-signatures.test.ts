@@ -40,7 +40,25 @@ function workspace() {
   assert.equal(run(["--pm-path", tracker, "package", "install", packExtension(root), "--project", "--json"]).status, 0);
   /** Invoke a public command against the fixture's tracker. */
   const pm = (args: string[]) => run(["--pm-path", tracker, ...args, "--json"]);
-  return { root, tracker, pm };
+  /** Run the source harness with the same working directory and read context as the CLI. */
+  const inFixture = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const cwd = process.cwd();
+    const keys = ["HOME", "PM_GLOBAL_PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME"] as const;
+    const previous = keys.map((key) => process.env[key]);
+    try {
+      process.chdir(root);
+      for (const key of keys) process.env[key] = env[key];
+      return await operation();
+    } finally {
+      process.chdir(cwd);
+      for (const [index, key] of keys.entries()) {
+        const value = previous[index];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  };
+  return { root, tracker, pm, inFixture };
 }
 
 // Both the public CLI and source harness relaunch this pinned host via PATH.
@@ -81,7 +99,7 @@ for (const shape of formats) {
       // Cover the same command/importer implementation through the public
       // harness with real CLI persistence, never substituted SDK operations.
       const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
-      await assert.rejects(harness.runImporter({ importer: "todos", args: [input], options: { format: shape.format, todotxtMapping: shape.mapping, upsert: true }, pmRoot: ws.tracker }), /Ambiguous TODO rows/);
+      await assert.rejects(ws.inFixture(() => harness.runImporter({ importer: "todos", args: [input], options: { format: shape.format, todotxtMapping: shape.mapping, upsert: true }, pmRoot: ws.tracker })), /Ambiguous TODO rows/);
       assert.deepEqual(snapshot(ws.tracker), before);
     } finally {
       rmSync(ws.root, { recursive: true, force: true });
@@ -115,7 +133,7 @@ for (const shape of formats) {
         }
       }
       const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
-      await assert.rejects(harness.runImporter({ importer: "todos", args: [input], options: { format: shape.format, todotxtMapping: shape.mapping, upsert: true, dryRun: true }, pmRoot: ws.tracker }), /matches multiple existing items/);
+      await assert.rejects(ws.inFixture(() => harness.runImporter({ importer: "todos", args: [input], options: { format: shape.format, todotxtMapping: shape.mapping, upsert: true, dryRun: true }, pmRoot: ws.tracker })), /matches multiple existing items/);
       assert.deepEqual(snapshot(ws.tracker), before);
     } finally {
       rmSync(ws.root, { recursive: true, force: true });
@@ -136,7 +154,7 @@ for (const shape of formats) {
         if (command === "sync") assert.equal(receipt.updated, 2);
       }
       const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
-      const result = await harness.runImporter({ importer: "todos", args: [input], options: { format: shape.format, todotxtMapping: shape.mapping, upsert: true }, pmRoot: ws.tracker });
+      const result = await ws.inFixture(() => harness.runImporter({ importer: "todos", args: [input], options: { format: shape.format, todotxtMapping: shape.mapping, upsert: true }, pmRoot: ws.tracker }));
       assert.equal((result.result as { updated: number }).updated, 2);
     } finally {
       rmSync(ws.root, { recursive: true, force: true });
@@ -156,7 +174,7 @@ test("upsert checks collisions across files before creating earlier rows", async
     const before = snapshot(ws.tracker);
     const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
     process.chdir(ws.root);
-    await assert.rejects(harness.runImporter({ importer: "todos", options: { glob: "*.md", upsert: true }, pmRoot: ws.tracker }), /first.md:2 and .*second.md:1/);
+    await assert.rejects(ws.inFixture(() => harness.runImporter({ importer: "todos", options: { glob: "*.md", upsert: true }, pmRoot: ws.tracker })), /first.md:2 and .*second.md:1/);
     assert.deepEqual(snapshot(ws.tracker), before);
     assert.equal(readFileSync(first, "utf8"), "- [ ] Unique\n- [ ] Task\n");
     assert.equal(readFileSync(second, "utf8"), "- [ ] task\n");
@@ -182,7 +200,7 @@ test("embedded pm ids update equal titles exactly and never fall back from a mis
     assert.equal((JSON.parse(sync.stdout) as { updated: number }).updated, 2);
     const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
     writeFileSync(input, "- [ ] Task <!-- pm-missing -->\n");
-    const result = await harness.runImporter({ importer: "todos", args: [input], options: { upsert: true }, pmRoot: ws.tracker });
+    const result = await ws.inFixture(() => harness.runImporter({ importer: "todos", args: [input], options: { upsert: true }, pmRoot: ws.tracker }));
     assert.equal((result.result as { imported: number; updated: number }).imported, 1);
     assert.equal((result.result as { updated: number }).updated, 0);
   } finally {
