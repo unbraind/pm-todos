@@ -1,0 +1,25 @@
+id: pm-todos-ztuk
+title: Make legacy TODO importer share native input and preview contract
+description: "The generated todos-import import command cannot deliver file input and exits successfully while skipping. Reuse the native todos importer handler and its arguments/flags metadata. Prove file and glob inputs, nonzero missing input, dry-run preservation and behavioral revert in real non-git CLI processes."
+type: Issue
+status: in_progress
+priority: 1
+tags: []
+created_at: "2026-10-20T11:14:10.003Z"
+updated_at: "2026-10-20T12:03:27.464Z"
+author: codex-agent
+comments[5]{created_at,author,text}:
+  "2026-10-20T11:14:48.631Z",codex-agent,"Closed pm-todos-chgi fixed the native todos registration only. The legacy alias still has a separate no-input success path and forces mutation mode. The pinned SDK supports arguments/flags metadata, so choose shared native importTodos handler and importContract for both names, preserving file/glob/config options and validation. Add real non-git CLI regression and source/tracker dry-run snapshots, then behavioral revert and full npm/Bun gates at unchanged 97/93/98 thresholds. No SDK limitation forces refusal."
+  "2026-10-20T11:17:12.232Z",codex-agent,"Real non-git CLI linked regression passed 1/1 (file argument, file option, glob, section/tags/priority/upsert, no input and missing files, help, source/durable tracker byte preservation). Behavioral revert: kept native handler/contract and tests, restored only the original todos-import registration, rebuilt, then node --test test/legacy-import-cli.test.ts failed 0/1: no input exited 0 and printed the skipping message. Restored the shared handler/contract. Full gates will run with unchanged thresholds and isolated Git identity for npm."
+  "2026-10-20T11:39:37.099Z",codex-agent,"After restoring the fix, the linked real CLI regression passed again: 1/1, including source-file and durable tracker preservation. The full npm release gate is running with isolated HOME/Git identity and unchanged 97/93/98 thresholds; typechecking, build and docstrings passed. Existing real-tracker command/ambiguity suites remain active under shared-host contention. No merge or release is being performed."
+  "2026-10-20T11:46:27.859Z",codex-agent,"Full npm run release:check passed with isolated HOME, GIT_CONFIG_GLOBAL=/dev/null and GIT_CONFIG_NOSYSTEM=1. Results: 305/305 tests, 0 fail/skip/cancel/todo; canonical-reader acceptance 1/1; coverage lines 97.89, branches 93.95, functions 98.50 above unchanged 97/93/98 thresholds. Packed acceptance passed 4/4: npm-current, bun-current, npm-minimum, bun-minimum. Audit, packaging, changelog, date and provenance checks passed. bun run release:check is now running on unchanged code."
+  "2026-10-20T12:03:25.979Z",codex-agent,"Final verification complete: npm run release:check with isolated Git identity and bun run release:check both passed 305/305 tests, canonical-reader 1/1 and packed consumers 4/4, with 0 failures/skips/cancellations/todo. Both measured index.ts coverage 97.89 lines, 93.95 branches and 98.50 functions at unchanged 97/93/98 thresholds. Audit, packaging, changelog, date and provenance passed. Linked real CLI test passed 1/1 after restoring the fix; behavioral revert failed 0/1 on the old zero-exit skip. README commands/Without git guidance and linked file/doc/test evidence are complete. No known implementation risk or SDK input-contract limitation remains; release claim for review without closing."
+files[3]{path,scope}:
+  index.ts,project
+  test/coverage-commands.test.ts,project
+  test/legacy-import-cli.test.ts,project
+tests[1]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
+  npm run build && node --test test/legacy-import-cli.test.ts,project,600,codex-agent,"2026-10-20T11:15:25.059Z",local_mutation,fix/legacy-import-input-contract
+docs[1]{path,scope}:
+  README.md,project
+body: ""

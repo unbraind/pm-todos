@@ -623,9 +623,11 @@ test("todos-import legacy importer creates items from file option", async () => 
   assert.equal(res.imported + (res.updated ?? 0), 1);
 });
 
-test("todos-import legacy importer skips when no file is provided", async () => {
-  const result = await harness.runImporter({ importer: "todos-import", pmRoot: tracker });
-  assert.equal(result.handled, true);
+test("todos-import legacy importer refuses when no file is provided", async () => {
+  await assert.rejects(
+    () => harness.runImporter({ importer: "todos-import", pmRoot: tracker }),
+    /Usage: pm todos import/u,
+  );
 });
 
 test("todos-import legacy importer reports dropped lines", async () => {

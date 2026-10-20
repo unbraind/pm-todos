@@ -38,7 +38,21 @@ npm run build
 
 ---
 
+## Without git
+
+TODO validation, import, export, context and sync work in a plain pm tracker.
+None of these commands requires a Git repository.
+
 ## Commands
+
+| Command | Input and behavior |
+|---|---|
+| `pm todos import <file>` | Import a file, `--file` or `--glob`; `--dry-run` previews without mutations. |
+| `pm todos-import import <file>` | Same inputs, flags, implementation and results as `todos import`. |
+| `pm todos validate <file>` | Validate input without importing. |
+| `pm todos export` | Export tracker items. |
+| `pm todos context` | Read the current context. |
+| `pm todos sync <file>` | Import and write items back to the file. |
 
 ### `pm todos import <file>`
 
@@ -402,7 +416,11 @@ markdown, or `todotxt` / `tasklist` / `todojson`). The `todos` importer addition
 
 ### Legacy importer: `todos-import`
 
-The original `todos-import` importer is retained for backward compatibility:
+The original `todos-import` name is retained for configured callers. Its CLI
+spelling `pm todos-import import <file>` now shares the native `todos import`
+handler and every flag, including `--file`, `--glob`, `--format`, `--upsert` and
+`--dry-run`. Missing input exits nonzero; previews leave durable tracker state
+and source files unchanged. Programmatic `options.file` remains supported:
 
 ```jsonc
 {

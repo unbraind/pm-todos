@@ -5,6 +5,7 @@ import type {
   ExtensionApi,
   ExtensionModule,
   ImportExportContext,
+  ImportExportRegistrationOptions,
   PreflightOverrideContext,
 } from "@unbrained/pm-cli/sdk/authoring";
 import { certifyCompleteListResult, EXIT_CODE, inspectCompleteListResult } from "@unbrained/pm-cli/sdk";
@@ -3247,7 +3248,8 @@ export default defineExtension({
     // source of truth for `pm todos import` and must accept the positional file
     // argument (`ctx.args[0]`) exactly as the command did — otherwise the
     // existing CLI usage would silently break.
-    api.registerImporter("todos", async (ctx: ImportExportContext) => {
+    /** Import through the native file/glob pipeline for both registered names. */
+    const importTodos = async (ctx: ImportExportContext) => {
       const dryRun = readBoolOption(ctx.options, "dry-run", "dryRun");
       const glob = readStringOption(ctx.options, "glob");
       const fileArg = (ctx.args && ctx.args[0]) as string | undefined;
@@ -3335,7 +3337,9 @@ export default defineExtension({
       }
       const base = upsert ? { imported, updated, skipped } : { imported, skipped };
       return withDroppedReport(base, droppedLines);
-    }, {
+    };
+    /** Shared CLI input contract for native and legacy TODO imports. */
+    const importContract = {
       // Declare the same file argument + flag contracts the handler already
       // reads (ctx.args[0], ctx.options.*). Without them the derived
       // `pm todos import` command rejects the positional file ("too many
@@ -3369,7 +3373,8 @@ export default defineExtension({
         { long: "--upsert", description: "Update existing items in place instead of skipping duplicates" },
         { long: "--dry-run", description: "Report what would change without writing to pm" },
       ],
-    });
+    } satisfies ImportExportRegistrationOptions;
+    api.registerImporter("todos", importTodos, importContract);
 
     // -----------------------------------------------------------------------
     // Exporter: todos  (native `pm export todos` pipeline)
@@ -3435,42 +3440,7 @@ export default defineExtension({
     // -----------------------------------------------------------------------
     // Importer: todos-import  (legacy alias — retained for backward compat)
     // -----------------------------------------------------------------------
-    api.registerImporter("todos-import", async (ctx: ImportExportContext) => {
-      const filePath = readStringOption(ctx.options, "file");
-      if (!filePath) {
-        console.error("todos-import: no 'file' provided — skipping.");
-        return;
-      }
-
-      const closedAs = readStringOption(ctx.options, "closed-as", "closedAs") ?? "closed";
-      const legacyFormat = readImportFormat(ctx.options);
-      // Fail-fast syntax gate before any pm-store write.
-      preflightValidateImportFiles([resolve(filePath)], legacyFormat);
-      const { imported, skipped, dropped } = runTodoImport({
-        files: [resolve(filePath)],
-        itemType: readStringOption(ctx.options, "type") ?? "Task",
-        closedAs,
-        priority: readStringOption(ctx.options, "priority"),
-        extraTags: [],
-        section: readStringOption(ctx.options, "section"),
-        sectionTags: false,
-        dryRun: false,
-        pmRoot: ctx.pm_root,
-        format: readImportFormat(ctx.options),
-        todoTxtMapping: readTodoTxtMapping(ctx.options),
-      });
-
-      const droppedLines = dropped;
-      // Mirror the primary importer's contract: a partial legacy import must
-      // not be reported as success. The dropped report rides the structured
-      // result (stdout) and withDroppedReport sets the non-zero exit code.
-      if (droppedLines.length > 0) {
-        console.error(`todos-import: imported ${imported}, but DROPPED ${droppedLines.length} item(s) (see the 'dropped' field).`);
-      } else {
-        console.error(`todos-import: done — imported ${imported}, skipped ${skipped}.`);
-      }
-      return withDroppedReport({ imported, skipped }, droppedLines);
-    });
+    api.registerImporter("todos-import", importTodos, importContract);
 
     // -----------------------------------------------------------------------
     // Preflight: fail-fast syntax gate for `pm todos import`
