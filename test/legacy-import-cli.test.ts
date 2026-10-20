@@ -16,7 +16,7 @@ function snapshot(root: string): Record<string, string> {
     }));
 }
 
-test("legacy TODO CLI shares native file/glob inputs, flags, errors and dry-run without git", () => {
+test("legacy TODO CLI shares native file/glob inputs, flags, errors and dry-run without git", { skip: process.platform === "win32" && "POSIX symlink/shebang fixture" }, () => {
   const root = mkdtempSync(join(tmpdir(), "pm-todos-legacy-"));
   const repo = resolve(import.meta.dirname, "..");
   symlinkSync(join(repo, "node_modules"), join(root, "node_modules"), "dir");
