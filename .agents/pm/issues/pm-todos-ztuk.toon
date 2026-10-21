@@ -2,13 +2,15 @@ id: pm-todos-ztuk
 title: Make legacy TODO importer share native input and preview contract
 description: "The generated todos-import import command cannot deliver file input and exits successfully while skipping. Reuse the native todos importer handler and its arguments/flags metadata. Prove file and glob inputs, nonzero missing input, dry-run preservation and behavioral revert in real non-git CLI processes."
 type: Issue
-status: in_progress
+status: closed
 priority: 1
 tags: []
 created_at: "2026-10-20T11:14:10.003Z"
-updated_at: "2026-10-20T14:07:11.483Z"
+updated_at: "2026-10-21T18:43:41.699Z"
+closed_at: "2026-10-21T18:43:34.465Z"
+completed_at: "2026-10-21T18:43:34.465Z"
 author: codex-agent
-comments[11]{created_at,author,text}:
+comments[12]{created_at,author,text}:
   "2026-10-20T11:14:48.631Z",codex-agent,"Closed pm-todos-chgi fixed the native todos registration only. The legacy alias still has a separate no-input success path and forces mutation mode. The pinned SDK supports arguments/flags metadata, so choose shared native importTodos handler and importContract for both names, preserving file/glob/config options and validation. Add real non-git CLI regression and source/tracker dry-run snapshots, then behavioral revert and full npm/Bun gates at unchanged 97/93/98 thresholds. No SDK limitation forces refusal."
   "2026-10-20T11:17:12.232Z",codex-agent,"Real non-git CLI linked regression passed 1/1 (file argument, file option, glob, section/tags/priority/upsert, no input and missing files, help, source/durable tracker byte preservation). Behavioral revert: kept native handler/contract and tests, restored only the original todos-import registration, rebuilt, then node --test test/legacy-import-cli.test.ts failed 0/1: no input exited 0 and printed the skipping message. Restored the shared handler/contract. Full gates will run with unchanged thresholds and isolated Git identity for npm."
   "2026-10-20T11:39:37.099Z",codex-agent,"After restoring the fix, the linked real CLI regression passed again: 1/1, including source-file and durable tracker preservation. The full npm release gate is running with isolated HOME/Git identity and unchanged 97/93/98 thresholds; typechecking, build and docstrings passed. Existing real-tracker command/ambiguity suites remain active under shared-host contention. No merge or release is being performed."
@@ -20,6 +22,7 @@ comments[11]{created_at,author,text}:
   "2026-10-20T13:18:48.715Z",codex-agent,"Linked verification via pm test pm-todos-ztuk --run --progress passed both commands (2/2; real CLI 1/1 and Windows simulation 1/1). Repeated the behavioral revert with the final preload-based regression: removing only the skip option fails 0/1, exit 1, POSIX fixture setup ran on Windows; restoring it passes 1/1. Starting full npm release:check with isolated HOME/Git configuration, followed by bun release:check at unchanged thresholds."
   "2026-10-20T13:53:06.288Z",codex-agent,"Review-round full npm run release:check passed with isolated HOME, GIT_CONFIG_GLOBAL=/dev/null and GIT_CONFIG_NOSYSTEM=1: 306/306 tests, zero failures/skips/cancellations/todo; coverage lines 97.89, branches 93.95, functions 98.50 at unchanged 97/93/98 thresholds. Canonical-reader 1/1; packed consumers 4/4 (npm-current, bun-current, npm-minimum, bun-minimum). Typecheck, docstrings, audit (zero vulnerabilities), packaging, changelog, date and publish-attestation checks all passed. Shared-host load prolonged the first attempt; there were no timeouts or retries. Regenerate changelog after this evidence write, then run the full Bun release gate on unchanged code."
   "2026-10-20T14:07:09.811Z",codex-agent,"Review-round verification complete. npm run release:check with isolated HOME/Git identity and bun run release:check both passed: each 306/306 tests, canonical-reader 1/1, packed consumers 4/4; zero failures/skips/cancellations/todo. Each measured index.ts coverage 97.89 lines, 93.95 branches, 98.50 functions at unchanged 97/93/98 thresholds. Typechecking, docstrings, build/test compilation, production audit (zero vulnerabilities), packaging, changelog, release-date and publish-attestation checks all passed. No timeout or retry was needed. Behavioral skip revert fails 0/1 and restoration passes 1/1; linked PM tests passed 2/2. All unresolved findings were verified and the one valid thread PRRT_kwDOSZpews6uU04z is fixed; no Outside diff range finding was present. Whole PR self-review found no further changed-code instance. Native Windows was simulated rather than run natively. Existing PM health version skew and merge-fence drift are recorded on pm-todos-zpyc; no dependency or telemetry configuration changes were made. Release claim for review without closing."
+  "2026-10-21T18:42:40.314Z",codex-agent,"Authorized tracker reconciliation, audit 2026-10-21. Owner-authorized takeover of any historical assignment for this verified terminal transition. Reverified current main 4ae22457fccd: merged #136 (9f5a384); source tree exactly matches the audited snapshot. **Make legacy TODO importer share native input and preview contract.** [PR #136](https://github.com/unbraind/pm-todos/pull/136) (9f5a384) shares native file/glob input and preview/refusal semantics with the legacy todos-import adapter, with real non-Git CLI regressions."
 files[4]{path,scope}:
   index.ts,project
   test/coverage-commands.test.ts,project
@@ -43,4 +46,5 @@ tests[2]:
       source_ref: fix/legacy-import-input-contract
 docs[1]{path,scope}:
   README.md,project
+close_reason: "Reverified current main 4ae22457fccd: merged #136 (9f5a384); source tree exactly matches the audited snapshot. **Make legacy TODO importer share native input and preview contract.** [PR #136](https://github.com/unbraind/pm-todos/pull/136) (9f5a384) shares native file/glob input and preview/refusal semantics with the legacy todos-import adapter, with real non-Git CLI regressions."
 body: ""

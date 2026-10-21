@@ -2,11 +2,13 @@ id: pm-todos-x5my
 title: Replace deprecated list-all readers with SDK-certified canonical complete reads
 description: "Both upsert indexing and TODO export still shell out through the deprecated list-all alias and rely on a package-local partial receipt checker. Migrate both consumers to one canonical strict full doubly-unbounded pm list --all reader, delegate shared completeness policy to the public pm SDK, reject the documented pm-cli#1078 receipt gaps fail-closed, and prove real packed npm/Bun behavior on the current and declared minimum host versions."
 type: Issue
-status: in_progress
+status: closed
 priority: 1
 tags[5]: agents,cli-ux,complete-corpus,latest-cli,multi-agent
 created_at: "2026-08-21T09:04:11.361Z"
-updated_at: "2026-08-21T23:09:32.148Z"
+updated_at: "2026-10-21T18:59:25.734Z"
+closed_at: "2026-10-21T18:59:16.513Z"
+completed_at: "2026-10-21T18:59:16.513Z"
 author: codex
 estimated_minutes: 420
 acceptance_criteria: "Create one shared canonical list reader used by upsert and export; assert the exact argv and exactly one read per operation; use public SDK inspection/certification for shared policy and supplement only verified SDK gaps; reject missing/contradictory unreadable, omission, read-output, budget, count and identity evidence; exact-pin development pm CLI/SDK 2026.8.21 while proving a 2026.8.20 minimum behavior floor; add mandatory fresh packed npm-current, Bun-current, npm-minimum, and Bun-minimum acceptance using real data; pass all existing and new tests, docstring gate, production audit, clean pack, deterministic changelog, PM validation, merge dry-run, duplicate scan and exact-head CI/review; retain separate pm-todos-qpst and pm-todos-oz1n blockers rather than overclaiming release readiness"
@@ -17,6 +19,8 @@ actual_result: "Implementation now uses one canonical strict full doubly-unbound
 affected_version: pm-todos 2026.8.16 with pm CLI 2026.8.21
 component: TODO import/export tracker reads
 customer_impact: Partial or compacted tracker reads can make upsert create duplicates or export omit tasks while appearing successful; deprecated diagnostics and stale host assumptions make agent automation noisy and brittle.
+comments[1]{created_at,author,text}:
+  "2026-10-21T18:57:57.755Z",codex-agent,"Authorized tracker reconciliation, audit 2026-10-21. Owner-authorized takeover of any historical assignment for this verified terminal transition. Reverified current main 4ae22457fccd: merged #55 (14cfe7b); source tree exactly matches the audited snapshot. **Replace deprecated list-all readers with SDK-certified canonical complete reads.** [PR #55](https://github.com/unbraind/pm-todos/pull/55) uses one SDK-certified complete reader for upsert/export and refuses partial envelopes."
 notes[7]:
   - created_at: "2026-08-21T09:18:39.859Z"
     author: codex
@@ -55,4 +59,5 @@ docs[3]{path,scope,note}:
   "https://github.com/unbraind/pm-cli-companion/blob/21a8a00e6447e0238d85dc74cc4f0bb69cda5dee/.agents/pm/issues/pm-cli-website-cbyb.toon",global,Companion fleet canonical-command migration
   "https://github.com/unbraind/pm-cli/issues/1078",global,Public SDK complete-list certification gaps
   "https://github.com/unbraind/pm-todos/issues/54",global,Independent reachable-history privacy blocker
+close_reason: "Reverified current main 4ae22457fccd: merged #55 (14cfe7b); source tree exactly matches the audited snapshot. **Replace deprecated list-all readers with SDK-certified canonical complete reads.** [PR #55](https://github.com/unbraind/pm-todos/pull/55) uses one SDK-certified complete reader for upsert/export and refuses partial envelopes."
 body: "Project management is context management: preserve package-owned append-only evidence and link the companion migration item and upstream pm-cli#1078. Do not merge or publish while independent honest-coverage, privacy-history, or reviewer gates remain unresolved."

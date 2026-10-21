@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026.10.21 - 2026-10-21
+
+### Changed
+
+- Adopt pm-github 2026.10.16: default-branch-safe gated sync and daily gated closeout PRs ([pm-todos-gvzm](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-gvzm.toon))
+- Enable the gated GitHub issue sync ([pm-todos-maint1014](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-maint1014.toon))
+
+### Fixed
+
+- The changelog gate stamps an untagged version with the current date, so its verdict flips every midnight with no commit ([pm-todos-14uh](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-14uh.toon))
+- Isolate ambiguity snapshots across CLI and SDK read contexts ([pm-todos-cache-context](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-cache-context.toon))
+- Make legacy TODO importer share native input and preview contract ([pm-todos-ztuk](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ztuk.toon))
+- The release job authenticated with a stored npm token that expired, so publishing stopped while every other gate stayed green ([pm-todos-xxd3](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-xxd3.toon))
+- A release run bumped and committed a new version every night while publishing was impossible, because the only externally-failable step runs last ([pm-todos-6cod](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-6cod.toon))
+
+### Deprecated
+
+- Replace deprecated list-all readers with SDK-certified canonical complete reads ([pm-todos-x5my](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-x5my.toon))
+
+### Other
+
+- Enable GitHub CodeQL code scanning ([pm-todos-6g2c](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-6g2c.toon))
+- Bring pm-todos to 100% line/branch/function coverage and raise gate to 100 ([pm-todos-p60g](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-p60g.toon))
+- Certify pm-todos on PM CLI/SDK 2026.10.4 and consolidate pending dependency updates ([pm-todos-zpyc](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-zpyc.toon))
+
 ## 2026.10.12 - 2026-10-12
 
 ### Fixed
