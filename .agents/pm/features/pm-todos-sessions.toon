@@ -1,0 +1,27 @@
+id: pm-todos-sessions
+title: Reconcile todo.txt editing sessions without overwriting concurrent edits
+description: "Export todo.txt with stable item and field digests; reconcile external edits against current tracker values using fidelity conversion. Overlap rechecked: pm-todos fidelity/upsert owns todo.txt conversion; pm-csv owns tables and core SDK transactions own atomicity. No existing editing-session item found; reconciliation PR 140 items excluded."
+type: Feature
+status: in_progress
+priority: 2
+tags: []
+created_at: "2026-10-21T20:12:43.381Z"
+updated_at: "2026-10-21T20:19:40.985Z"
+author: codex-agent
+acceptance_criteria: Concurrent local edits conflict explicitly; deleting a line never deletes an item by default; unchanged imports are idempotent; typed SDK and CLI with compact TOON/JSON and actionable refusals; non-git and public-tracker-copy validation
+comments[3]{created_at,author,text}:
+  "2026-10-21T20:13:36.513Z",codex-agent,"Design: todo.txt lines carry stable pm identities; versioned sidecar carries item and field digests. Three-way field reconciliation reuses fidelity conversion; omissions retain items, unchanged imports write nothing. Final reconciliation runs inside the core SDK item lock, retaining ownership, workflow and history enforcement. Batch atomicity remains a core concern; result records per-item progress if a writer races later rows. Lifecycle changes require normal pm close/reopen and return a typed remedy. No git subprocess is required."
+  "2026-10-21T20:17:57.073Z",codex-agent,"Validation: a disposable non-git copy of the public main tracker contained 92 items. Exported all 92: 10443 text bytes and 86536 sidecar bytes. Unchanged import matched 92, replay changed zero, omission retained 92, item/history/settings bytes stayed identical on no-op, concurrent title produced one field_conflict. Source fingerprints stayed unchanged. Behavioral revert: disabling only field-digest conflict detection makes the three-way regression fail (exit 1); restored implementation passes. A linked-test sandbox exposed init target precedence; the regression now supplies an explicit SDK client root."
+  "2026-10-21T20:19:34.780Z",codex-agent,"Targeted validation includes simultaneous SDK writers on the same tracker (one success, one explicit conflict), installed packed CLI TOON/JSON commands, absent-git PATH, locked-item refusal, field merge, no-op durable history and omission. Typecheck and docstring lint pass; no separate lint script exists. Full npm and Bun release gates run in CI at unchanged thresholds."
+files[5]{path,scope}:
+  .github/workflows/ci.yml,project
+  index.ts,project
+  scripts/validate-sessions.ts,project
+  sessions.ts,project
+  test/sessions.test.ts,project
+tests[1]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+  node --test test/sessions.test.ts,project,codex-agent,"2026-10-21T20:17:08.488Z",local_mutation,feat/conflict-aware-editing
+docs[2]{path,scope}:
+  docs/editing-sessions.md,project
+  README.md,project
+body: ""
