@@ -9,7 +9,7 @@ import type {
   PreflightOverrideContext,
 } from "@unbrained/pm-cli/sdk/authoring";
 import { certifyCompleteListResult, EXIT_CODE, inspectCompleteListResult } from "@unbrained/pm-cli/sdk";
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { isAbsolute, resolve, join, relative, sep } from "node:path";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
@@ -2892,8 +2892,19 @@ export default defineExtension({
           if (existsSync(file) || existsSync(sidecar)) throw new CommandError("Session output already exists; choose fresh text and sidecar filenames.", EXIT_CODE.USAGE);
           const result = await exportTodoEditingSession(ctx.pm_root);
           // Exclusive creation protects existing editing work from accidental export.
-          writeFileSync(sidecar, JSON.stringify(result.session), { flag: "wx" });
-          writeFileSync(file, result.text, { flag: "wx" });
+          const created: string[] = [];
+          try {
+            for (const [path, content] of [[sidecar, JSON.stringify(result.session)], [file, result.text]]) {
+              const descriptor = openSync(path, "wx");
+              created.push(path);
+              try { writeFileSync(descriptor, content); }
+              finally { closeSync(descriptor); }
+            }
+          } catch (error) {
+            // Remove only outputs created by this attempt, including partial writes.
+            for (const path of created.reverse()) { try { unlinkSync(path); } catch {} }
+            throw error;
+          }
           return { ok: true, exported: result.session.entries.length, digest: result.session.digest };
         }
         let session: unknown;

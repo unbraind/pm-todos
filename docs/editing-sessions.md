@@ -11,7 +11,11 @@ pm todos session apply --file todo.txt --session todo.session.json --json
 
 Each line ends with `pm-session:<id>`. Keep that token with its line when
 reordering. Keep the versioned JSON sidecar unchanged. Export refuses to
-overwrite either file; use fresh filenames for a fresh baseline.
+overwrite either file; use fresh filenames for a fresh baseline. Failed exports
+remove outputs created by that attempt so the same filenames can be retried.
+Export rejects titles that todo.txt would reinterpret as metadata (for example,
+`Meeting at 10:30`, `Work +sdk` or `Call @home`) and names the affected item.
+Use JSONL export for those items and for multiline titles or invalid dates.
 
 Suppose the snapshot has `(C) Fix parser +sdk pm-session:demo-one`. Change
 `Fix parser` to `Fix unicode parser`. A concurrent priority change in the

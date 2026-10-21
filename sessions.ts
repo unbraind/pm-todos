@@ -60,10 +60,13 @@ function fieldDigests(item: PmItem): Record<TodoSessionField, string> {
 /** Export stable ids and digests using the existing fidelity serializer. */
 export function createTodoEditingSession(items: readonly PmItem[]): { session: TodoEditingSession; text: string } {
   const entries = [...items].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map(item => {
-    if (!/^[a-zA-Z0-9_-]+$/.test(item.id)) throw new TypeError("Session requires stable pm item ids.");
+    if (!/^[a-zA-Z0-9_-]+$/.test(item.id)) throw new TypeError(`Item ${item.id} requires a stable pm item id.`);
     const line = serializeTodoTxtLine(item, "fidelity");
-    if (/[\r\n]/.test(line) || /(?:^|\s)pm-session:/.test(line)) throw new TypeError("Session cannot represent multiline text or a reserved pm-session token; use JSONL export.");
-    projected(line);
+    if (/[\r\n]/.test(line) || /(?:^|\s)pm-session:/.test(line)) throw new TypeError(`Item ${item.id} cannot represent multiline text or a reserved pm-session token; use JSONL export.`);
+    let roundTrip: Record<string, unknown>;
+    try { roundTrip = projected(line); }
+    catch { throw new TypeError(`Item ${item.id} has invalid todo.txt text or calendar dates; use JSONL export.`); }
+    if (roundTrip.title !== item.title.trim().split(/\s+/).join(" ")) throw new TypeError(`Item ${item.id} has a title that todo.txt parsing would alter; use JSONL export.`);
     const fields = fieldDigests(item);
     return { id: item.id, line, itemDigest: digest([item.id, fields]), fieldDigests: fields };
   });
@@ -137,13 +140,20 @@ export async function applyTodoEditingSession(pmRoot: string, session: unknown, 
   if (!preview.result.ok || options.dryRun || !preview.patches.length) return preview.result;
   const settings = await readSettings(pmRoot);
   const baselines = new Map((session as TodoEditingSession).entries.map(entry => [entry.id, entry]));
+  const linesById = new Map<string, string[]>();
+  for (const raw of text.split(/\r?\n/)) {
+    const id = /pm-session:([a-zA-Z0-9_-]+)\s*$/.exec(raw)?.[1];
+    if (!id) continue;
+    const lines = linesById.get(id);
+    if (lines) lines.push(raw); else linesById.set(id, [raw]);
+  }
   for (const patch of preview.patches) {
     try {
       await mutateItem({ pmRoot, settings, id: patch.id, op: "update", author: options.author, skipNoop: true, message: "Reconcile todo.txt editing session", extensionFieldNames: ["todos_todotxt", "todos_kv", "todos_creation_date", "todos_completion_date"], mutate(document) {
         // Compare against the original baseline while holding the same item lock
         // used by ordinary core writers. Independent fields survive this merge.
         const row = baselines.get(patch.id);
-        const locked = plan(row ? { version: 1, entries: [row], digest: digest([row]) } : null, text.split(/\r?\n/).filter(line => line.trim().endsWith(`pm-session:${patch.id}`)).join("\n"), [document.metadata as PmItem]);
+        const locked = plan(row ? { version: 1, entries: [row], digest: digest([row]) } : null, (linesById.get(patch.id) ?? []).join("\n"), [document.metadata as PmItem]);
         if (!locked.result.ok) throw Object.assign(new Error("Session conflict"), { refusals: locked.result.refusals });
         const values = locked.patches[0]?.values ?? {};
         for (const [field, value] of Object.entries(values)) {

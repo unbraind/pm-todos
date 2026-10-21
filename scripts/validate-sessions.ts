@@ -46,5 +46,5 @@ try {
   const sourceUnchanged = before === fingerprint(source);
   const receipt = { items: items.length, exported: session.entries.length, textBytes: Buffer.byteLength(text), sidecarBytes: Buffer.byteLength(JSON.stringify(session)), unchanged: unchanged.unchanged, replayChanged: replay.changed, omitted: omitted.omitted, noOpBytesPreserved, conflictCount: conflict.refusalCount, conflictCode: conflict.refusals[0]?.code, sourceUnchanged };
   console.log(JSON.stringify(receipt));
-  if (!unchanged.ok || !replay.ok || replay.changed || !noOpBytesPreserved || omitted.omitted !== items.length || conflict.refusals[0]?.code !== "field_conflict" || !sourceUnchanged) process.exitCode = 1;
+  if (!unchanged.ok || !replay.ok || replay.changed || !noOpBytesPreserved || omitted.omitted !== session.entries.length || conflict.refusals[0]?.code !== "field_conflict" || !sourceUnchanged) process.exitCode = 1;
 } finally { rmSync(root, { recursive: true, force: true }); }
