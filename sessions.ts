@@ -41,7 +41,7 @@ interface SessionPatch { id: string; values: Record<string, unknown> }
 function digest(value: unknown): string {
   const canonical = (input: unknown): unknown => {
     if (Array.isArray(input)) return input.map(canonical);
-    if (input !== null && typeof input === "object") return Object.fromEntries(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)).map(([key, val]) => [key, canonical(val)]));
+    if (input !== null && typeof input === "object") return Object.fromEntries(Object.entries(input).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, val]) => [key, canonical(val)]));
     return input ?? null;
   };
   return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
@@ -59,7 +59,7 @@ function fieldDigests(item: PmItem): Record<TodoSessionField, string> {
 }
 /** Export stable ids and digests using the existing fidelity serializer. */
 export function createTodoEditingSession(items: readonly PmItem[]): { session: TodoEditingSession; text: string } {
-  const entries = [...items].sort((a, b) => a.id.localeCompare(b.id)).map(item => {
+  const entries = [...items].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map(item => {
     if (!/^[a-zA-Z0-9_-]+$/.test(item.id)) throw new TypeError("Session requires stable pm item ids.");
     const line = serializeTodoTxtLine(item, "fidelity");
     if (/[\r\n]/.test(line) || /(?:^|\s)pm-session:/.test(line)) throw new TypeError("Session cannot represent multiline text or a reserved pm-session token; use JSONL export.");

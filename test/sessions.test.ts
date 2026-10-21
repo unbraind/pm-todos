@@ -18,6 +18,8 @@ test("stable digests, reorder, omission and unchanged imports are safe", () => {
   const b = createTodoEditingSession([item, second]);
   assert.deepEqual(a, b);
   assert.equal(a.session.entries[0].itemDigest.length, 64);
+  const metadata = { ...item, todos_kv: { z: "last", "ä": "unicode", a: "first" } };
+  assert.equal(createTodoEditingSession([metadata]).session.digest, createTodoEditingSession([{ ...metadata, todos_kv: { a: "first", z: "last", "ä": "unicode" } }]).session.digest);
   assert.equal(Object.keys(a.session.entries[0].fieldDigests).length, 9);
   assert.deepEqual(reconcileTodoEditingSession(a.session, a.text, [item, second]), { ok: true, changed: 0, applied: 0, unchanged: 2, omitted: 0, refusalCount: 0, refusals: [], hasMore: false });
   assert.equal(reconcileTodoEditingSession(a.session, "", [item, second]).omitted, 2);
