@@ -115,7 +115,7 @@ test("real non-git tracker: preview, guarded apply, replay and omission preserve
     assert.equal(JSON.parse(cli(["todos", "session", "apply", ...paths])).changed, 0);
     assert.match(execFileSync(pmBin, ["--pm-path", pmRoot, "todos", "session", "preview", ...paths], { cwd: root, env, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }), /unchanged: 1/);
     // PATH excludes git entirely: export/session reconciliation uses no subprocess.
-    const source = `import { exportTodoEditingSession, applyTodoEditingSession } from ${JSON.stringify(join(process.cwd(), "index.ts"))}; const e = await exportTodoEditingSession(${JSON.stringify(pmRoot)}); const r = await applyTodoEditingSession(${JSON.stringify(pmRoot)},e.session,e.text,{author:'test-agent'}); if(!r.ok || r.changed)process.exit(1);`;
+    const source = `import { exportTodoEditingSession, applyTodoEditingSession } from ${JSON.stringify(join(process.cwd(), "index.ts"))}; const e = await exportTodoEditingSession(${JSON.stringify(pmRoot)}); const r = await applyTodoEditingSession(${JSON.stringify(pmRoot)},e.session,e.text.replace('Concurrent','No Git edit'),{author:'test-agent'}); if(!r.ok || r.applied !== 1)process.exit(1);`;
     execFileSync(process.execPath, ["--input-type=module", "-e", source], { env: { ...process.env, PATH: root }, cwd: root });
   } finally {
     if (oldCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = oldCeiling;
