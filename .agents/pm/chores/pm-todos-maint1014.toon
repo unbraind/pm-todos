@@ -2,18 +2,21 @@ id: pm-todos-maint1014
 title: Enable the gated GitHub issue sync
 description: Enable the SHA-pinned fail-closed issue sync caller. Keep existing thresholds and verify isolated npm and Bun release gates.
 type: Chore
-status: in_progress
+status: closed
 priority: 1
 tags[1]: changed
 created_at: "2026-10-14T10:24:40.229Z"
-updated_at: "2026-10-15T12:27:53.457Z"
+updated_at: "2026-10-21T18:49:56.234Z"
+closed_at: "2026-10-21T18:49:50.458Z"
+completed_at: "2026-10-21T18:49:50.458Z"
 author: codex-agent
-comments[5]{created_at,author,text}:
+comments[6]{created_at,author,text}:
   "2026-10-14T10:24:49.283Z",codex-agent,"Plan: author this package own thin caller, pin workflow SHA and pm-github to 2026.10.13, and verify isolated npm/Bun release gates without changing thresholds. No fast-glob listed; retain existing dependency pins. No workflow dispatch, bot requests, merges, or source function changes."
   "2026-10-14T10:25:02.559Z",codex-agent,"Audit before: full 0 vulnerabilities (0 high), production 0. After: full 0, production 0; npm ls braces is empty. The caller runs at 17 3 * * * UTC. It validates access, previews the complete plan, imports with --gate, verifies repeat-import idempotency and privacy, then checks strict health before commit/push/PR. SHA pin matches published pm-github 2026.10.13. Actionlint skipped: binary missing and offline npx registry metadata unavailable. GitHub Actions PR-creation setting verified enabled. No direct fast-glob imports in authored scripts. The package prepare contract will be checked independently."
   "2026-10-14T12:46:04.485Z",codex-agent,"Node 24 full npm gate reproduces existing pm-todos-cache-context (297/304; derived-cache context differences only). No production code, tests, dependency pins or thresholds changed. Validate the exact maintenance source under the documented CI Node 26 runtime, using the same clean-HOME npm and Bun release:check commands. Record the Node 24 gap separately instead of excluding cache files from snapshots."
   "2026-10-14T13:56:50.853Z",codex-agent,"Node 26 also reproduced 297/304; runtime selection alone did not fix the seven failures. Root cause: CLI fixture subprocesses use the temporary HOME/XDG/global paths and working directory, while source-harness relaunches inherit the package environment. Align the source harness with that same fixture environment and restore it in finally; retain every tracker-byte, item/history/input and refusal assertion. Focused incoming-collision regression passes 1/1; reverting only the environment helper to directly invoke the operation fails 0/1 with metadata-cache snapshot differences. Fixed helper restored. No production code, cache exclusion, SDK pin or thresholds changed. Both complete isolated gates will now run with the default Node 24 runtime."
   "2026-10-14T14:22:01.828Z",codex-agent,"Validation complete: npm: 305/305 tests passed, 0 skipped (test runs: 304 + 1); bun: 305/305 tests passed, 0 skipped (test runs: 304 + 1). Both isolated release:check gates passed at unchanged thresholds. Full audit 0, production audit 0, npm ls braces empty. Caller identity check reports only unbraind/pm-github. Behavioural revert proof: the real incoming-collision case passes 1/1; reverting only the fixture environment helper fails 0/1 on the strict tracker snapshot. Changelog regenerated and checked. Actionlint unavailable offline as recorded above. Item stays in progress for orchestrator verification."
+  "2026-10-21T18:49:05.209Z",codex-agent,"Authorized tracker reconciliation, audit 2026-10-21. Owner-authorized takeover of any historical assignment for this verified terminal transition. Reverified current main 4ae22457fccd: SHA-pinned gated workflow caller retained; source tree exactly matches the audited snapshot. **Enable the gated GitHub issue sync.** The SHA-pinned .github/workflows/pm-github-sync.yml caller is present on main. Toolchain manifests record adopted canonical tooling; later scheduled-job failures are separate from caller adoption."
 files[2]{path,scope}:
   .github/workflows/pm-github-sync.yml,project
   test/ambiguous-signatures.test.ts,project
@@ -22,4 +25,5 @@ tests[2]{command,scope,timeout_seconds,pm_context_mode,provenance{author,created
   "env -u PM_PATH -u PM_AUTHOR HOME=$(mktemp -d) GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 bun run release:check",project,3600,tracker,codex-agent,"2026-10-14T10:25:35.145Z",local_mutation,chore/gated-issue-sync-and-braces-free-gates
 docs[1]{path,scope}:
   CHANGELOG.md,project
+close_reason: "Reverified current main 4ae22457fccd: SHA-pinned gated workflow caller retained; source tree exactly matches the audited snapshot. **Enable the gated GitHub issue sync.** The SHA-pinned .github/workflows/pm-github-sync.yml caller is present on main. Toolchain manifests record adopted canonical tooling; later scheduled-job failures are separate from caller adoption."
 body: ""
