@@ -470,3 +470,20 @@ itself lists each affected stream in its output; `pm history --verify <id>` spot
 content, so `reconcile` only re-greens the hash chain (no data loss) — see the authoritative
 [pm-cli merge-safety guide](https://github.com/unbraind/pm-cli/blob/main/docs/MERGE_SAFETY.md). The
 older blunt `pm history-repair --all` remains available as a lower-level primitive.
+
+## Conflict-aware todo.txt editing sessions
+
+Use `pm todos session export --file todo.txt --session baseline.json`, edit the
+text while retaining each `pm-session:<id>` token, then run `preview` and `apply`
+with the same flags. A baseline sidecar holds stable item and field digests.
+Independent tracker edits survive; competing edits return typed conflicts with
+remedies. Deleted lines retain their items. Unchanged imports are idempotent.
+The SDK exports the same session and reconciliation operations. Receipts are
+compact TOON by default or JSON with `--json`, with at most 20 refusal details.
+See the [worked example and limits](docs/editing-sessions.md).
+
+## Without git
+
+Import, export, validation, context, sync and editing sessions work in plain
+tracker directories. Git-based release and changelog tooling needs a git
+repository; it is not part of the editing-session path.

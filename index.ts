@@ -9,11 +9,14 @@ import type {
   PreflightOverrideContext,
 } from "@unbrained/pm-cli/sdk/authoring";
 import { certifyCompleteListResult, EXIT_CODE, inspectCompleteListResult } from "@unbrained/pm-cli/sdk";
-import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { isAbsolute, resolve, join, relative, sep } from "node:path";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
 
+
+export * from "./sessions.ts";
+import { exportTodoEditingSession, applyTodoEditingSession } from "./sessions.ts";
 
 // ---------------------------------------------------------------------------
 // Error contract
@@ -66,7 +69,8 @@ interface TodoItem {
   itemType?: string;
 }
 
-interface PmItem {
+/** Tracker item fields used by all TODO conversion and session SDK operations. */
+export interface PmItem {
   id: string;
   title: string;
   description?: string;
@@ -1061,12 +1065,13 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
 
   let done = false;
   let completionDate: string | undefined;
+  // Disjoint whitespace and body starts prevent retries over long space runs.
   // Completed task: leading `x ` then an optional completion date.
-  const doneMatch = /^x\s+(.*)$/.exec(rest);
+  const doneMatch = /^x\s+(\S.*)$/.exec(rest);
   if (doneMatch) {
     done = true;
     rest = doneMatch[1].trim();
-    const dateMatch = /^(\d{4}-\d{2}-\d{2})\s+(.*)$/.exec(rest);
+    const dateMatch = /^(\d{4}-\d{2}-\d{2})\s+(\S.*)$/.exec(rest);
     if (dateMatch) {
       completionDate = dateMatch[1];
       rest = dateMatch[2].trim();
@@ -1074,7 +1079,7 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
   }
 
   let priorityLetter: string | undefined;
-  const prioMatch = /^\(([A-Z])\)\s+(.*)$/.exec(rest);
+  const prioMatch = /^\(([A-Z])\)\s+(\S.*)$/.exec(rest);
   if (prioMatch) {
     priorityLetter = prioMatch[1];
     rest = prioMatch[2].trim();
@@ -1082,7 +1087,7 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
 
   // Optional creation date (a leading bare date after the priority).
   let creationDate: string | undefined;
-  const createMatch = /^(\d{4}-\d{2}-\d{2})\s+(.*)$/.exec(rest);
+  const createMatch = /^(\d{4}-\d{2}-\d{2})\s+(\S.*)$/.exec(rest);
   if (createMatch) {
     creationDate = createMatch[1];
     rest = createMatch[2].trim();
@@ -2869,6 +2874,52 @@ export default defineExtension({
   version: "2026.10.22",
 
   activate(api: ExtensionApi) {
+    api.registerCommand({
+      name: "todos session",
+      description: "Export, preview or apply conflict-aware todo.txt editing sessions.",
+      arguments: [{ name: "action", required: true, description: "export | preview | apply" }],
+      flags: [
+        { long: "--file", value_name: "path", description: "Editable todo.txt file" },
+        { long: "--session", value_name: "path", description: "Baseline JSON sidecar" },
+      ],
+      async run(ctx: CommandHandlerContext) {
+        const action = ctx.args[0];
+        const file = readStringOption(ctx.options, "file");
+        const sidecar = readStringOption(ctx.options, "session");
+        if (!file || !sidecar || resolve(file) === resolve(sidecar) || !["export", "preview", "apply"].includes(action)) {
+          throw new CommandError("Use pm todos session export|preview|apply --file todo.txt --session baseline.json (distinct files).", EXIT_CODE.USAGE);
+        }
+        if (action === "export") {
+          if (existsSync(file) || existsSync(sidecar)) throw new CommandError("Session output already exists; choose fresh text and sidecar filenames.", EXIT_CODE.USAGE);
+          const result = await exportTodoEditingSession(ctx.pm_root);
+          // Exclusive creation protects existing editing work from accidental export.
+          const created: string[] = [];
+          try {
+            for (const [path, content] of [[sidecar, JSON.stringify(result.session)], [file, result.text]]) {
+              const descriptor = openSync(path, "wx");
+              created.push(path);
+              try { writeFileSync(descriptor, content); }
+              finally { closeSync(descriptor); }
+            }
+          } catch (error) {
+            // Remove only outputs created by this attempt, including partial writes.
+            for (const path of created.reverse()) { try { unlinkSync(path); } catch {} }
+            throw error;
+          }
+          return { ok: true, exported: result.session.entries.length, digest: result.session.digest };
+        }
+        let session: unknown;
+        try { session = JSON.parse(readFileSync(sidecar, "utf8")); }
+        catch { throw new CommandError("Cannot read session JSON; export a new baseline sidecar.", EXIT_CODE.USAGE); }
+        let text: string;
+        try { text = readFileSync(file, "utf8"); }
+        catch { throw new CommandError("Cannot read session todo.txt; restore the editing file or export a new session.", EXIT_CODE.USAGE); }
+        const result = await applyTodoEditingSession(ctx.pm_root, session, text, { author: process.env.PM_AUTHOR ?? "pm-todos", dryRun: action === "preview" });
+        if (!result.ok) process.exitCode = EXIT_CODE.GENERIC_FAILURE;
+        return result;
+      },
+    });
+
     api.registerItemFields([
       { name: "todos_kv", type: "object", optional: true },
       { name: "todos_todotxt", type: "string", optional: true },
