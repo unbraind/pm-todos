@@ -1,0 +1,38 @@
+id: pm-todos-review140
+title: Correct tracker comments from PR 140 review
+description: Address PRRT_kwDOSZpews6vETQG and audit all tracker-only changes for malformed comments while preserving existing history.
+type: Chore
+status: in_progress
+priority: 2
+tags: []
+created_at: "2026-10-22T12:11:25.555Z"
+updated_at: "2026-10-22T12:16:35.828Z"
+author: codex-agent
+acceptance_criteria: "Remove the two malformed duplicates, preserve the clean reconciliation comment and all historical bytes, recheck current main, pass tracker-only gates."
+comments[3]{created_at,author,text}:
+  "2026-10-22T12:11:56.953Z",codex-agent,"Verified PRRT_kwDOSZpews6vETQG: comments 13 and 15 are malformed duplicates; keep clean comment 14. Latest CodeRabbit review has no Outside diff range findings. Main d5172f8 differs from audited 4ae2245 only in release version metadata. All eleven reconciliation verdicts remain supported; immutable history must stay byte-for-byte preserved. Self-review also found metadata prefix in comment 6 of pm-todos-p60g; correct current prose through pm comments --edit. Tracker-only evidence validation replaces implementation revert tests."
+  "2026-10-22T12:14:26.095Z",codex-agent,"Tracker evidence proof: the same linked semantic TOON-decoding check against pre-fix snapshot 9cddd1a exits 1 with 1/3 comment assertions; current tracker passes 3/3. Existing history streams are preserved 11/11 byte-for-byte in both comparisons. Linked node evidence command and git diff --check passed 2/2 via pm test pm-todos-review140 --run --progress, zero timeouts/skips/failures. Current main d5172f8 retains release OIDC/ref/preflight guards, stable changelog dates, canonical complete reader, merged legacy importer and context-isolation fixes, CodeQL and pinned gated callers; duplicate coverage ownership still points to open pm-todos-qpst. No implementation code changed; no dist files are tracked. npm ci passed with zero vulnerabilities. Remaining tracker-only gates: regenerate changelog, check changelog and report health diagnostics. Complex comma-containing linked commands require --add-json; the initial --add attempt was refused before any tracker mutation."
+  "2026-10-22T12:16:32.673Z",codex-agent,"Final self-review strengthened the linked history assertion to every history stream present at pre-fix head 9cddd1a, including streams for retired items: all 93/93 retain their original bytes. Snapshot proof remains red at 1/3 comment assertions and green at 3/3. Whole-PR semantic malformed-comment audit passed 11/11 changed items. npm run changelog:full and npm run changelog:check passed; generation correctly moved the untagged reconciliation entries into Unreleased after the main release bump. pm health --json --output-budget unbounded exits 0, with 9/10 checks green and the existing extension_host_pm_cli_version_skew:2026.10.15:2026.10.22:pm-github warning; all history drift counts are zero. Health is not fully green. Existing tooling diagnostics are already retained by pm-todos-zpyc; dependency maintenance stays outside this tracker correction. Linked commands were replaced by remove/add because update-index with set-json accepts metadata changes only. Retain review item in_progress for orchestrator verification and release the claim before push; rerun changelog generation/check after these final tracker writes."
+files[2]{path,scope}:
+  .agents/pm/issues/pm-todos-6cod.toon,project
+  .agents/pm/tasks/pm-todos-p60g.toon,project
+tests[2]:
+  - command: git diff --check
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-22T12:13:47.713Z"
+      source_kind: local_mutation
+      source_ref: chore/reconcile-tracker-1021
+  - command: "node --input-type=module -e 'import assert from '\\''node:assert/strict'\\''; import { readFileSync } from '\\''node:fs'\\''; import { execFileSync } from '\\''node:child_process'\\''; import { createRequire } from '\\''node:module'\\''; const {decode}=await import(createRequire(import.meta.url).resolve('\\''@toon-format/toon'\\'',{paths:['\\''./node_modules/@unbrained/pm-cli'\\'']})); const git=(...args)=>execFileSync('\\''git'\\'',args,{encoding:'\\''utf8'\\''}); const read=p=>decode(process.env.TRACKER_EVIDENCE_REF?git('\\''show'\\'',process.env.TRACKER_EVIDENCE_REF+'\\'':'\\''+p):readFileSync(p,'\\''utf8'\\'')); const paths=['\\''.agents/pm/issues/pm-todos-6cod.toon'\\'','\\''.agents/pm/tasks/pm-todos-p60g.toon'\\'']; let passed=0; for(const p of paths){if(read(p).comments.every(c=>!/^author=[^,]+,/.test(c.text)))passed++;} const clean=decode(git('\\''show'\\'','\\''9cddd1a:'\\''+paths[0])).comments.find(c=>c.created_at==='\\''2026-10-21T18:28:48.679Z'\\''); if(read(paths[0]).comments.filter(c=>JSON.stringify(c)===JSON.stringify(clean)).length===1)passed++; console.log('\\''Comment evidence: '\\''+passed+'\\''/3'\\''); const streams=git('\\''ls-tree'\\'','\\''-r'\\'','\\''--name-only'\\'','\\''9cddd1a'\\'','\\''--'\\'','\\''.agents/pm/history'\\'').trim().split('\\''\\n'\\'').filter(Boolean); for(const p of streams)assert.ok(readFileSync(p,'\\''utf8'\\'').startsWith(git('\\''show'\\'','\\''9cddd1a:'\\''+p)),p); console.log('\\''Historical streams preserved: '\\''+streams.length+'\\''/'\\''+streams.length); assert.equal(passed,3);'"
+    scope: project
+    timeout_seconds: 120
+    pm_context_mode: tracker
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-22T12:16:18.196Z"
+      source_kind: local_mutation
+      source_ref: chore/reconcile-tracker-1021
+docs[1]{path,scope}:
+  CHANGELOG.md,project
+body: ""
