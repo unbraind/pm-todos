@@ -1065,12 +1065,13 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
 
   let done = false;
   let completionDate: string | undefined;
+  // Disjoint whitespace and body starts prevent retries over long space runs.
   // Completed task: leading `x ` then an optional completion date.
-  const doneMatch = /^x\s+(.*)$/.exec(rest);
+  const doneMatch = /^x\s+(\S.*)$/.exec(rest);
   if (doneMatch) {
     done = true;
     rest = doneMatch[1].trim();
-    const dateMatch = /^(\d{4}-\d{2}-\d{2})\s+(.*)$/.exec(rest);
+    const dateMatch = /^(\d{4}-\d{2}-\d{2})\s+(\S.*)$/.exec(rest);
     if (dateMatch) {
       completionDate = dateMatch[1];
       rest = dateMatch[2].trim();
@@ -1078,7 +1079,7 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
   }
 
   let priorityLetter: string | undefined;
-  const prioMatch = /^\(([A-Z])\)\s+(.*)$/.exec(rest);
+  const prioMatch = /^\(([A-Z])\)\s+(\S.*)$/.exec(rest);
   if (prioMatch) {
     priorityLetter = prioMatch[1];
     rest = prioMatch[2].trim();
@@ -1086,7 +1087,7 @@ export function parseTodoTxtLine(line: string): TodoTxtItem | null {
 
   // Optional creation date (a leading bare date after the priority).
   let creationDate: string | undefined;
-  const createMatch = /^(\d{4}-\d{2}-\d{2})\s+(.*)$/.exec(rest);
+  const createMatch = /^(\d{4}-\d{2}-\d{2})\s+(\S.*)$/.exec(rest);
   if (createMatch) {
     creationDate = createMatch[1];
     rest = createMatch[2].trim();
@@ -2910,7 +2911,10 @@ export default defineExtension({
         let session: unknown;
         try { session = JSON.parse(readFileSync(sidecar, "utf8")); }
         catch { throw new CommandError("Cannot read session JSON; export a new baseline sidecar.", EXIT_CODE.USAGE); }
-        const result = await applyTodoEditingSession(ctx.pm_root, session, readFileSync(file, "utf8"), { author: process.env.PM_AUTHOR ?? "pm-todos", dryRun: action === "preview" });
+        let text: string;
+        try { text = readFileSync(file, "utf8"); }
+        catch { throw new CommandError("Cannot read session todo.txt; restore the editing file or export a new session.", EXIT_CODE.USAGE); }
+        const result = await applyTodoEditingSession(ctx.pm_root, session, text, { author: process.env.PM_AUTHOR ?? "pm-todos", dryRun: action === "preview" });
         if (!result.ok) process.exitCode = EXIT_CODE.GENERIC_FAILURE;
         return result;
       },

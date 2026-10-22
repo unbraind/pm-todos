@@ -6,10 +6,12 @@ status: in_progress
 priority: 2
 tags: []
 created_at: "2026-10-21T20:12:43.381Z"
-updated_at: "2026-10-21T22:22:21.547Z"
+updated_at: "2026-10-22T21:31:41.374Z"
+assignee: codex-agent
+claim_principal: codex-agent
 author: codex-agent
 acceptance_criteria: Concurrent local edits conflict explicitly; deleting a line never deletes an item by default; unchanged imports are idempotent; typed SDK and CLI with compact TOON/JSON and actionable refusals; non-git and public-tracker-copy validation
-comments[10]{created_at,author,text}:
+comments[16]{created_at,author,text}:
   "2026-10-21T20:13:36.513Z",codex-agent,"Design: todo.txt lines carry stable pm identities; versioned sidecar carries item and field digests. Three-way field reconciliation reuses fidelity conversion; omissions retain items, unchanged imports write nothing. Final reconciliation runs inside the core SDK item lock, retaining ownership, workflow and history enforcement. Batch atomicity remains a core concern; result records per-item progress if a writer races later rows. Lifecycle changes require normal pm close/reopen and return a typed remedy. No git subprocess is required."
   "2026-10-21T20:17:57.073Z",codex-agent,"Validation: a disposable non-git copy of the public main tracker contained 92 items. Exported all 92: 10443 text bytes and 86536 sidecar bytes. Unchanged import matched 92, replay changed zero, omission retained 92, item/history/settings bytes stayed identical on no-op, concurrent title produced one field_conflict. Source fingerprints stayed unchanged. Behavioral revert: disabling only field-digest conflict detection makes the three-way regression fail (exit 1); restored implementation passes. A linked-test sandbox exposed init target precedence; the regression now supplies an explicit SDK client root."
   "2026-10-21T20:19:34.780Z",codex-agent,"Targeted validation includes simultaneous SDK writers on the same tracker (one success, one explicit conflict), installed packed CLI TOON/JSON commands, absent-git PATH, locked-item refusal, field merge, no-op durable history and omission. Typecheck and docstring lint pass; no separate lint script exists. Full npm and Bun release gates run in CI at unchanged thresholds."
@@ -20,17 +22,65 @@ comments[10]{created_at,author,text}:
   "2026-10-21T22:12:07.799Z",codex-agent,"Behavioral revert proofs (all restored afterward): PRRT_kwDOSZpews6u-EMx: restore only previous export writes; node --test --test-name-pattern=\"failed session exports|partial sidecar\" test/sessions.test.ts fails 2/2 (exit 1). PRRT_kwDOSZpews6u-EM5: restore items.length omission comparison; pattern \"validation script counts\" fails 1/1 (exit 1). PRRT_kwDOSZpews6u-ENB: restore only createTodoEditingSession; pattern \"export rejects lossy\" fails 1/1 (exit 1). PRRT_kwDOSZpews6u-ENI: restore only applyTodoEditingSession; pattern \"multi-item apply scans\" fails 1/1 (exit 1), observing 5 complete input scans for 4 patches instead of at most 2. PRRT_kwDOSZpews6u-ENO: disable only the projected calendar guard; pattern \"untrusted sessions and malformed\" fails 1/1 (exit 1), proving the corrected titled invalid-date fixture reaches calendar validation. PRRT_kwDOSZpews6u-ENX: disable only the preview refusal early return; pattern \"mixed known input refusals\" fails 1/1 (exit 1), observing applied=1 instead of 0. Each pattern command uses node --test --test-name-pattern=\"PATTERN\" test/sessions.test.ts. Tests import source, so these isolated function/guard reverts require no dist rebuild."
   "2026-10-21T22:12:40.935Z",codex-agent,"Restored implementation verification: pm test pm-todos-sessions --run --progress passed all 4 linked commands: node --test test/sessions.test.ts (10 passed, 0 failed/skipped), npm run typecheck, npm run build:test, npm run docstring (12 files, 86 declarations). npm run build and git diff --check also passed. No local timeouts occurred. Result tracking policy keeps raw pm test receipts local, so this comment persists the public-safe summary. dist is generated and untracked in this repository. Local strict tracker health has no history drift; its only gate-failing finding is the existing pm-github host-version skew, which CI avoids by installing its pinned extension. Full release checks deferred to CI to respect shared CPU limits. No code or threshold changes outside this review scope."
   "2026-10-21T22:22:20.015Z",codex-agent,"CI verification for code commit d34fddb48582e668e614fb23e440fa9e99e78e70: https://github.com/unbraind/pm-todos/actions/runs/39684868331 completed successfully. Node 22.18.0 and 26 each passed npm run release:check AND bun run release:check. Every one of the four gates reports 316 tests passed, 0 failed/skipped; canonical-reader acceptance 1 passed; packed-host acceptance 4 scenarios passed (npm/Bun on pinned development and minimum supported hosts). Both runtime source files covered: 98.02% lines, 93.95% branches, 98.77% functions; unchanged floors 97/93/98. Tracker health, docstrings, audit, package, changelog, calendar-date and publish-attestation gates passed. No timeout retries were required. Final review fetch has the same six unresolved threads and identical complete comments; latest CodeRabbit review remains unchanged with no additional Outside diff range findings. All six valid findings and all nitpicks are addressed; no thread replies/resolutions, merge or release. Releasing the claim and leaving the item in progress for orchestrator verification; the evidence-only tracker commit will receive its own exact-head CI run."
+  "2026-10-22T20:42:19.930Z",codex-agent,"PR 141 follow-up: pulled remote head 52587a6, which already includes current main. GraphQL quota exhausted; REST provided all review comments, latest CodeRabbit review (no additional Outside diff range findings), orchestrator review 5620287005 and CodeQL alert 11. Verified quadratic whitespace backtracking in session identity parsing and stale source provenance after independent field merges. Plan linear suffix parsing shared by preview and apply, fidelity serialization of the merged fields, deterministic held-lock regression, typed unreadable todo.txt errors, and explicit corruption-only sidecar digest documentation. Preserve earlier review fixes. Full isolated npm and Bun release gates and exact-head CodeQL confirmation are required."
+  "2026-10-22T20:48:06.495Z",codex-agent,"Implemented linear sessionLine suffix parsing shared by plan and the apply index. Security boundary pass verified attacker-controlled CLI/SDK editing text reaches the shared parser; whitespace delimiters and anchored identity checks now have disjoint scans. Reviewed all regexes in sessions.ts and index.ts: todo.txt status/priority/date prefixes had the same whitespace/body overlap on embedded Unicode line separators, now disjoint via a non-whitespace body start. Existing markdown provenance/type suffix guards already avoid leading whitespace scans. Independent priority/tag/deadline merges now serialize source provenance from the merged structured values, preserving replay idempotency. Missing editing files raise actionable CommandError for preview/apply. Sidecar docs explicitly limit digests to corruption detection, not authenticity. Separate post-patch bypass/compatibility review traced both CLI/SDK paths, duplicate/missing delimiters, token order and current-field serialization. No delegation was used under queue rules."
+  "2026-10-22T20:48:13.199Z",codex-agent,"Five isolated behavioral proofs, source imports so no dist rebuild: node --test --test-name-pattern=\"session parsing handles\" test/sessions.test.ts fails 1/1 with only sessionLine restored to the old regex (15-second child watchdog on 100k-space near misses). Pattern \"prefix parsing handles\" fails 1/1 with only parseTodoTxtLine restored (same watchdog on space runs before a Unicode line separator). Pattern \"merged source provenance\" fails 1/1 with only the old provenance block restored: stored priority C versus merged priority A. Pattern \"held item lock\" fails 1/1 when only the in-lock re-plan is bypassed: stale apply returns ok true and overwrites the competing title. Pattern \"missing session text\" fails 1/1 when only the typed read guard is removed: missing expected CommandError rejection. Each mutation was restored byte-for-byte in finally. Fixed focused run passes 5/5; typecheck, build:test and docstring pass. Initial test setup was corrected to ES2022-compatible barriers and order-insensitive tag assertions; no production contract or gate threshold changed. The five bounded regressions use real non-git trackers, with actual FS reads/locks and no PM SDK mocks."
+  "2026-10-22T20:50:22.282Z",codex-agent,"Linked verification passed 4/4 commands: session suite 15/15, typecheck, build:test and docstrings (12 files, 86 declarations). Clarification: the two parser regressions run pure SDK values in bounded child processes; the three stateful regressions use real non-git trackers. Compatibility self-review also retained the old refusal for embedded line separators in a task body, while supporting whitespace separators before the identity. The linked full release commands below use isolated HOME and Git identity at unchanged 97/93/98 floors; no source or dependency scope was excluded."
+  "2026-10-22T21:26:20.235Z",codex-agent,"Local full npm gate remains active after more than thirty minutes in real CLI coverage fixtures under shared-host load; no completed local full-gate verdict is claimed. Preserve that run while pushing the focused-tested patch so exact-head CI can execute npm and Bun release:check on Node 22.18.0 and 26 alongside required CodeQL. Focused linked verification already passed 4/4, session suite 15/15, and all five isolated regressions/mutations fail when protection is reverted. Final acceptance will use completed full npm/Bun gate results and the required CodeQL result on the pushed head, distinguishing CI from local evidence. The pinned PM test runner rejected read-only output-budget controls before executing a command; rerunning with JSON output alone started the actual full gate. No dependency or threshold changes."
+  "2026-10-22T21:31:41.371Z",codex-agent,"Final timing harness separates SDK imports (60-second startup guard) from parsing (unchanged 2-second assertion plus a 15-second post-import kill watchdog). Explicit ready/done receipts are required, so an early successful child exit cannot pass. A repeated focused run under increased host load exceeded the original startup-inclusive 15-second watchdog; revised parser tests then passed 2/2, and both isolated regex/parser reverts failed 1/1 specifically after imports completed. Other three behavioral revert proofs remain valid and restored. The older local full npm gate was canceled after about 36 minutes because its test harness was superseded; no completed local full gate or local Bun result is claimed. Full npm/Bun acceptance and required CodeQL will be verified from CI on the pushed exact head. Production source protections and coverage floors remain unchanged during this harness adjustment."
 files[5]{path,scope}:
   .github/workflows/ci.yml,project
   index.ts,project
   scripts/validate-sessions.ts,project
   sessions.ts,project
   test/sessions.test.ts,project
-tests[4]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
-  node --test test/sessions.test.ts,project,codex-agent,"2026-10-21T20:17:08.488Z",local_mutation,feat/conflict-aware-editing
-  npm run typecheck,project,codex-agent,"2026-10-21T22:10:55.954Z",local_mutation,feat/conflict-aware-editing
-  "npm run build:test",project,codex-agent,"2026-10-21T22:10:57.060Z",local_mutation,feat/conflict-aware-editing
-  npm run docstring,project,codex-agent,"2026-10-21T22:10:58.387Z",local_mutation,feat/conflict-aware-editing
+tests[6]:
+  - command: node --test test/sessions.test.ts
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-21T20:17:08.488Z"
+      source_kind: local_mutation
+      source_ref: feat/conflict-aware-editing
+  - command: npm run typecheck
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-21T22:10:55.954Z"
+      source_kind: local_mutation
+      source_ref: feat/conflict-aware-editing
+  - command: "npm run build:test"
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-21T22:10:57.060Z"
+      source_kind: local_mutation
+      source_ref: feat/conflict-aware-editing
+  - command: npm run docstring
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-21T22:10:58.387Z"
+      source_kind: local_mutation
+      source_ref: feat/conflict-aware-editing
+  - command: "env -u PM_PATH -u PM_AUTHOR HOME=$(mktemp -d) GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 npm run release:check"
+    scope: project
+    timeout_seconds: 3600
+    pm_context_mode: tracker
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-22T20:50:27.579Z"
+      source_kind: local_mutation
+      source_ref: feat/conflict-aware-editing
+  - command: "env -u PM_PATH -u PM_AUTHOR HOME=$(mktemp -d) GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 bun run release:check"
+    scope: project
+    timeout_seconds: 3600
+    pm_context_mode: tracker
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-22T20:50:27.579Z"
+      source_kind: local_mutation
+      source_ref: feat/conflict-aware-editing
 docs[2]{path,scope}:
   docs/editing-sessions.md,project
   README.md,project

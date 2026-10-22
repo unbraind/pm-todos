@@ -73,12 +73,23 @@ export function createTodoEditingSession(items: readonly PmItem[]): { session: T
   if (new Set(entries.map(entry => entry.id)).size !== entries.length) throw new TypeError("Session requires unique pm item ids.");
   return { session: { version: 1, digest: digest(entries), entries }, text: entries.map(entry => `${entry.line} pm-session:${entry.id}\n`).join("") };
 }
-/** Verify untrusted sidecars before looking up or mutating tracker identities. */
+/** Check sidecar structure and accidental corruption, not authenticity. */
 function validSession(value: unknown): value is TodoEditingSession {
   try {
     const session = value as TodoEditingSession;
     return session.version === 1 && Array.isArray(session.entries) && new Set(session.entries.map(entry => entry.id)).size === session.entries.length && session.entries.every(entry => /^[a-zA-Z0-9_-]+$/.test(entry.id) && typeof entry.line === "string" && projected(entry.line) && [...FIELDS, "todos_todotxt", "status"].every(field => /^[a-f0-9]{64}$/.test(entry.fieldDigests[field as TodoSessionField])) && entry.itemDigest === digest([entry.id, entry.fieldDigests])) && session.digest === digest(session.entries);
   } catch { return false; }
+}
+/** Parse a trailing identity with disjoint, linear scans of untrusted text. */
+function sessionLine(raw: string): { line: string; id: string } | undefined {
+  const trimmed = raw.trimEnd();
+  const marker = trimmed.lastIndexOf("pm-session:");
+  if (marker <= 0 || !/\s/.test(trimmed[marker - 1])) return undefined;
+  const id = trimmed.slice(marker + "pm-session:".length);
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) return undefined;
+  const line = trimmed.slice(0, marker).trimEnd();
+  if (/[\r\n\u2028\u2029]/.test(line) || /(?:^|\s)pm-session:/.test(line)) return undefined;
+  return { line, id };
 }
 /** Reconcile every line before writing; omitted baseline rows are retained. */
 function plan(session: unknown, text: string, items: readonly PmItem[]): { result: TodoSessionResult; patches: SessionPatch[] } {
@@ -95,9 +106,9 @@ function plan(session: unknown, text: string, items: readonly PmItem[]): { resul
     const current = new Map(items.map(item => [item.id, item]));
     for (const [index, raw] of text.split(/\r?\n/).entries()) {
       if (!raw.trim()) continue;
-      const match = /^(.*?)\s+pm-session:([a-zA-Z0-9_-]+)\s*$/.exec(raw);
-      if (!match || /(?:^|\s)pm-session:/.test(match[1])) { refuse({ code: "invalid_line", line: index + 1, remedy: "Retain exactly one trailing pm-session identity per line; create new items with pm create." }); continue; }
-      const [, line, id] = match;
+      const parsed = sessionLine(raw);
+      if (!parsed) { refuse({ code: "invalid_line", line: index + 1, remedy: "Retain exactly one trailing pm-session identity per line; create new items with pm create." }); continue; }
+      const { line, id } = parsed;
       if (seen.has(id)) { refuse({ code: "duplicate_id", id, remedy: "Keep one line for this identity." }); continue; }
       seen.add(id);
       const baseline = baselines.get(id);
@@ -114,9 +125,12 @@ function plan(session: unknown, text: string, items: readonly PmItem[]): { resul
           else if (digest(currentValue) !== digest(after[field])) values[field] = after[field];
         }
         if (before.status !== after.status) refuse({ code: "lifecycle_required", id, field: "status", remedy: "Use pm close or pm reopen with its required reason, then export a new session." });
-        if (line.trim() !== baseline.line.trim() && item.todos_todotxt !== line.trim()) {
-          if (digest(item.todos_todotxt) !== baseline.fieldDigests.todos_todotxt) refuse({ code: "field_conflict", id, field: "todos_todotxt", remedy: "Source token order changed concurrently; export a new session." });
-          else values.todos_todotxt = line.trim();
+        if (line.trim() !== baseline.line.trim()) {
+          const source = serializeTodoTxtLine({ ...item, ...values, todos_todotxt: line.trim() } as PmItem, "fidelity");
+          if (item.todos_todotxt !== source) {
+            if (digest(item.todos_todotxt) !== baseline.fieldDigests.todos_todotxt) refuse({ code: "field_conflict", id, field: "todos_todotxt", remedy: "Source token order changed concurrently; export a new session." });
+            else values.todos_todotxt = source;
+          }
         }
         if (Object.keys(values).length) patches.push({ id, values }); else unchanged++;
       } catch { refuse({ code: "invalid_line", id, line: index + 1, remedy: "Use a nonempty task title and valid ISO calendar dates." }); }
@@ -142,7 +156,7 @@ export async function applyTodoEditingSession(pmRoot: string, session: unknown, 
   const baselines = new Map((session as TodoEditingSession).entries.map(entry => [entry.id, entry]));
   const linesById = new Map<string, string[]>();
   for (const raw of text.split(/\r?\n/)) {
-    const id = /pm-session:([a-zA-Z0-9_-]+)\s*$/.exec(raw)?.[1];
+    const id = sessionLine(raw)?.id;
     if (!id) continue;
     const lines = linesById.get(id);
     if (lines) lines.push(raw); else linesById.set(id, [raw]);

@@ -1,18 +1,206 @@
 /** Sessions use real SDK trackers and compare under core item locks. */
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import test from "node:test";
-import { acquireLock, create, update, get, init } from "@unbrained/pm-cli/sdk";
+import { setTimeout as delay } from "node:timers/promises";
+import { acquireLock, create, update, get, init, mutateItem, readSettings } from "@unbrained/pm-cli/sdk";
 import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
 import { packExtension } from "./packed-fixture.ts";
-import extension, { createTodoEditingSession, reconcileTodoEditingSession, exportTodoEditingSession, applyTodoEditingSession, type PmItem } from "../index.ts";
+import extension, { createTodoEditingSession, reconcileTodoEditingSession, exportTodoEditingSession, applyTodoEditingSession, serializeTodoTxtLine, type PmItem } from "../index.ts";
 
 const item: PmItem = { id: "task-one", title: "Original", status: "open", priority: 2, tags: ["project"] };
+
+/** Give child imports a separate budget, then bound parsing in a killable child. */
+function assertBoundedParsing(source: string): Promise<void> {
+  const script = `import assert from 'node:assert/strict';
+    import { createTodoEditingSession, reconcileTodoEditingSession, parseTodoTxtLine } from ${JSON.stringify(new URL("../index.ts", import.meta.url).href)};
+    const spaces = ' '.repeat(100_000);
+    process.send('ready');
+    const started = performance.now();
+    ${source}
+    assert.ok(performance.now() - started < 2_000, 'parsing 100k spaces exceeded two seconds');
+    process.send('done');
+    process.disconnect();`;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+    let stderr = "";
+    let ready = false, finished = false;
+    let timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Parser child imports exceeded the startup budget"));
+    }, 60_000);
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    child.on("message", (message: unknown) => {
+      if (message === "done") { finished = true; return; }
+      if (message !== "ready") return;
+      ready = true;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        child.kill();
+        reject(new Error("Parser exceeded its watchdog after imports completed"));
+      }, 15_000);
+    });
+    child.on("error", error => { clearTimeout(timer); reject(error); });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0 && ready && finished) resolve(); else reject(new Error(stderr || `Parser child did not finish its assertions: ${signal ?? code}`));
+    });
+  });
+}
+
+/** Coordinate real writers without relying on elapsed time or scheduler order. */
+function barrier(): { promise: Promise<void>; resolve: () => void; reject: (reason?: unknown) => void } {
+  let resolve!: () => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+test("session parsing handles 100k spaces and malformed suffixes within a bounded time", async () => {
+  await assertBoundedParsing(`
+    const item = { id: 'task-one', title: 'Original', status: 'open', priority: 2, tags: [] };
+    const {session} = createTodoEditingSession([item]);
+    assert.equal(reconcileTodoEditingSession(session, spaces, [item]).ok, true);
+    for (const suffix of ['invalid', 'pm-session:task-one!', 'pm-session:' + 'a'.repeat(100_000) + '!']) {
+      const result = reconcileTodoEditingSession(session, 'Original' + spaces + suffix, [item]);
+      assert.equal(result.refusals[0].code, 'invalid_line');
+    }
+    const valid = reconcileTodoEditingSession(session, '(C) Original' + spaces + 'pm-session:task-one' + spaces, [item]);
+    assert.equal(valid.ok, true);
+    assert.equal(valid.changed, 0);
+    assert.equal(reconcileTodoEditingSession(session, '(C) Original\\tpm-session:task-one\\t', [item]).ok, true);
+    for (const input of ['pm-session:task-one', 'Originalpm-session:task-one', 'Original\\u2028tail pm-session:task-one']) {
+      assert.equal(reconcileTodoEditingSession(session, input, [item]).refusals[0].code, 'invalid_line');
+    }
+    assert.equal(reconcileTodoEditingSession(session, 'Original pm-session:other pm-session:task-one', [item]).refusals[0].code, 'invalid_line');
+  `);
+});
+
+test("todo.txt prefix parsing handles 100k spaces before a failed body within a bounded time", async () => {
+  await assertBoundedParsing(`
+    for (const prefix of ['x', '(A)', '2026-01-01', 'x 2026-01-01']) {
+      const result = parseTodoTxtLine(prefix + spaces + 'Task\\u2028tail');
+      assert.ok(result);
+      assert.equal(result.text.includes('Task'), true);
+    }
+    const ordinary = parseTodoTxtLine('x 2026-01-02 (A) 2026-01-01 Task +project');
+    assert.equal(ordinary.done, true);
+    assert.equal(ordinary.completionDate, '2026-01-02');
+    assert.equal(ordinary.priorityLetter, 'A');
+    assert.equal(ordinary.creationDate, '2026-01-01');
+    assert.equal(ordinary.text, 'Task');
+  `);
+});
+
+test("merged source provenance reflects independent priority, tag and deadline changes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "todos-merged-source-"));
+  const pmRoot = join(root, "tracker");
+  try {
+    await init(undefined, {}, { pmRoot, cwd: root, noExtensions: true });
+    const created = await create({ title: "Original", type: "Task", priority: 2, tags: "project", author: "test-agent" }, { pmRoot });
+    const id = String(created.item.id);
+    for (const change of [{ priority: 0 }, { tags: "project,new" }, { deadline: "2026-11-01" }]) {
+      const exported = await exportTodoEditingSession(pmRoot);
+      const title = String((await get(id, {}, { pmRoot })).item.title);
+      const text = exported.text.replace(title, `${title} edited`);
+      await update(id, { ...change, author: "test-agent" }, { pmRoot });
+      const result = await applyTodoEditingSession(pmRoot, exported.session, text, { author: "test-agent" });
+      assert.equal(result.ok, true);
+      assert.equal(result.applied, 1);
+      const merged = (await get(id, {}, { pmRoot })).item as PmItem;
+      assert.equal(merged.title, `${title} edited`);
+      assert.equal(merged.todos_todotxt, serializeTodoTxtLine(merged, "fidelity"));
+      assert.equal(merged.priority, 0);
+      const history = readFileSync(join(pmRoot, "history", `${id}.jsonl`), "utf8");
+      assert.equal((await applyTodoEditingSession(pmRoot, exported.session, text, { author: "test-agent" })).changed, 0);
+      assert.equal(readFileSync(join(pmRoot, "history", `${id}.jsonl`), "utf8"), history);
+    }
+    const final = (await get(id, {}, { pmRoot })).item;
+    assert.deepEqual([...(final.tags ?? [])].sort(), ["new", "project"]);
+    assert.match(String(final.deadline), /^2026-11-01/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("held item lock deterministically rechecks a title changed after preview", async t => {
+  const root = mkdtempSync(join(tmpdir(), "todos-held-lock-"));
+  const pmRoot = join(root, "tracker");
+  const held = barrier(), commit = barrier();
+  const contended = barrier(), resume = barrier();
+  const previousWait = process.env.PM_LOCK_WAIT_MS;
+  let writer: ReturnType<typeof mutateItem> | undefined;
+  let applying: ReturnType<typeof applyTodoEditingSession> | undefined;
+  try {
+    await init(undefined, {}, { pmRoot, cwd: root, noExtensions: true });
+    const created = await create({ title: "Original", type: "Task", author: "test-agent" }, { pmRoot });
+    const id = String(created.item.id);
+    const exported = await exportTodoEditingSession(pmRoot);
+    const settings = await readSettings(pmRoot);
+    writer = mutateItem({ pmRoot, settings, id, op: "update", author: "test-agent", async mutate(document) {
+      held.resolve();
+      await commit.promise;
+      document.metadata.title = "Concurrent";
+      return { changedFields: ["title"] };
+    } });
+    void writer.catch(held.reject);
+    await held.promise;
+    const read = fsp.readFile;
+    let observed = false;
+    // Observe real lock contention after preview; every read still uses the real FS.
+    t.mock.method(fsp, "readFile", async (...args: Parameters<typeof read>) => {
+      const value = await read(...args);
+      if (String(args[0]) === join(pmRoot, "locks", `${id}.lock`) && !observed) {
+        observed = true;
+        contended.resolve();
+        await resume.promise;
+      }
+      return value;
+    });
+    process.env.PM_LOCK_WAIT_MS = "10000";
+    applying = applyTodoEditingSession(pmRoot, exported.session, exported.text.replace("Original", "External"), { author: "test-agent" });
+    await Promise.race([
+      contended.promise,
+      applying.then(() => { throw new Error("Apply ended without observing the held item lock"); }),
+      delay(10_000, undefined, { ref: false }).then(() => { throw new Error("Held-lock contention was not observed"); }),
+    ]);
+    commit.resolve();
+    await writer;
+    const history = readFileSync(join(pmRoot, "history", `${id}.jsonl`), "utf8");
+    resume.resolve();
+    const result = await applying;
+    assert.equal(result.ok, false);
+    assert.equal(result.applied, 0);
+    assert.equal(result.refusals[0].code, "field_conflict");
+    assert.equal(result.refusals[0].field, "title");
+    assert.equal((await get(id, {}, { pmRoot })).item.title, "Concurrent");
+    assert.equal(readFileSync(join(pmRoot, "history", `${id}.jsonl`), "utf8"), history);
+  } finally {
+    commit.resolve(); resume.resolve();
+    await Promise.allSettled([writer, applying]);
+    t.mock.restoreAll();
+    if (previousWait === undefined) delete process.env.PM_LOCK_WAIT_MS; else process.env.PM_LOCK_WAIT_MS = previousWait;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("missing session text returns a typed actionable preview and apply error", async () => {
+  const root = mkdtempSync(join(tmpdir(), "todos-missing-text-"));
+  const pmRoot = join(root, "tracker");
+  try {
+    await init(undefined, {}, { pmRoot, cwd: root, noExtensions: true });
+    const sidecar = join(root, "session.json");
+    writeFileSync(sidecar, JSON.stringify(createTodoEditingSession([item]).session));
+    const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
+    for (const action of ["preview", "apply"]) {
+      await assert.rejects(harness.runCommand({ command: "todos session", args: [action], options: { file: join(root, "missing.txt"), session: sidecar }, pmRoot }), { name: "CommandError", message: /Cannot read session todo.txt.*restore.*export/ });
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test("stable digests, reorder, omission and unchanged imports are safe", () => {
   const second = { ...item, id: "task-two" };

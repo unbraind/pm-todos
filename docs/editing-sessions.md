@@ -47,6 +47,9 @@ at most 20 refusals (`hasMore` signals truncation). Values and task text are not
 repeated in refusals. CLI output uses the host's compact TOON default or `--json`;
 refusals exit nonzero. Use a new session after resolving conflicts. Sidecars
 contain task text; store them with the same access policy as the tracker.
+Sidecar digests detect accidental corruption; they do not authenticate the
+baseline or protect against tampering, since anyone can recompute them. Accept
+sidecars only from a trusted export and retain their access controls while editing.
 
 All known input conflicts prevent writes. Apply is atomic per item through core
 locking and append-only history. It is not a multi-item transaction: a late race,
