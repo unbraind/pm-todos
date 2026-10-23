@@ -30,7 +30,19 @@ stable `code` and an actionable `remedy`. `plan_refused` adds at most 20 existin
 session refusals with an exact count and omission indicator.
 
 Read `proposals/proposals.json` for the full bounded `TodoChangeProposal`: `text`,
-`patches`, session result, and source/session/tracker revision hashes. Review a
+`patches`, session result, and source/session/tracker revision hashes. Version 2
+patches separate fields to set (`values`) from fields to remove (`removedFields`):
+
+```json
+{"id":"task-one","values":{"todos_todotxt":"Deadline task"},"removedFields":["deadline"]}
+```
+
+Here `deadline` is deleted, while `todos_todotxt` is set to the saved source line.
+An absent field in both collections is unchanged. Legacy version 1 queues lack
+this guarantee and return `spool_mismatch` without being rewritten; preserve and
+archive them, then regenerate proposals into a fresh spool.
+
+Review a
 saved proposal snapshot against the original baseline with `todos session preview`
 and explicitly apply only after review. The watcher never calls apply. Preserve
 the queue when shutting down or encountering a refusal. Archive reviewed queues

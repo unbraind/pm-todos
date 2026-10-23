@@ -6,7 +6,7 @@ import { resolve, join, relative, isAbsolute, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { acquireLock, listAllComplete, writeFileAtomic, serializeNdjsonRows, suppressHostOutput, EXIT_CODE } from "@unbrained/pm-cli/sdk";
 import type { CommandHandlerContext } from "@unbrained/pm-cli/sdk/authoring";
-import { planTodoEditingSession, type TodoSessionResult, type TodoSessionPatch } from "./sessions.ts";
+import { planTodoEditingSession, type TodoSessionResult, type TodoSessionPatch, type TodoSessionField } from "./sessions.ts";
 import type { PmItem } from "./index.ts";
 
 /** Limits apply before parsing, planning or adding durable queue entries. */
@@ -21,16 +21,22 @@ export interface TodoWatcherOptions {
   maxChanges?: number;
   maxPending?: number;
 }
+/** JSON-safe field patch: values set fields, and removedFields explicitly deletes them. */
+export interface TodoProposalPatch {
+  id: string;
+  values: Record<string, unknown>;
+  removedFields: TodoSessionField[];
+}
 /** A proposal is review evidence, never an instruction to mutate a tracker. */
 export interface TodoChangeProposal {
-  version: 1;
+  version: 2;
   id: string;
   sourceRevision: string;
   sessionRevision: string;
   trackerRevision: string;
   text: string;
   result: TodoSessionResult;
-  patches: TodoSessionPatch[];
+  patches: TodoProposalPatch[];
 }
 /** Failures contain no source text or local paths and always name a remedy. */
 export interface TodoWatcherRefusal {
@@ -49,7 +55,15 @@ export interface TodoWatcherReceipt {
   result?: TodoSessionResult;
 }
 /** Persisted queue binding prevents accidental sharing across source/session/tracker tuples. */
-interface Queue { version: 1; binding: string; proposals: TodoChangeProposal[] }
+interface Queue { version: 2; binding: string; proposals: TodoChangeProposal[] }
+/** Preserve undefined planner values as explicit removals before JSON serialization. */
+function persistablePatches(patches: readonly TodoSessionPatch[]): TodoProposalPatch[] {
+  return patches.map(patch => ({
+    id: patch.id,
+    values: Object.fromEntries(Object.entries(patch.values).filter(([, value]) => value !== undefined)),
+    removedFields: Object.entries(patch.values).filter(([, value]) => value === undefined).map(([field]) => field as TodoSessionField),
+  }));
+}
 /** Resolve defaults once and prevent callers from disabling the hard resource ceilings. */
 function options(value: TodoWatcherOptions): Required<TodoWatcherOptions> {
   const result = { stableMs: 500, pollMs: 100, maxBytes: 1_048_576, maxChanges: 100, maxPending: 20, ...value };
@@ -141,16 +155,16 @@ export class TodoSourceWatcher {
     const sessionRevision = hash(session);
     const trackerRevision = hash([...items].sort((a, b) => a.id.localeCompare(b.id)));
     const binding = hash([config.file, config.pmRoot, sessionRevision]);
-    const proposal: TodoChangeProposal = { version: 1, id: hash([sourceRevision, sessionRevision, trackerRevision]), sourceRevision, sessionRevision, trackerRevision, text, result, patches };
+    const proposal: TodoChangeProposal = { version: 2, id: hash([2, sourceRevision, sessionRevision, trackerRevision]), sourceRevision, sessionRevision, trackerRevision, text, result, patches: persistablePatches(patches) };
     let release: (() => Promise<void>) | undefined;
     try {
       await mkdir(config.spool, { recursive: true, mode: 0o700 });
       release = await acquireLock(config.spool, "todo-source-watcher", 60, "pm-todos-watcher", false, false, 1000, { maxWaitMs: 1000 });
       const queueFile = join(config.spool, "proposals.json");
-      let queue: Queue = { version: 1, binding, proposals: [] };
+      let queue: Queue = { version: 2, binding, proposals: [] };
       if ((await readdir(config.spool)).includes("proposals.json")) {
         queue = JSON.parse(await boundedRead(queueFile, 16_777_216)) as Queue;
-        if (queue.version !== 1 || queue.binding !== binding || !Array.isArray(queue.proposals) || queue.proposals.some(row => row.version !== 1 || row.id !== hash([row.sourceRevision, row.sessionRevision, row.trackerRevision]) || row.sourceRevision !== hash(row.text))) return refusal("spool_mismatch", "Preserve the existing queue for review; use a fresh spool for another source, tracker or baseline.");
+        if (queue.version !== 2 || queue.binding !== binding || !Array.isArray(queue.proposals) || queue.proposals.some(row => row.version !== 2 || row.id !== hash([2, row.sourceRevision, row.sessionRevision, row.trackerRevision]) || row.sourceRevision !== hash(row.text))) return refusal("spool_mismatch", "Preserve the existing queue for review; use a fresh spool for a legacy queue format or another source, tracker or baseline.");
       }
       if (queue.proposals.some(row => row.id === proposal.id)) return { ok: true, state: "duplicate", pending: queue.proposals.length, proposalId: proposal.id };
       if (queue.proposals.length >= config.maxPending) return refusal("queue_full", "Review and archive the queue, then restart with a fresh spool; pending proposals were preserved.");

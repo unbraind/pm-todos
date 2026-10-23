@@ -288,3 +288,53 @@ test("watcher replacement and restart deduplicate durable revisions", async () =
     for (const revision of [rows[0].sourceRevision, rows[0].sessionRevision, rows[0].trackerRevision]) assert.match(revision, /^[a-f0-9]{64}$/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+/** Persisted evidence must describe every removal the saved source would apply. */
+test("watcher persists due-token removal as an explicit deadline field removal", async () => {
+  const root = mkdtempSync(join(tmpdir(), "todos-watch-removal-"));
+  const pmRoot = join(root, "tracker");
+  const previousCeiling = process.env.GIT_CEILING_DIRECTORIES;
+  const previousPath = process.env.PATH;
+  process.env.GIT_CEILING_DIRECTORIES = tmpdir();
+  try {
+    await init(undefined, {}, { pmRoot, cwd: root, noExtensions: true });
+    const created = await create({ title: "Deadline task", type: "Task", deadline: "2026-12-01", author: "test-agent" }, { pmRoot });
+    const baseline = await exportTodoEditingSession(pmRoot);
+    assert.match(baseline.text, / due:2026-12-01/);
+    const file = join(root, "todo.txt"), sessionFile = join(root, "baseline.json");
+    writeFileSync(file, baseline.text.replace(" due:2026-12-01", ""));
+    writeFileSync(sessionFile, JSON.stringify(baseline.session));
+    const config = { pmRoot, file, sessionFile, spool: join(root, "queue"), stableMs: 1 };
+    const historyPath = join(pmRoot, "history", `${created.item.id}.jsonl`);
+    const before = readFileSync(historyPath, "utf8");
+    // The watcher and SDK read path must work with no git executable available.
+    process.env.PATH = root;
+    assert.equal((await settle(new TodoSourceWatcher(config))).state, "queued");
+    const saved = JSON.parse(readFileSync(join(config.spool, "proposals.json"), "utf8")) as { version: number; proposals: TodoChangeProposal[] };
+    assert.equal(saved.version, 2);
+    const proposal = saved.proposals[0];
+    const patch = proposal.patches.find(row => row.id === created.item.id)!;
+    assert.deepEqual(patch.removedFields, ["deadline"]);
+    assert.equal(Object.hasOwn(patch.values, "deadline"), false);
+    assert.equal(proposal.text.includes("due:2026-12-01"), false);
+    assert.equal(typeof patch.values.todos_todotxt, "string");
+    assert.equal(String(patch.values.todos_todotxt).includes("due:2026-12-01"), false);
+    assert.equal(readFileSync(historyPath, "utf8"), before);
+    assert.match(String((await get(String(created.item.id), {}, { pmRoot })).item.deadline), /^2026-12-01/);
+    assert.equal((await settle(new TodoSourceWatcher(config))).state, "duplicate");
+
+    // Refuse old queues without rewriting their potentially incomplete evidence.
+    const legacySpool = join(root, "legacy-queue");
+    mkdirSync(legacySpool);
+    const legacy = JSON.stringify({ ...saved, version: 1 });
+    writeFileSync(join(legacySpool, "proposals.json"), legacy);
+    const refused = await settle(new TodoSourceWatcher({ ...config, spool: legacySpool }));
+    assert.equal(refused.refusal?.code, "spool_mismatch");
+    assert.match(refused.refusal.remedy, /legacy queue format/);
+    assert.equal(readFileSync(join(legacySpool, "proposals.json"), "utf8"), legacy);
+  } finally {
+    if (previousCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = previousCeiling;
+    if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+    rmSync(root, { recursive: true, force: true });
+  }
+});

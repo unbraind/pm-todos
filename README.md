@@ -518,7 +518,15 @@ intermediate save can produce a proposal; stability is a sampling heuristic, not
 proof that an external editor has finished. Nothing is applied automatically.
 
 `proposals/proposals.json` keeps source snapshots, field patches and source,
-baseline and complete-tracker revision hashes. Identical content after atomic
+baseline and complete-tracker revision hashes. In each persisted patch, `values`
+contains only fields to set; `removedFields` explicitly lists fields to delete.
+For example, removing `due:2026-12-01` produces `"removedFields":["deadline"]`
+instead of losing that change during JSON serialization. Queue/proposal schema
+version 2 requires this explicit encoding. Legacy version 1 queues are preserved
+and refused with `spool_mismatch`; archive them and use a fresh spool to regenerate
+complete proposals from the saved source and original baseline.
+
+Identical content after atomic
 replacement, repeated polls and restarts deduplicates. Tracker revision changes
 produce fresh review evidence. Treat the proposal as stale after any source,
 baseline or tracker change: review its saved `text` in a separate file against the
