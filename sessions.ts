@@ -36,7 +36,7 @@ export interface TodoSessionResult {
   hasMore: boolean;
 }
 /** Internal field patch, containing only values changed by the external editor. */
-interface SessionPatch { id: string; values: Record<string, unknown> }
+export interface TodoSessionPatch { id: string; values: Record<string, unknown> }
 /** Compute a canonical digest without depending on object insertion order. */
 function digest(value: unknown): string {
   const canonical = (input: unknown): unknown => {
@@ -92,12 +92,12 @@ function sessionLine(raw: string): { line: string; id: string } | undefined {
   return { line, id };
 }
 /** Reconcile every line before writing; omitted baseline rows are retained. */
-function plan(session: unknown, text: string, items: readonly PmItem[]): { result: TodoSessionResult; patches: SessionPatch[] } {
+function plan(session: unknown, text: string, items: readonly PmItem[]): { result: TodoSessionResult; patches: TodoSessionPatch[] } {
   const refusals: TodoSessionRefusal[] = [];
   let refusalCount = 0;
   /** Keep agent output bounded even for malformed large documents. */
   const refuse = (refusal: TodoSessionRefusal): void => { refusalCount++; if (refusals.length < 20) refusals.push(refusal); };
-  const patches: SessionPatch[] = [];
+  const patches: TodoSessionPatch[] = [];
   let unchanged = 0;
   const seen = new Set<string>();
   if (!validSession(session)) refuse({ code: "invalid_session", remedy: "Export a new session; keep the sidecar unchanged." });
@@ -141,6 +141,10 @@ function plan(session: unknown, text: string, items: readonly PmItem[]): { resul
 /** Pure three-way preview; does not mutate its inputs or invoke git. */
 export function reconcileTodoEditingSession(session: unknown, text: string, current: readonly PmItem[]): TodoSessionResult {
   return plan(session, text, current).result;
+}
+/** Return the same validated field proposals used by session apply, without writes. */
+export function planTodoEditingSession(session: unknown, text: string, current: readonly PmItem[]): { result: TodoSessionResult; patches: TodoSessionPatch[] } {
+  return plan(session, text, current);
 }
 /** Read a certified complete tracker snapshot using the public SDK. */
 export async function exportTodoEditingSession(pmRoot: string): Promise<ReturnType<typeof createTodoEditingSession>> {
