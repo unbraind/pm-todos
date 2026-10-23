@@ -17,6 +17,8 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
 export * from "./sessions.ts";
 import { exportTodoEditingSession, applyTodoEditingSession } from "./sessions.ts";
+export * from "./watcher.ts";
+import { runTodoWatchCommand } from "./watcher.ts";
 
 // ---------------------------------------------------------------------------
 // Error contract
@@ -2874,6 +2876,22 @@ export default defineExtension({
   version: "2026.10.23",
 
   activate(api: ExtensionApi) {
+    api.registerCommand({
+      name: "todos watch",
+      description: "Propose stable edits from one authorized session todo.txt file; never apply them.",
+      flags: [
+        { long: "--file", value_name: "path", description: "Authorized session todo.txt file" },
+        { long: "--session", value_name: "path", description: "Original baseline JSON sidecar" },
+        { long: "--spool", value_name: "path", description: "Durable proposal directory outside the tracker" },
+        { long: "--follow", description: "Poll until SIGINT/SIGTERM; emit compact NDJSON receipts" },
+        { long: "--stable-ms", value_name: "ms", description: "Identical sample window (default 500)" },
+        { long: "--poll-ms", value_name: "ms", description: "Follow polling interval (default 100)" },
+        { long: "--max-bytes", value_name: "count", description: "Source byte limit (default 1048576)" },
+        { long: "--max-changes", value_name: "count", description: "Changes per proposal (default 100)" },
+        { long: "--max-pending", value_name: "count", description: "Queue length limit (default 20)" },
+      ],
+      run: runTodoWatchCommand,
+    });
     api.registerCommand({
       name: "todos session",
       description: "Export, preview or apply conflict-aware todo.txt editing sessions.",

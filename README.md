@@ -40,8 +40,10 @@ npm run build
 
 ## Without git
 
-TODO validation, import, export, context and sync work in a plain pm tracker.
-None of these commands requires a Git repository.
+TODO validation, import, export, context, sync, editing sessions and source-change
+proposals work in a plain pm tracker. No watcher command requires a Git repository
+or invokes a git subprocess. Repository release and changelog tooling needs git;
+GitHub workflows need their normal repository/tool credentials.
 
 ## Commands
 
@@ -49,6 +51,7 @@ None of these commands requires a Git repository.
 |---|---|
 | `pm todos import <file>` | Import a file, `--file` or `--glob`; `--dry-run` previews without mutations. |
 | `pm todos-import import <file>` | Same inputs, flags, implementation and results as `todos import`. |
+| `pm todos watch --file <file> --session <baseline> --spool <dir>` | Propose stable session edits without applying them; `--follow` streams receipts. |
 | `pm todos validate <file>` | Validate input without importing. |
 | `pm todos export` | Export tracker items. |
 | `pm todos context` | Read the current context. |
@@ -482,8 +485,60 @@ The SDK exports the same session and reconciliation operations. Receipts are
 compact TOON by default or JSON with `--json`, with at most 20 refusal details.
 See the [worked example and limits](docs/editing-sessions.md).
 
-## Without git
+## Source change proposals
 
-Import, export, validation, context, sync and editing sessions work in plain
-tracker directories. Git-based release and changelog tooling needs a git
-repository; it is not part of the editing-session path.
+`pm todos watch` reads exactly one authorized **session todo.txt** file (created
+with `todos session export`). It reuses the session three-way planner, so omitted
+rows are retained and lifecycle changes require `pm close` / `pm reopen` with a
+reason. This watcher proposes edits to known identities; create new items with
+`pm create`. Other import formats remain available through `pm todos import`.
+
+```sh
+pm todos session export --file review.txt --session baseline.json
+# Edit review.txt, keeping the trailing pm-session identities.
+pm todos watch --file review.txt --session baseline.json --spool proposals --json
+# Continuously watch the same file; Ctrl-C / SIGTERM stops cleanly.
+pm todos watch --file review.txt --session baseline.json --spool proposals --follow
+```
+
+The default command samples twice, with a 500 ms stability window, and returns
+one compact TOON receipt (`--json` selects JSON). A concurrent save may return
+`state: waiting`; retry after it finishes. Follow mode polls every 100 ms and
+streams compact NDJSON receipts only when their state changes. It finishes any
+in-flight persistence before stopping. The SDK offers `TodoSourceWatcher.poll()`
+and `run(signal, emit)` with the same typed `TodoWatcherReceipt` contract; see
+[the SDK example](docs/source-watcher-example.md).
+
+A stable write must have identical content across the stability window, be a
+regular UTF-8 file within the byte limit, and end with a newline (empty truncation
+is safe). The source and baseline are checked again after planning. Partial lines
+are refused, malformed identities/conflicts return the existing bounded session
+refusals, and **missing lines never become deletions**. A syntactically complete
+intermediate save can produce a proposal; stability is a sampling heuristic, not
+proof that an external editor has finished. Nothing is applied automatically.
+
+`proposals/proposals.json` keeps source snapshots, field patches and source,
+baseline and complete-tracker revision hashes. Identical content after atomic
+replacement, repeated polls and restarts deduplicates. Tracker revision changes
+produce fresh review evidence. Treat the proposal as stale after any source,
+baseline or tracker change: review its saved `text` in a separate file against the
+original sidecar with `todos session preview`, then explicitly use `session apply`
+if approved. Apply rechecks conflicts under core item locks; watcher receipts do
+not grant approval or bypass lifecycle rules. Hashes detect revisions and accidental
+corruption; they do not authenticate an untrusted spool.
+
+Keep the spool outside the tracker and preserve it across restarts. The watcher
+never removes pending proposals. After review, archive the entire spool and start
+a fresh one; restarting with the existing spool preserves deduplication. Use a
+fresh spool after exporting a different baseline. No filesystem discovery or git
+subprocess is used. Final-component source/sidecar symlinks and special files are
+refused; the supplied parent directories and spool must be trusted.
+
+Limits are positive integers: `--max-bytes` defaults to 1 MiB (hard ceiling 4 MiB),
+`--max-changes` to 100 (ceiling 1,000), and `--max-pending` to 20 (ceiling 100).
+The sidecar ceiling is eight times the source byte limit; the total queue ceiling
+is 16 MiB. `--stable-ms` and `--poll-ms` have a 60,000 ms ceiling. Limit violations
+refuse the whole proposal with a typed code and remedy; they never silently truncate
+changes or evict pending work. Queue writes use the public SDK atomic writer and
+queue lock. This guarantees completed proposals survive normal shutdown and
+process restart; it does not assert power-loss durability.
