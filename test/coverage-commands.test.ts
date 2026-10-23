@@ -10,12 +10,8 @@
  * This file activates the extension through the real pm SDK test harness
  * (`createExtensionTestHarness`) and invokes the registered command/importer/
  * exporter handlers IN-PROCESS via `ext.runCommand`, `ext.runImporter`,
- * `ext.runExporter`, and `ext.runPreflightOverride`. The handlers call
- * `runPmCommand` (which spawns the real `pm` binary) for store reads/writes, so
- * every test exercises genuine end-to-end behaviour — the only difference from a
- * subprocess invocation is that the TypeScript code path between the harness
- * entry and the `spawnSync` boundary runs inside the test process and is
- * measured by V8.
+ * `ext.runExporter`, and `ext.runPreflightOverride`. The handlers use the real
+ * host SDK for store reads and writes, including certified whole-tracker reads.
  *
  * A single shared pm workspace is created once and reused across all tests to
  * avoid the ~10 s per-test cost of `pm init` + `pm install`. All items are

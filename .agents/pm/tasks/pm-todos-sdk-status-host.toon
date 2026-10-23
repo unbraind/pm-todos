@@ -1,0 +1,34 @@
+id: pm-todos-sdk-status-host
+title: Respect workspace terminal roles and use host-bound TODO operations
+description: Verified F04 and F09 at origin/main 16c0bd20e74249bb79e54479cd569bf21815fe32. Replace duplicated lifecycle and process transport contracts with the public SDK while retaining TODO fidelity and partial-import receipts.
+type: Task
+status: in_progress
+priority: 2
+tags: []
+created_at: "2026-10-23T20:26:57.170Z"
+updated_at: "2026-10-23T21:02:39.716Z"
+author: codex-agent
+acceptance_criteria: "F04: custom terminal roles export completed and import with close evidence; prove the status wiring revert fails.; F09: host-bound complete reads and mutations work without git or a pm executable, retain author and source metadata; prove transport revert fails."
+comments[8]{created_at,author,text}:
+  "2026-10-23T20:27:00.843Z",codex-agent,"Both findings are valid on origin/main 16c0bd20e74249bb79e54479cd569bf21815fe32: index.ts hard-codes closed/canceled in conversion and terminal write routing; runPmCommand duplicates executable discovery, argv and JSON transport. Plan: resolve the SDK status registry once per operation, use the supplied PmClient for certified reads and typed mutations, and add real non-git and packed regressions. Existing coverage thresholds remain 97/93/98."
+  "2026-10-23T20:32:12.901Z",codex-agent,"Pinned SDK 2026.10.20 already supplies PmClient, listAllComplete, readSettings, resolveRuntimeStatusRegistry and statusIsTerminal. The old advertised minimum 2026.8.20 does not export statusIsTerminal; raise only the peer and manifest minimum to 2026.10.20 and keep the dev pin. Removed child executable discovery and stdout parsing from operational reads/mutations. Pure converters keep compatible signatures with an optional registry. Initial existing behaviour suite: 161 passed, zero failures."
+  "2026-10-23T20:38:41.583Z",codex-agent,"New real-tracker regressions pass 3/3. F04 covers all pure format converters, custom active grouping, packed completed import/export, required closure evidence with a configured accepted default-close status, and upsert transitions. F09 covers packed JSONL import/export/upsert without pm or git on PATH, source metadata preservation, a child-process attempt observer, and supplied-client author attribution. Reverting only the terminal predicates makes both F04 tests fail: checked Markdown assertion and required-close-evidence import refusal."
+  "2026-10-23T20:40:31.502Z",codex-agent,"Behavioural revert proofs completed in a disposable source copy with the fixed tests and rebuilt dist: restoring the original closed/canceled predicate bodies fails both F04 cases (0 passed, 2 failed: checked Markdown assertion and custom default-close import refusal). Restoring PATH-selected spawnSync pm plus stdout parsing in the complete-read adapter, retaining only the async bridge, fails the F09 packed scenario (0 passed, 1 failed) with spawnSync pm ENOENT. Restoring the SDK implementation passes all 3 cases. Linked run via pm test --run --progress also passed 1/1 command, 3/3 test cases."
+  "2026-10-23T20:43:46.631Z",codex-agent,"Out-of-scope baseline evidence recorded in pm-todos-watcher-stability-timer: origin/main Node 26 CI run 39996955838 returned waiting instead of queued in the installed single-shot watcher. No watcher source or thresholds changed. Local optional strict-health warnings are extension-host version skew and merge_fence_drift:2; history_drift is clean. Fresh baseline CI passed health on both Node jobs."
+  "2026-10-23T20:52:22.575Z",codex-agent,"Full npm run release:check passed with an isolated HOME, GIT_CONFIG_GLOBAL=/dev/null and GIT_CONFIG_NOSYSTEM=1. Counts: 343 tests passed, 0 failed, 0 skipped; all 3 source files measured at 99.08% lines, 94.50% branches, 99.47% functions versus unchanged 97/93/98 thresholds; canonical reader passed; production audit reported 0 vulnerabilities; 4/4 packed scenarios passed (npm-current, bun-current, npm-minimum, bun-minimum, SDK 2026.10.20). Changelog and release attestation checks passed. Full bun run release:check is running."
+  "2026-10-23T20:53:58.925Z",codex-agent,"Additional F09 mutation-only revert proof: restored origin/main runPmCommand and the original import create/update transport in a disposable source copy, keeping the SDK complete-read bridge. After rebuilding, the F09 packed test failed 0/1 with a dropped pm create because PATH lacks pm. Thus both read-only transport reversal (ENOENT) and write-only transport reversal independently fail the regression. No production changes were needed after the passing npm release gate."
+  "2026-10-23T21:02:33.309Z",codex-agent,"Full bun run release:check also passed: 343 tests, 0 failures, 0 skips; all 3 sources measured at 99.08% lines, 94.50% branches and 99.47% functions; unchanged thresholds 97/93/98. Packed acceptance passed 4/4 scenarios; canonical reader, production audit (0 vulnerabilities), package dry run, changelog and release checks passed. Both full release gates are green. Revert evidence: F04 2 independent failures; F09 read reversal 1 failure and mutation reversal 1 failure. Ready for PR CI and orchestrator verification; leave the Task in progress."
+files[8]{path,scope}:
+  index.ts,project
+  manifest.json,project
+  package-lock.json,project
+  package.json,project
+  scripts/accept-canonical-reader.ts,project
+  test/compatibility-floor.test.ts,project
+  test/coverage-commands.test.ts,project
+  test/sdk-status-host.test.ts,project
+tests[1]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+  node --test test/sdk-status-host.test.ts,project,codex-agent,"2026-10-23T20:32:10.600Z",local_mutation,refactor/sdk-status-roles-and-host
+docs[1]{path,scope}:
+  README.md,project
+body: ""

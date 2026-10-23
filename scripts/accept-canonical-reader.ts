@@ -1,106 +1,33 @@
+/** Real, non-git acceptance of the host SDK's certified whole-corpus reader. */
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
-import test from "node:test";
-
+import { PmClient, certifyCompleteListResult } from "@unbrained/pm-cli/sdk";
 import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
+import extension from "../index.ts";
 
-import extension, { COMPLETE_LIST_COMMAND_ARGUMENTS } from "../index.ts";
-
-/** Complete response emitted by the fake host for every whole-tracker read. */
-function completeEnvelope(): Record<string, unknown> {
-  return {
-    items: [{ id: "fixture-1", title: "Tracked TODO", status: "open" }],
-    count: 1,
-    total: 1,
-    has_more: false,
-    truncated: false,
-    next_cursor: null,
-    filters: { status: "all", include_body: true, no_truncate: true, strict_read: true, runtime_filters: {} },
-    limit: null,
-    requested_limit: null,
-    effective_limit: null,
-    source: null,
-    completeness: { status: "complete", unreadable_item_count: 0, unreadable_directory_count: 0 },
-    projection: { mode: "full", fields: null },
-    omission_receipt: { has_omissions: false, omitted_field_group_count: 0, omitted_field_groups: [] },
-    read_output: {
-      contract_version: 1,
-      command: "list",
-      requested_dimensions: ["include", "amount", "cost"],
-      within_budget: true,
-      strings_compacted: false,
-      rows_compacted: false,
-      result_omitted: false,
-    },
-  };
-}
-
-test("canonical reader acceptance: upsert and export each issue exactly one complete-list read", async () => {
-  const root = mkdtempSync(join(tmpdir(), "pm-todos-canonical-reader-"));
-  const fakePmScript = join(root, "fake-pm.mjs");
-  const fakePm = join(root, "pm");
-  const argsFile = join(root, "args.jsonl");
-  const input = join(root, "TODO.md");
-  const previousPath = process.env.PATH;
-  const previousResponse = process.env.PM_TODOS_FAKE_RESPONSE;
-  const previousArgsFile = process.env.PM_TODOS_ARGS_FILE;
-  const previousPackageRoot = process.env.PM_CLI_PACKAGE_ROOT;
-  writeFileSync(input, "# TODO\n\n- [ ] Tracked TODO\n", "utf8");
-  writeFileSync(fakePmScript, `#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
-const args = process.argv.slice(2);
-appendFileSync(process.env.PM_TODOS_ARGS_FILE, JSON.stringify(args) + "\\n");
-process.stdout.write(args.includes("list") ? process.env.PM_TODOS_FAKE_RESPONSE : '{"item":{"id":"fixture-1"}}');
-`, "utf8");
-  writeFileSync(join(root, "package.json"), JSON.stringify({ bin: { pm: "fake-pm.mjs" } }), "utf8");
-  if (process.platform !== "win32") {
-    writeFileSync(fakePm, readFileSync(fakePmScript, "utf8"), "utf8");
-    chmodSync(fakePm, 0o755);
-  }
-  process.env.PATH = `${root}${delimiter}${previousPath ?? ""}`;
-  process.env.PM_TODOS_FAKE_RESPONSE = JSON.stringify(completeEnvelope());
-  process.env.PM_TODOS_ARGS_FILE = argsFile;
-  process.env.PM_CLI_PACKAGE_ROOT = root;
-
-  const harness = await createExtensionTestHarness(extension, {
-    name: "pm-todos",
-    capabilities: ["commands", "schema", "importers", "preflight"],
-  });
-  try {
-    const exported = await harness.runExporter({ exporter: "todos", pmRoot: "/tracker", options: { format: "jsonl" } });
-    assert.equal((exported.result as Record<string, unknown>).exported, 1);
-    const exportInvocations = readFileSync(argsFile, "utf8").trim().split("\n")
-      .map((line) => JSON.parse(line) as string[]);
-    assert.deepEqual(
-      exportInvocations.filter((args) => args.includes("list")),
-      [["--pm-path", "/tracker", ...COMPLETE_LIST_COMMAND_ARGUMENTS]],
-      "export must issue exactly one canonical complete-list read",
-    );
-    const imported = await harness.runImporter({
-      importer: "todos",
-      pmRoot: "/tracker",
-      options: { file: input, format: "markdown", upsert: true },
-    });
-    assert.equal((imported.result as Record<string, unknown>).updated, 1);
-    const invocations = readFileSync(argsFile, "utf8").trim().split("\n")
-      .map((line) => JSON.parse(line) as string[]);
-    const reads = invocations.filter((args) => args.includes("list"));
-    assert.equal(reads.length, 2, "upsert import must add exactly one canonical read after export");
-    for (const args of reads) {
-      assert.deepEqual(args, ["--pm-path", "/tracker", ...COMPLETE_LIST_COMMAND_ARGUMENTS]);
-    }
-  } finally {
-    await harness.deactivate();
-    if (previousPath === undefined) delete process.env.PATH;
-    else process.env.PATH = previousPath;
-    if (previousResponse === undefined) delete process.env.PM_TODOS_FAKE_RESPONSE;
-    else process.env.PM_TODOS_FAKE_RESPONSE = previousResponse;
-    if (previousArgsFile === undefined) delete process.env.PM_TODOS_ARGS_FILE;
-    else process.env.PM_TODOS_ARGS_FILE = previousArgsFile;
-    if (previousPackageRoot === undefined) delete process.env.PM_CLI_PACKAGE_ROOT;
-    else process.env.PM_CLI_PACKAGE_ROOT = previousPackageRoot;
-    rmSync(root, { recursive: true, force: true });
-  }
+const root = mkdtempSync(join(tmpdir(), "pm-todos-canonical-reader-"));
+const client = new PmClient({ pmRoot: join(root, "tracker"), cwd: root, author: "reader-fixture", noExtensions: true });
+const harness = await createExtensionTestHarness(extension, {
+  name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"],
 });
+try {
+  await client.init();
+  const created = await client.create({ title: "Tracked TODO", type: "Task", description: "Complete body fixture" });
+  const input = join(root, "TODO.md");
+  const output = join(root, "output.jsonl");
+  writeFileSync(input, `- [ ] Tracked TODO <!-- ${created.item.id} -->\n`);
+  await harness.runExporter({ exporter: "todos", pmRoot: join(root, "tracker"), options: { format: "jsonl", output } });
+  const rows = readFileSync(output, "utf8").trim().split("\n").map(line => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.description, "Complete body fixture");
+  const imported = await harness.runImporter({ importer: "todos", pmRoot: join(root, "tracker"), options: { file: input, upsert: true } });
+  assert.equal((imported.result as Record<string, unknown>).updated, 1);
+  const complete = certifyCompleteListResult(await client.listAllComplete({ includeBody: true }));
+  assert.equal(complete.items.length, 1);
+  console.log(JSON.stringify({ ok: true, exported: rows.length, updated: 1, certified: complete.items.length }));
+} finally {
+  await harness.deactivate();
+  rmSync(root, { recursive: true, force: true });
+}

@@ -1,0 +1,18 @@
+id: pm-todos-watcher-stability-timer
+title: Retry watcher stability sampling when a timer returns early
+description: "Existing origin/main CI run 39996955838 failed on Node 26 in test/watcher.test.ts: the installed single-shot watcher returned waiting where queued was expected. watcher.ts waits stableMs once before its final poll; timer wakeup can precede the performance.now stability deadline. This is outside F04/F09 SDK adoption. Evidence: https://github.com/unbraind/pm-todos/actions/runs/39996955838/job/120562864191"
+type: Task
+status: open
+priority: 2
+tags: []
+created_at: "2026-10-23T20:43:22.180Z"
+updated_at: "2026-10-23T20:50:19.067Z"
+author: codex-agent
+acceptance_criteria: Bound single-shot waiting by the measured stability deadline and verify queued output with a short stability window across supported Node versions.
+parent: pm-todos-watcher
+comments[1]{created_at,author,text}:
+  "2026-10-23T20:50:19.067Z",codex-agent,Discovered while checking the F04/F09 SDK-adoption release gates. The baseline CI failure is independent of TODO conversion and host transport. Keep this follow-up open; no watcher implementation or coverage thresholds were changed in the SDK task.
+files[2]{path,scope}:
+  test/watcher.test.ts,project
+  watcher.ts,project
+body: ""

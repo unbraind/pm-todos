@@ -8,10 +8,13 @@ import type {
   ImportExportRegistrationOptions,
   PreflightOverrideContext,
 } from "@unbrained/pm-cli/sdk/authoring";
-import { certifyCompleteListResult, EXIT_CODE, inspectCompleteListResult } from "@unbrained/pm-cli/sdk";
+import {
+  certifyCompleteListResult, EXIT_CODE, inspectCompleteListResult, PmClient,
+  readSettings, resolveRuntimeStatusRegistry, SETTINGS_DEFAULTS, statusIsTerminal,
+  type RuntimeStatusRegistry, type PmCreateActionOptions, type PmUpdateActionOptions,
+} from "@unbrained/pm-cli/sdk";
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { isAbsolute, resolve, join, relative, sep } from "node:path";
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
 
 
@@ -880,20 +883,24 @@ function mapStatusToPm(checked: boolean, closedAs: string, openAs = "open"): str
   return checked ? closedAs : openAs;
 }
 
-function mapPmStatusToChecked(status: string): boolean {
-  return status === "closed" || status === "canceled";
+/** Core semantics for callers of the pure converters without workspace settings. */
+const DEFAULT_STATUS_REGISTRY = resolveRuntimeStatusRegistry(SETTINGS_DEFAULTS.schema);
+
+/** Map configured terminal roles to completed TODO output. */
+function mapPmStatusToChecked(status: string, registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): boolean {
+  return statusIsTerminal(status, registry);
 }
 
 /**
- * Whether a resolved pm status is terminal (closed/canceled). pm refuses to
+ * Whether a resolved pm status has a configured terminal role. pm refuses to
  * CREATE or UPDATE an item directly into a terminal status without a close
  * reason whenever `governance.require_close_reason` is enabled — and that
  * policy is a built-in default, so this is the out-of-the-box path. The import
  * create/update paths must therefore attach a close reason for every terminal
  * status they write, or the item is rejected and the line is lost.
  */
-export function isTerminalStatus(status: string): boolean {
-  return status === "closed" || status === "canceled";
+export function isTerminalStatus(status: string, registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): boolean {
+  return statusIsTerminal(status, registry);
 }
 
 /**
@@ -1168,11 +1175,11 @@ export function parseTodoTxt(content: string): TodoTxtItem[] {
  * source token order and spelling while reflecting current PM edits. New tags
  * append as projects; a changed title moves ahead of the retained metadata.
  */
-export function serializeTodoTxtLine(item: PmItem, mapping: TodoTxtMapping = "tags"): string {
+export function serializeTodoTxtLine(item: PmItem, mapping: TodoTxtMapping = "tags", registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): string {
   const source = mapping === "fidelity" && item.todos_todotxt
     ? parseTodoTxtLine(item.todos_todotxt) : null;
   const parts: string[] = [];
-  const done = mapPmStatusToChecked(item.status);
+  const done = mapPmStatusToChecked(item.status, registry);
   const completionDate = item.todos_completion_date ?? item.completionDate;
   const creationDate = item.todos_creation_date ?? item.creationDate;
   const kv = item.todos_kv ?? item.kv;
@@ -1245,9 +1252,9 @@ export function todoTxtItemToPm(item: TodoTxtItem, id = "", mapping: TodoTxtMapp
 /**
  * Serialize pm items to a todo.txt document (one line per item, trailing NL).
  */
-export function serializeTodoTxt(items: PmItem[], mapping: TodoTxtMapping = "tags"): string {
+export function serializeTodoTxt(items: PmItem[], mapping: TodoTxtMapping = "tags", registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): string {
   if (items.length === 0) return "";
-  return items.map((item) => serializeTodoTxtLine(item, mapping)).join("\n") + "\n";
+  return items.map((item) => serializeTodoTxtLine(item, mapping, registry)).join("\n") + "\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -1383,7 +1390,7 @@ function parseTimestamp(value: string | undefined): number {
  * @param items - pm items to export, in any order.
  * @returns A newline-terminated JSON string in the todojson details shape.
  */
-export function serializePiTodoDetails(items: PmItem[]): string {
+export function serializePiTodoDetails(items: PmItem[], registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): string {
   type Row = { item: PmItem; todoId?: number };
   const rows: Row[] = items.map((item) => ({ item }));
   const usedIds = new Set<number>();
@@ -1419,7 +1426,7 @@ export function serializePiTodoDetails(items: PmItem[]): string {
     .map((row) => ({
       id: row.todoId ?? 0,
       text: row.item.title,
-      done: mapPmStatusToChecked(row.item.status),
+      done: mapPmStatusToChecked(row.item.status, registry),
     }));
 
   const details: PiTodoDetails = {
@@ -1548,16 +1555,15 @@ interface ItemGroup {
 
 /**
  * Group pm items for sectioned export. `status` (default) splits into Open
- * (open/in_progress/blocked/draft) and Done (closed/canceled), matching the
- * historical markdown layout. `sprint`/`type` group by that field value
+ * and Done using workspace terminal roles, retaining the historical layout. `sprint`/`type` group by that field value
  * (items missing the field land in an "(unassigned)" group, sorted last).
  */
-export function groupItems(items: PmItem[], groupBy: string): ItemGroup[] {
+export function groupItems(items: PmItem[], groupBy: string, registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): ItemGroup[] {
   if (groupBy === "status") {
     const open = items.filter(
-      (i) => i.status === "open" || i.status === "in_progress" || i.status === "blocked" || i.status === "draft",
+      (i) => !isTerminalStatus(i.status, registry),
     );
-    const done = items.filter((i) => i.status === "closed" || i.status === "canceled");
+    const done = items.filter((i) => isTerminalStatus(i.status, registry));
     const groups: ItemGroup[] = [];
     if (open.length) groups.push({ heading: "Open", items: open });
     if (done.length) groups.push({ heading: "Done", items: done });
@@ -1584,16 +1590,16 @@ export function groupItems(items: PmItem[], groupBy: string): ItemGroup[] {
 
 /**
  * Render pm items as a GitHub-flavored task list grouped into `## <heading>`
- * sections. Closed/canceled items become `- [x]`, everything else `- [ ]`.
+ * sections. Configured terminal items become `- [x]`, everything else `- [ ]`.
  * A trailing `<!-- id -->` comment preserves the pm id for round-trips.
  */
-export function renderTaskList(items: PmItem[], groupBy: string, metadata = false, priorityMap: PriorityMapScheme = "number"): string {
-  const groups = groupItems(items, groupBy);
+export function renderTaskList(items: PmItem[], groupBy: string, metadata = false, priorityMap: PriorityMapScheme = "number", registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): string {
+  const groups = groupItems(items, groupBy, registry);
   const lines: string[] = [];
   for (const group of groups) {
     lines.push(`## ${group.heading}`, "");
     for (const item of group.items) {
-      const check = mapPmStatusToChecked(item.status) ? "x" : " ";
+      const check = mapPmStatusToChecked(item.status, registry) ? "x" : " ";
       lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item, priorityMap) : ""} <!-- ${item.id} -->`);
     }
     lines.push("");
@@ -1609,10 +1615,10 @@ export function renderTaskList(items: PmItem[], groupBy: string, metadata = fals
  * import grammar is identical to the default `markdown` parser, so a
  * `renderCheckboxMarkdown → parseMarkdownTodos` cycle is a clean round-trip.
  */
-export function renderCheckboxMarkdown(items: PmItem[], metadata = false, priorityMap: PriorityMapScheme = "number"): string {
+export function renderCheckboxMarkdown(items: PmItem[], metadata = false, priorityMap: PriorityMapScheme = "number", registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): string {
   const lines: string[] = [];
   for (const item of items) {
-    const check = mapPmStatusToChecked(item.status) ? "x" : " ";
+    const check = mapPmStatusToChecked(item.status, registry) ? "x" : " ";
     lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item, priorityMap) : ""} <!-- ${item.id} -->`);
   }
   return lines.length === 0 ? "" : lines.join("\n") + "\n";
@@ -1884,7 +1890,22 @@ function resolveGlob(pattern: string, cwd: string): string[] {
 // Shared import core (used by `todos import` command + `todos` importer)
 // ---------------------------------------------------------------------------
 
-interface TodoImportOptions {
+/** Invocation-owned host client and one resolved workspace lifecycle registry. */
+interface TodoRuntime {
+  client: PmClient;
+  registry: RuntimeStatusRegistry;
+}
+
+/** Bind TODO operations to the host workspace and invocation author. */
+async function todoRuntime(ctx: CommandHandlerContext | ImportExportContext): Promise<TodoRuntime> {
+  const settings = await readSettings(ctx.pm_root);
+  return {
+    client: ctx.sdk?.client ?? new PmClient({ pmRoot: ctx.pm_root, cwd: process.cwd(), author: readStringOption(ctx.options, "author") ?? process.env.PM_AUTHOR }),
+    registry: resolveRuntimeStatusRegistry(settings.schema),
+  };
+}
+
+interface TodoImportOptions extends TodoRuntime {
   files: string[];
   itemType: string;
   closedAs: string;
@@ -1956,6 +1977,7 @@ function parseFileToNormalized(
   file: string | undefined,
   format: TodoImportFormat,
   mapping: TodoTxtMapping = "tags",
+  registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY,
 ): NormalizedTodo[] {
   if (format === "todojson") {
     return parsePiTodoDetails(md).todos.map((item) => ({
@@ -1973,7 +1995,7 @@ function parseFileToNormalized(
     // Each line is a full PmItem JSON object; the upsert key is the carried pm
     // id (when present), making a jsonl round-trip idempotent under --upsert.
     return parseJsonl(md).map((item, i) => ({
-      checked: mapPmStatusToChecked(item.status),
+      checked: mapPmStatusToChecked(item.status, registry),
       status: item.status,
       text: item.title,
       priority: item.priority,
@@ -2160,74 +2182,6 @@ export function extractCreatedTodoId(stdout: string): string | undefined {
   }
 }
 
-// Node's spawnSync defaults to a 1 MiB stdout cap, which a mature tracker's JSON
-// dump passes at a few hundred items. Past that the child is killed with ENOBUFS,
-// status null and EMPTY stderr, so the failure surfaces with nothing to diagnose
-// (and at larger sizes stdout is genuinely truncated mid-document).
-// 64 MiB matches the cap the sibling pm packages settled on.
-/** Read-buffer cap for `pm` output, in bytes. 64 MiB by default; override with the
- * `PM_JSON_MAX_BUFFER` env var. Resolved per call so the override takes effect
- * without an import-order dependency. Invalid or non-positive values fall back to
- * the default rather than silently disabling the guard. */
-function pmJsonMaxBuffer(): number {
-  // Number(), not parseInt(): parseInt("64MiB") silently yields 64, which would
-  // impose a 64-BYTE cap and break every ordinary read while appearing to honor
-  // the documented invalid-value fallback. Number() rejects the whole string.
-  const raw = Number(process.env.PM_JSON_MAX_BUFFER);
-  return Number.isSafeInteger(raw) && raw > 0 ? raw : 64 * 1024 * 1024;
-}
-
-/** Name the real cause of a failed `pm` read. A stdout overrun kills the child
- * with `status: null` and EMPTY stderr, so without this the failure surfaces as
- * an unexplained error (or, worse, as an empty result set). */
-function describePmReadFailure(error: Error, limitBytes: number): string {
-  const code = (error as NodeJS.ErrnoException).code;
-  if (code === "ENOBUFS") {
-    return `pm output exceeded the ${limitBytes} byte read buffer. `
-      + "The workspace is larger than this integration's read limit; narrow the "
-      + "operation or raise PM_JSON_MAX_BUFFER.";
-  }
-  return `pm read failed: ${error.message}`;
-}
-
-/**
- * Run the host-owned pm CLI without routing workspace arguments through a shell.
- *
- * POSIX hosts can resolve the executable shim directly through `PATH`. Windows
- * cannot execute npm `.cmd` shims through shell-free `spawnSync`, so the pm host
- * publishes its package root and this runner validates the declared `bin.pm`
- * entry before invoking it with the current Node executable.
- */
-function runPmCommand(args: string[], maxBuffer = 64 * 1024 * 1024): SpawnSyncReturns<string> {
-  let command = "pm";
-  let commandArgs = args;
-  if (process.platform === "win32") {
-    const configuredRoot = process.env.PM_CLI_PACKAGE_ROOT;
-    if (typeof configuredRoot !== "string" || configuredRoot.trim() === "") {
-      throw new CommandError("The pm host did not publish PM_CLI_PACKAGE_ROOT for a secure Windows CLI relaunch.");
-    }
-    const packageRoot = resolve(configuredRoot.trim());
-    let packageMetadata: unknown;
-    try {
-      packageMetadata = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
-    } catch {
-      throw new CommandError("Could not read the installed pm CLI package metadata.");
-    }
-    const bin = isRecord(packageMetadata) && isRecord(packageMetadata.bin) ? packageMetadata.bin.pm : undefined;
-    if (typeof bin !== "string" || bin.trim() === "") {
-      throw new CommandError("The installed pm CLI package does not declare its pm executable.");
-    }
-    const cliEntry = resolve(packageRoot, bin);
-    const relativeEntry = relative(packageRoot, cliEntry);
-    if (relativeEntry.startsWith("..") || isAbsolute(relativeEntry)) {
-      throw new CommandError("The installed pm CLI package declares an executable outside its package root.");
-    }
-    command = process.execPath;
-    commandArgs = [cliEntry, ...args];
-  }
-  return spawnSync(command, commandArgs, { encoding: "utf8", maxBuffer });
-}
-
 /** Render an untrusted receipt value while preserving missing evidence. */
 function describeReceiptValue(value: unknown): string {
   return value === undefined ? "<missing>" : String(JSON.stringify(value));
@@ -2340,27 +2294,8 @@ export function assertListAllComplete(envelope: unknown, usedFor: string): void 
 }
 
 /** Fetch current workspace items for either upsert indexing or TODO export. */
-function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
-  const maxBuffer = pmJsonMaxBuffer();
-  const result = runPmCommand(["--pm-path", pmRoot, ...COMPLETE_LIST_COMMAND_ARGUMENTS], maxBuffer);
-  if (result.error) {
-    throw new CommandError(describePmReadFailure(result.error, maxBuffer));
-  }
-  if (result.status !== 0) {
-    throw new CommandError(result.stderr || `pm list --all failed (needed for ${usedFor})`);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(result.stdout);
-  } catch {
-    throw new CommandError(`Could not parse \`pm list --all --json\` output (needed for ${usedFor}).`);
-  }
-  // Deliberately OUTSIDE the parse try/catch. Inside it, the CommandError this
-  // throws was caught by that bare `catch` and replaced with "Could not parse",
-  // so an incomplete-envelope refusal surfaced as a parse error and the operator
-  // lost the signal naming and the count-versus-total scale — the diagnostic
-  // this gate exists to produce.
-  return readItemsFromListAll(parsed, usedFor);
+async function readCompletePmItems(client: PmClient, usedFor: string): Promise<PmItem[]> {
+  return readItemsFromListAll(await client.listAllComplete({ includeBody: true }), usedFor);
 }
 
 /**
@@ -2369,7 +2304,7 @@ function readCompletePmItems(pmRoot: string, usedFor: string): PmItem[] {
  * internals. Namespaced fields preserve the source payload losslessly and the
  * JSONL serializer maps them back to the public JSONL keys on export.
  */
-export function buildJsonlImportFieldArgs(todo: Pick<NormalizedTodo,
+function jsonlImportFields(todo: Pick<NormalizedTodo,
   "kv" | "creationDate" | "completionDate" | "createdAt" | "updatedAt" | "todoTxtSource"
 >): string[] {
   const fields: Array<[string, string | Record<string, string> | undefined]> = [
@@ -2383,17 +2318,23 @@ export function buildJsonlImportFieldArgs(todo: Pick<NormalizedTodo,
   const args: string[] = [];
   for (const [name, value] of fields) {
     if (value === undefined || (typeof value === "string" && value.trim() === "")) continue;
-    args.push("--field", `${name}=${typeof value === "string" ? value : JSON.stringify(value)}`);
+    args.push(`${name}=${typeof value === "string" ? value : JSON.stringify(value)}`);
   }
   return args;
 }
+
+/** Backward-compatible CLI field arguments for consumers of the pure adapter. */
+export function buildJsonlImportFieldArgs(todo: Parameters<typeof jsonlImportFields>[0]): string[] {
+  return jsonlImportFields(todo).flatMap((field) => ["--field", field]);
+}
+
 
 /**
  * Parse and filter all sources, then refuse ambiguous upsert keys before any
  * create/update. Dry-run uses the same checks; commands and importers share this
  * path so sync cannot overwrite a source file after collapsing two tasks.
  */
-function runTodoImport(opts: TodoImportOptions): TodoImportResult {
+async function runTodoImport(opts: TodoImportOptions): Promise<TodoImportResult> {
   let imported = 0;
   let skipped = 0;
   let updated = 0;
@@ -2409,7 +2350,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
   // the preview reports create vs. update accurately). Without --upsert these
   // stay empty and every item is created — the unchanged historical behaviour.
   const index = opts.upsert
-    ? buildExistingTodoIndex(readCompletePmItems(opts.pmRoot, "the --upsert key index"))
+    ? buildExistingTodoIndex(await readCompletePmItems(opts.client, "the --upsert key index"))
     : { byId: new Map<string, ExistingTodoItem>(), bySig: new Map<string, ExistingTodoItem[]>() };
 
   // Read and filter every source before resolving or mutating any item.
@@ -2424,7 +2365,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
       throw new CommandError(`Failed to read file ${file}: ${msg}`, exitCode);
     }
 
-    let todos = parseFileToNormalized(md, file, opts.format, opts.todoTxtMapping);
+    let todos = parseFileToNormalized(md, file, opts.format, opts.todoTxtMapping, opts.registry);
     if (opts.section && opts.format === "markdown") {
       const want = opts.section.trim().toLowerCase();
       todos = todos.filter((t) => (t.section ?? "").toLowerCase() === want);
@@ -2563,55 +2504,37 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             todo.itemType,
             existing.title,
           );
-          const updArgs = [
-            "--path", opts.pmRoot,
-            "--json",
-            "update", existing.pmId,
-            "--title", updTitle,
-          ];
-          // Only set the type when the line carried a round-trip `[Type]` tag.
-          // A tagless line — a closed item (the exporter omits its tag), a
-          // grouped-export line, or a hand-written entry — must NOT retype a
-          // matched item: we deliberately do NOT apply the import-wide `--type`
-          // here, since an upsert should never silently bulk-retype existing
-          // items that simply lacked a per-item tag. The matched item keeps its
-          // current type untouched.
-          if (updType) updArgs.push("--type", updType);
-          // Only set status when it actually changes. Re-sending a terminal
-          // status (closed/canceled) makes `pm update` require --force; omitting
-          // it keeps re-import idempotent without forcing a spurious re-close.
+          const update: PmUpdateActionOptions = { title: updTitle };
+          // Tagless rows preserve the matched type and unchanged terminal state.
+          if (updType) update.type = updType;
           if (status !== existing.status) {
-            updArgs.push("--status", status);
-            // pm refuses to transition an item into a terminal status without a
-            // close reason when require_close_reason is on (the default). Supply
-            // the traceable source provenance so an upsert that closes an item
-            // is not rejected — which would otherwise drop the line.
-            if (isTerminalStatus(status)) {
-              updArgs.push("--close-reason", buildImportCloseReason(status, todo.file, todo.lineNumber));
+            update.status = status;
+            if (isTerminalStatus(status, opts.registry)) {
+              update.closeReason = buildImportCloseReason(status, todo.file, todo.lineNumber);
             }
           }
-          if (priority !== undefined && priority !== "") updArgs.push("--priority", priority);
-          if (tags.length > 0 || (opts.format === "todotxt" && opts.todoTxtMapping === "fidelity")) updArgs.push("--tags", tags.join(",")); // --tags replaces
-          if (todo.deadline) updArgs.push("--deadline", todo.deadline);
+          if (priority !== undefined && priority !== "") update.priority = priority;
+          if (tags.length > 0 || (opts.format === "todotxt" && opts.todoTxtMapping === "fidelity")) update.tags = tags.join(",");
+          if (todo.deadline) update.deadline = todo.deadline;
           if (opts.format === "jsonl") {
-            if (todo.description !== undefined) updArgs.push("--description", todo.description);
-            if (todo.assignee) updArgs.push("--assignee", todo.assignee);
-            if (todo.sprint) updArgs.push("--sprint", todo.sprint);
-            updArgs.push(...buildJsonlImportFieldArgs(todo));
+            if (todo.description !== undefined) update.description = todo.description;
+            if (todo.assignee) update.assignee = todo.assignee;
+            if (todo.sprint) update.sprint = todo.sprint;
+            update.field = jsonlImportFields(todo);
           }
           if (opts.format === "todotxt") {
             if (opts.todoTxtMapping === "fidelity") {
-              if (priority === undefined) updArgs.push("--priority", "2");
-              if (!todo.deadline) updArgs.push("--unset", "deadline");
+              if (priority === undefined) update.priority = "2";
+              if (!todo.deadline) update.unset = ["deadline"];
             }
-            updArgs.push(...buildJsonlImportFieldArgs(todo));
+            update.field = jsonlImportFields(todo);
             for (const [field, value] of [
               ["todos_todotxt", todo.todoTxtSource],
               ["todos_creation_date", todo.creationDate],
               ["todos_completion_date", todo.completionDate],
               ["todos_kv", todo.kv],
             ] as const) {
-              if (value === undefined) updArgs.push("--unset", field);
+              if (value === undefined) update.unset = [...(update.unset ?? []), field];
             }
           }
           const todojsonTodoId = opts.format === "todojson" ? todo.todoId : undefined;
@@ -2619,13 +2542,9 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             ? buildTodojsonImportDescription(todo.file, todo.lineNumber, todojsonTodoId)
             : undefined;
           if (todojsonTodoId !== undefined && shouldRefreshTodojsonDescription(existing.description, todojsonTodoId)) {
-            updArgs.push("--description", todojsonDescription as string);
+            update.description = todojsonDescription;
           }
-
-          const result = runPmCommand(updArgs);
-          if (result.status !== 0) {
-            throw new Error(result.stderr || "pm update failed");
-          }
+          await opts.client.update(existing.pmId, update);
           existing.status = status;
           existing.title = updTitle;
           if (todojsonDescription) existing.description = todojsonDescription;
@@ -2637,48 +2556,31 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
             todo.lineNumber,
             isTodojson ? todo.todoId : undefined,
           );
-          const spawnArgs = [
-            "--path", opts.pmRoot,
-            ...(opts.upsert ? ["--json"] : []),
-            "create",
-            "--title", todo.text,
-            "--type", itemType,
-            "--status", status,
-            "--description", opts.format === "jsonl" ? (todo.description ?? "") : importDescription,
-          ];
-          if (opts.format === "jsonl" && todo.pmId) spawnArgs.push("--id", todo.pmId);
-          // pm refuses to create an item directly in a terminal status
-          // (closed/canceled) without a close reason when
-          // `governance.require_close_reason` is enabled — and that policy is a
-          // built-in default, not something a fresh workspace opts into. Without
-          // a reason here, every checked `[x]` line is rejected on the normal
-          // out-of-the-box path and the importer silently drops it. The source
-          // file and line are already known at this call site, so attach them as
-          // the immutable closure evidence: a traceable reason a user can tie
-          // back to the originating TODO file.
-          if (isTerminalStatus(status)) {
-            spawnArgs.push("--close-reason", buildImportCloseReason(status, todo.file, todo.lineNumber));
+          const create: PmCreateActionOptions = {
+            title: todo.text,
+            type: itemType,
+            status,
+            description: opts.format === "jsonl" ? (todo.description ?? "") : importDescription,
+          };
+          if (opts.format === "jsonl" && todo.pmId) create.id = todo.pmId;
+          if (isTerminalStatus(status, opts.registry)) {
+            create.closeReason = buildImportCloseReason(status, todo.file, todo.lineNumber);
           }
-          if (priority !== undefined && priority !== "") spawnArgs.push("--priority", priority);
-          if (tags.length > 0) spawnArgs.push("--tags", tags.join(","));
-          if (todo.deadline) spawnArgs.push("--deadline", todo.deadline);
+          if (priority !== undefined && priority !== "") create.priority = priority;
+          if (tags.length > 0) create.tags = tags.join(",");
+          if (todo.deadline) create.deadline = todo.deadline;
           if (opts.format === "jsonl") {
-            if (todo.assignee) spawnArgs.push("--assignee", todo.assignee);
-            if (todo.sprint) spawnArgs.push("--sprint", todo.sprint);
-            spawnArgs.push(...buildJsonlImportFieldArgs(todo));
+            if (todo.assignee) create.assignee = todo.assignee;
+            if (todo.sprint) create.sprint = todo.sprint;
+            create.field = jsonlImportFields(todo);
           }
-
-          if (opts.format === "todotxt") spawnArgs.push(...buildJsonlImportFieldArgs(todo));
-
-          const result = runPmCommand(spawnArgs);
-          if (result.status !== 0) {
-            throw new Error(result.stderr || "pm create failed");
-          }
+          if (opts.format === "todotxt") create.field = jsonlImportFields(todo);
+          const result = await opts.client.create(create);
           imported++;
 
           // Keep exact-id and fallback lookups current after creating an item.
           if (opts.upsert) {
-            const createdId = extractCreatedTodoId(result.stdout);
+            const createdId = result.item.id;
             if (createdId) {
               const entry: ExistingTodoItem = {
                 pmId: createdId,
@@ -2712,7 +2614,7 @@ function runTodoImport(opts: TodoImportOptions): TodoImportResult {
 // Shared export core (used by `todos export` command + `todos` exporter)
 // ---------------------------------------------------------------------------
 
-interface TodoExportOptions {
+interface TodoExportOptions extends TodoRuntime {
   statusFilter?: string;
   typeFilter?: string;
   pmRoot: string;
@@ -2752,8 +2654,8 @@ export function applyExportOrder(
 }
 
 /** Fetch + filter proven-complete pm items via canonical `pm list --all`. */
-function fetchPmItems(opts: TodoExportOptions): PmItem[] {
-  let items = readCompletePmItems(opts.pmRoot, "the TODO export");
+async function fetchPmItems(opts: TodoExportOptions): Promise<PmItem[]> {
+  let items = await readCompletePmItems(opts.client, "the TODO export");
   if (opts.statusFilter) items = items.filter((i) => i.status === opts.statusFilter);
   if (opts.typeFilter) items = items.filter((i) => i.type === opts.typeFilter);
   return applyExportOrder(items, opts.sort, opts.reverse);
@@ -2765,7 +2667,7 @@ function fetchPmItems(opts: TodoExportOptions): PmItem[] {
  * and the `[type]` annotation on open items) so existing behaviour is stable.
  * This is the path used when no `--group-by` (or `--group-by status`) is set.
  */
-export function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata = false, priorityMap: PriorityMapScheme = "number"): string {
+export function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata = false, priorityMap: PriorityMapScheme = "number", registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): string {
   const lines: string[] = [
     "# TODO",
     "",
@@ -2774,14 +2676,14 @@ export function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata 
   ];
 
   const openItems = items.filter(
-    (i) => i.status === "open" || i.status === "in_progress" || i.status === "blocked" || i.status === "draft",
+    (i) => !isTerminalStatus(i.status, registry),
   );
-  const closedItems = items.filter((i) => i.status === "closed" || i.status === "canceled");
+  const closedItems = items.filter((i) => isTerminalStatus(i.status, registry));
 
   if (openItems.length > 0) {
     lines.push("## Open", "");
     for (const item of openItems) {
-      const check = mapPmStatusToChecked(item.status) ? "x" : " ";
+      const check = mapPmStatusToChecked(item.status, registry) ? "x" : " ";
       const meta = metadata ? markdownMetadataSuffix(item, priorityMap) : "";
       const typeTag = item.type ? ` [${item.type}]` : "";
       lines.push(`- [${check}] ${item.title}${meta}${typeTag} <!-- ${item.id} -->`);
@@ -2805,17 +2707,17 @@ export function renderDefaultMarkdown(items: PmItem[], nowIso: string, metadata 
  * `--group-by status`). Each group is a `## <heading>` section of checkboxes
  * carrying the pm id comment for round-trips.
  */
-export function renderGroupedMarkdown(items: PmItem[], groupBy: string, nowIso: string, metadata = false, priorityMap: PriorityMapScheme = "number"): string {
+export function renderGroupedMarkdown(items: PmItem[], groupBy: string, nowIso: string, metadata = false, priorityMap: PriorityMapScheme = "number", registry: RuntimeStatusRegistry = DEFAULT_STATUS_REGISTRY): string {
   const lines: string[] = [
     "# TODO",
     "",
     `<!-- Exported from pm-cli on ${nowIso} -->`,
     "",
   ];
-  for (const group of groupItems(items, groupBy)) {
+  for (const group of groupItems(items, groupBy, registry)) {
     lines.push(`## ${group.heading}`, "");
     for (const item of group.items) {
-      const check = mapPmStatusToChecked(item.status) ? "x" : " ";
+      const check = mapPmStatusToChecked(item.status, registry) ? "x" : " ";
       lines.push(`- [${check}] ${item.title}${metadata ? markdownMetadataSuffix(item, priorityMap) : ""} <!-- ${item.id} -->`);
     }
     lines.push("");
@@ -2827,8 +2729,8 @@ export function renderGroupedMarkdown(items: PmItem[], groupBy: string, nowIso: 
  * Build export output for any supported format. Returns `count: 0` (empty
  * string) when there are no items, matching the original contract.
  */
-function buildTodoMarkdown(opts: TodoExportOptions): { markdown: string; count: number } {
-  const items = fetchPmItems(opts);
+async function buildTodoMarkdown(opts: TodoExportOptions): Promise<{ markdown: string; count: number }> {
+  const items = await fetchPmItems(opts);
   if (items.length === 0) return { markdown: "", count: 0 };
 
   const format = opts.format ?? "markdown";
@@ -2836,25 +2738,25 @@ function buildTodoMarkdown(opts: TodoExportOptions): { markdown: string; count: 
   const priorityMap = opts.priorityMap ?? "number";
 
   if (format === "todotxt") {
-    return { markdown: serializeTodoTxt(items, opts.todoTxtMapping), count: items.length };
+    return { markdown: serializeTodoTxt(items, opts.todoTxtMapping, opts.registry), count: items.length };
   }
   if (format === "todojson") {
-    return { markdown: serializePiTodoDetails(items), count: items.length };
+    return { markdown: serializePiTodoDetails(items, opts.registry), count: items.length };
   }
   if (format === "jsonl") {
     return { markdown: serializeJsonl(items), count: items.length };
   }
   if (format === "checkbox") {
-    return { markdown: renderCheckboxMarkdown(items, opts.metadata, priorityMap), count: items.length };
+    return { markdown: renderCheckboxMarkdown(items, opts.metadata, priorityMap, opts.registry), count: items.length };
   }
   if (format === "tasklist") {
-    return { markdown: renderTaskList(items, groupBy ?? "status", opts.metadata, priorityMap), count: items.length };
+    return { markdown: renderTaskList(items, groupBy ?? "status", opts.metadata, priorityMap, opts.registry), count: items.length };
   }
   // markdown
   if (groupBy && groupBy !== "status") {
-    return { markdown: renderGroupedMarkdown(items, groupBy, new Date().toISOString(), opts.metadata, priorityMap), count: items.length };
+    return { markdown: renderGroupedMarkdown(items, groupBy, new Date().toISOString(), opts.metadata, priorityMap, opts.registry), count: items.length };
   }
-  return { markdown: renderDefaultMarkdown(items, new Date().toISOString(), opts.metadata, priorityMap), count: items.length };
+  return { markdown: renderDefaultMarkdown(items, new Date().toISOString(), opts.metadata, priorityMap, opts.registry), count: items.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -3051,7 +2953,8 @@ export default defineExtension({
         });
         const includeTags = readBoolOption(ctx.options, "include-tags", "includeTags");
 
-        const items = fetchPmItems({
+        const items = await fetchPmItems({
+          ...await todoRuntime(ctx),
           statusFilter,
           typeFilter,
           pmRoot: ctx.pm_root,
@@ -3176,7 +3079,9 @@ export default defineExtension({
         }
         preflightValidateImportFiles([filePath], importFormat);
 
-        const importResult = runTodoImport({
+        const runtime = await todoRuntime(ctx);
+        const importResult = await runTodoImport({
+          ...runtime,
           files: [filePath],
           itemType,
           closedAs,
@@ -3211,7 +3116,8 @@ export default defineExtension({
         let reexport: string;
         let exportCount: number;
         try {
-          ({ markdown: reexport, count: exportCount } = buildTodoMarkdown({
+          ({ markdown: reexport, count: exportCount } = await buildTodoMarkdown({
+            ...runtime,
             statusFilter: syncFilter?.status,
             typeFilter: syncFilter?.type,
             pmRoot: ctx.pm_root,
@@ -3361,7 +3267,8 @@ export default defineExtension({
       // with a clear error and leaves the store untouched.
       preflightValidateImportFiles(files, format);
 
-      const { imported, skipped, updated, previews, dropped } = runTodoImport({
+      const { imported, skipped, updated, previews, dropped } = await runTodoImport({
+        ...await todoRuntime(ctx),
         files,
         itemType,
         closedAs,
@@ -3454,7 +3361,8 @@ export default defineExtension({
     api.registerExporter("todos", async (ctx: ImportExportContext) => {
       const outputPath = readStringOption(ctx.options, "output");
       const filter = readExportFilter(ctx.options);
-      const { markdown, count } = buildTodoMarkdown({
+      const { markdown, count } = await buildTodoMarkdown({
+        ...await todoRuntime(ctx),
         statusFilter: filter.status,
         typeFilter: filter.type,
         pmRoot: ctx.pm_root,

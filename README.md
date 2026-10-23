@@ -40,6 +40,10 @@ npm run build
 
 ## Without git
 
+Requires pm CLI/SDK 2026.10.20 or later. TODO completion follows workspace status
+roles, including custom terminal statuses. Imports, exports and sync use the
+host-bound SDK client without launching a child pm process.
+
 TODO validation, import, export, context, sync, editing sessions and source-change
 proposals work in a plain pm tracker. No watcher command requires a Git repository
 or invokes a git subprocess. Repository release and changelog tooling needs git;
