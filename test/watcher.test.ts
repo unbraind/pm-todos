@@ -6,16 +6,13 @@ import { packExtension } from "./packed-fixture.ts";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, symlinkSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { setTimeout as delay } from "node:timers/promises";
 import { init, create, get, update } from "@unbrained/pm-cli/sdk";
 import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
 import extension, { TodoSourceWatcher, exportTodoEditingSession, type TodoWatcherOptions, type TodoWatcherReceipt, type TodoChangeProposal } from "../index.ts";
 
 /** Wait for the configured stability window using real time and filesystem reads. */
 async function settle(watcher: TodoSourceWatcher): Promise<TodoWatcherReceipt> {
-  await watcher.poll();
-  await delay(5);
-  return watcher.poll();
+  return watcher.runOnce();
 }
 
 test("authorized file watcher proposals are stable, bounded, revision-bound and durable without git", async t => {
@@ -75,8 +72,7 @@ test("authorized file watcher proposals are stable, bounded, revision-bound and 
       const value = config();
       const left = new TodoSourceWatcher(value), right = new TodoSourceWatcher(value);
       await Promise.all([left.poll(), right.poll()]);
-      await delay(5);
-      const results = await Promise.all([left.poll(), right.poll()]);
+      const results = await Promise.all([left.runOnce(), right.runOnce()]);
       assert.deepEqual(results.map(row => row.state).sort(), ["duplicate", "queued"]);
       assert.equal(queue(value).length, 1);
     });

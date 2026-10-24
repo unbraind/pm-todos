@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { listAllComplete } from "@unbrained/pm-cli/sdk";
 import { createTodoEditingSession, TodoSourceWatcher, type PmItem, type TodoWatcherReceipt } from "../index.ts";
 
@@ -39,7 +38,7 @@ try {
   assert.notEqual(edited, baseline.text, "Public fixture needs a representable editable title");
   const config = { pmRoot: source, file, sessionFile, spool, stableMs: 1, pollMs: 1 };
   const watcher = new TodoSourceWatcher(config);
-  const settle = async (): Promise<TodoWatcherReceipt> => { await watcher.poll(); await delay(5); return watcher.poll(); };
+  const settle = (): Promise<TodoWatcherReceipt> => watcher.runOnce();
   writeFileSync(file, edited.slice(0, -3));
   const partial = await settle();
   assert.equal(partial.refusal?.code, "incomplete_write");
@@ -54,8 +53,7 @@ try {
   let duplicates = 1;
   for (let i = 0; i < 3; i++) { assert.equal((await watcher.poll()).state, "duplicate"); duplicates++; }
   const restarted = new TodoSourceWatcher(config);
-  await restarted.poll(); await delay(5);
-  assert.equal((await restarted.poll()).state, "duplicate");
+  assert.equal((await restarted.runOnce()).state, "duplicate");
   duplicates++;
   writeFileSync(file, "");
   const truncated = await settle();

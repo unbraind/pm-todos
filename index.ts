@@ -2787,7 +2787,7 @@ export default defineExtension({
         { long: "--spool", value_name: "path", description: "Durable proposal directory outside the tracker" },
         { long: "--follow", description: "Poll until SIGINT/SIGTERM; emit compact NDJSON receipts" },
         { long: "--stable-ms", value_name: "ms", description: "Identical sample window (default 500)" },
-        { long: "--poll-ms", value_name: "ms", description: "Follow polling interval (default 100)" },
+        { long: "--poll-ms", value_name: "ms", description: "Polling interval (default 100)" },
         { long: "--max-bytes", value_name: "count", description: "Source byte limit (default 1048576)" },
         { long: "--max-changes", value_name: "count", description: "Changes per proposal (default 100)" },
         { long: "--max-pending", value_name: "count", description: "Queue length limit (default 20)" },

@@ -548,6 +548,16 @@ refused; the supplied parent directories and spool must be trusted.
 
 Limits are positive integers: `--max-bytes` defaults to 1 MiB (hard ceiling 4 MiB),
 `--max-changes` to 100 (ceiling 1,000), and `--max-pending` to 20 (ceiling 100).
+One-shot mode rechecks the monotonic stability interval after every timer wake.
+It waits for at most `max(1,000 ms, 3 × stableMs)` while sampling; in-flight file,
+tracker and queue I/O finishes normally. An unchanged file queues a durable
+proposal (including zero-change proposals), or returns `duplicate` for existing
+evidence. If the source keeps changing until that budget expires, the command
+exits nonzero with a typed `still_waiting` refusal and remedy: stop the writer and
+retry, or use `--follow`. Other I/O and planning refusals also exit nonzero.
+SIGINT/SIGTERM during one-shot waiting use normal process cancellation; follow
+mode finishes in-flight persistence before stopping.
+
 The sidecar ceiling is eight times the source byte limit; the total queue ceiling
 is 16 MiB. `--stable-ms` and `--poll-ms` have a 60,000 ms ceiling. Limit violations
 refuse the whole proposal with a typed code and remedy; they never silently truncate

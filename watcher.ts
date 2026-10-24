@@ -21,6 +21,13 @@ export interface TodoWatcherOptions {
   maxChanges?: number;
   maxPending?: number;
 }
+/** Clock and timer share a monotonic timeline; timers may resume before their requested delay. */
+export interface TodoWatcherClock {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+}
+/** Production timing stays monotonic even when the wall clock changes. */
+const systemClock: TodoWatcherClock = { now: () => performance.now(), sleep: ms => delay(ms) };
 /** JSON-safe field patch: values set fields, and removedFields explicitly deletes them. */
 export interface TodoProposalPatch {
   id: string;
@@ -40,7 +47,7 @@ export interface TodoChangeProposal {
 }
 /** Failures contain no source text or local paths and always name a remedy. */
 export interface TodoWatcherRefusal {
-  code: "invalid_options" | "source_unavailable" | "source_too_large" | "source_unstable" | "incomplete_write" | "session_unavailable" | "tracker_unavailable" | "plan_refused" | "change_limit" | "queue_full" | "spool_unavailable" | "spool_mismatch";
+  code: "still_waiting" | "invalid_options" | "source_unavailable" | "source_too_large" | "source_unstable" | "incomplete_write" | "session_unavailable" | "tracker_unavailable" | "plan_refused" | "change_limit" | "queue_full" | "spool_unavailable" | "spool_mismatch";
   remedy: string;
 }
 /** Counts-first response; the durable proposal carries the bounded review payload. */
@@ -112,8 +119,10 @@ export class TodoSourceWatcher {
   private config: Required<TodoWatcherOptions> | undefined;
   private candidate: { revision: string; since: number } | undefined;
   private busy = false;
+  private clock: TodoWatcherClock;
   /** Invalid configuration is returned as a typed refusal by poll, without I/O. */
-  constructor(value: TodoWatcherOptions) {
+  constructor(value: TodoWatcherOptions, clock: TodoWatcherClock = systemClock) {
+    this.clock = clock;
     try { this.config = options(value); } catch { /* poll returns the public refusal. */ }
   }
   /** Sample once; proposals survive signals because persistence precedes the receipt. */
@@ -135,8 +144,8 @@ export class TodoSourceWatcher {
       return refusal(code, "Restore one regular UTF-8 source file within maxBytes; symlinks are not accepted, then retry after the writer finishes.");
     }
     const sourceRevision = hash(text);
-    if (!this.candidate || this.candidate.revision !== sourceRevision) { this.candidate = { revision: sourceRevision, since: performance.now() }; return { ok: true, state: "waiting" }; }
-    if (performance.now() - this.candidate.since < config.stableMs) return { ok: true, state: "waiting" };
+    if (!this.candidate || this.candidate.revision !== sourceRevision) { this.candidate = { revision: sourceRevision, since: this.clock.now() }; return { ok: true, state: "waiting" }; }
+    if (this.clock.now() - this.candidate.since < config.stableMs) return { ok: true, state: "waiting" };
     if (!text.endsWith("\n") && text.length > 0) return refusal("incomplete_write", "Finish the newline-terminated session write; omitted rows are always retained, never deleted.");
     let session: unknown;
     try { session = JSON.parse(await boundedRead(config.sessionFile, config.maxBytes * 8)); }
@@ -178,6 +187,18 @@ export class TodoSourceWatcher {
     } catch { return refusal("spool_unavailable", "Restore writable spool access and preserve its contents; retry to deduplicate any completed write."); }
     finally { if (release) await release(); }
   }
+  /** Complete one stable cycle within max(1000 ms, 3 * stableMs); in-flight I/O finishes normally. */
+  async runOnce(): Promise<TodoWatcherReceipt> {
+    const stableMs = this.config?.stableMs ?? 500;
+    const deadline = this.clock.now() + Math.max(1000, 3 * stableMs);
+    while (this.clock.now() < deadline) {
+      const result = await this.poll();
+      if (result.state !== "waiting") return result;
+      const remaining = deadline - this.clock.now();
+      if (remaining > 0) await this.clock.sleep(Math.max(1, Math.ceil(Math.min(stableMs, this.config?.pollMs ?? 100, remaining))));
+    }
+    return refusal("still_waiting", "The one-shot stability budget expired; stop the source writer and retry, or use --follow to keep observing changes.");
+  }
   /** Run until cancellation, awaiting each receipt and finishing in-flight persistence. */
   async run(signal: AbortSignal, emit: (receipt: TodoWatcherReceipt) => void | Promise<void>): Promise<void> {
     const interval = this.config?.pollMs ?? 100;
@@ -192,16 +213,15 @@ export class TodoSourceWatcher {
 }
 
 /** Host output renders one cycle as TOON/JSON; follow mode uses SDK NDJSON framing. */
-export async function runTodoWatchCommand(ctx: CommandHandlerContext): Promise<unknown> {
+export async function runTodoWatchCommand(ctx: CommandHandlerContext, clock: TodoWatcherClock = systemClock): Promise<unknown> {
   const config: TodoWatcherOptions = { pmRoot: ctx.pm_root, file: String(ctx.options.file ?? ""), sessionFile: String(ctx.options.session ?? ""), spool: String(ctx.options.spool ?? "") };
   for (const [flag, name] of [["stable-ms", "stableMs"], ["poll-ms", "pollMs"], ["max-bytes", "maxBytes"], ["max-changes", "maxChanges"], ["max-pending", "maxPending"]] as const) {
     const value = ctx.options[flag] ?? ctx.options[name];
     if (value !== undefined) config[name] = Number(value);
   }
-  const watcher = new TodoSourceWatcher(config);
+  const watcher = new TodoSourceWatcher(config, clock);
   if (!ctx.options.follow) {
-    let result = await watcher.poll();
-    if (result.state === "waiting") { await delay(config.stableMs ?? 500); result = await watcher.poll(); }
+    const result = await watcher.runOnce();
     if (!result.ok) process.exitCode = EXIT_CODE.GENERIC_FAILURE;
     return result;
   }
