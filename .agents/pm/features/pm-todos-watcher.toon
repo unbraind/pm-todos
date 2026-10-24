@@ -2,12 +2,17 @@ id: pm-todos-watcher
 title: Propose stable todo source changes without applying them
 description: "Watch one explicitly authorized session todo.txt file. Emit bounded revision-bound import proposals after stable writes without applying them. Acceptance: partial writes and truncation never become deletions; replacements and duplicate notifications deduplicate; shutdown preserves pending proposals. Include typed SDK and CLI, compact agent output, typed refusals with remedies, docs and public-tracker no-git validation."
 type: Feature
-status: in_progress
+status: closed
 priority: 2
 tags: []
 created_at: "2026-10-23T16:45:21.987Z"
-updated_at: "2026-10-23T17:21:43.483Z"
+updated_at: "2026-10-24T21:48:49.513Z"
+closed_at: "2026-10-24T21:48:49.504Z"
+completed_at: "2026-10-24T21:48:49.504Z"
 author: codex-agent
+resolution: Latest implementing PR completes PR 144 watcher proposals by waiting for stable queued output before one-shot success without applying tracker changes.
+expected_result: "Watch one explicitly authorized session todo.txt file. Emit bounded revision-bound import proposals after stable writes without applying them. Acceptance: partial writes and truncation never become deletions; replacements and duplicate notifications deduplicate; shutdown preserves pending proposals. Include typed SDK and CLI, compact agent output, typed refusals with remedies, docs and public-tracker no-git validation."
+actual_result: "https://github.com/unbraind/pm-todos/pull/147, merged 2026-10-24T06:32:21Z, merge e641ffbaceef647646cd8873396acb5b2025eca0: Latest implementing PR completes PR 144 watcher proposals by waiting for stable queued output before one-shot success without applying tracker changes."
 comments[7]{created_at,author,text}:
   "2026-10-23T16:45:37.889Z",codex-agent,"Overlap audit: installed CLI 2026.10.23 and pinned SDK 2026.10.20 provide single-invocation importer, certified complete reads, atomic writes and locks; pm-todos sessions already provide conflict-aware three-way previews. pm-observer watches transcripts and emits evidence, not todo import plans. No existing watcher item found. Reuse session reconciliation, SDK listAllComplete, acquireLock, writeFileAtomic and command output serialization. Poll only the explicit source, refuse symlinks and incomplete lines, retain omitted rows, cap input/changes/queue, persist before reporting and never apply. CI npm and Bun release checks are the full gate because host CPU is saturated."
   "2026-10-23T16:50:21.439Z",codex-agent,"Implementation uses the existing session planner and public SDK complete reads, locks, atomic writes and NDJSON serialization. Default CLI performs one stable cycle and returns native TOON/JSON; follow mode streams bounded NDJSON. Queue identity includes source, session and complete tracker revisions; source and sidecar are checked again after planning. Proposals retain immutable source snapshots; queue backpressure refuses rather than discarding pending work. No source/tracker mutation or git subprocess is part of this feature."
@@ -28,4 +33,5 @@ tests[2]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
 docs[2]{path,scope}:
   docs/source-watcher-example.md,project
   README.md,project
+close_reason: "https://github.com/unbraind/pm-todos/pull/147, merged 2026-10-24T06:32:21Z, merge e641ffbaceef647646cd8873396acb5b2025eca0: Latest implementing PR completes PR 144 watcher proposals by waiting for stable queued output before one-shot success without applying tracker changes."
 body: ""

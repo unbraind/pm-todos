@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Reconcile todo.txt editing sessions without overwriting concurrent edits ([pm-todos-sessions](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-sessions.toon))
+- Propose stable todo source changes without applying them ([pm-todos-watcher](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-watcher.toon))
+
+### Other
+
+- Correct tracker comments from PR 140 review ([pm-todos-review140](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-review140.toon))
+- Respect workspace terminal roles and use host-bound TODO operations ([pm-todos-sdk-status-host](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-sdk-status-host.toon))
+- Retry watcher stability sampling when a timer returns early ([pm-todos-watcher-stability-timer](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-watcher-stability-timer.toon))
+
 ## 2026.10.23 - 2026-10-23
 
 ### Changed
