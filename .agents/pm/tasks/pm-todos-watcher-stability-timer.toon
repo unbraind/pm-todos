@@ -2,17 +2,31 @@ id: pm-todos-watcher-stability-timer
 title: Retry watcher stability sampling when a timer returns early
 description: "Existing origin/main CI run 39996955838 failed on Node 26 in test/watcher.test.ts: the installed single-shot watcher returned waiting where queued was expected. watcher.ts waits stableMs once before its final poll; timer wakeup can precede the performance.now stability deadline. This is outside F04/F09 SDK adoption. Evidence: https://github.com/unbraind/pm-todos/actions/runs/39996955838/job/120562864191"
 type: Task
-status: open
+status: in_progress
 priority: 2
-tags: []
+tags[1]: "gh:unbraind/pm-todos#145"
 created_at: "2026-10-23T20:43:22.180Z"
-updated_at: "2026-10-23T20:50:19.067Z"
+updated_at: "2026-10-24T06:17:12.488Z"
 author: codex-agent
 acceptance_criteria: Bound single-shot waiting by the measured stability deadline and verify queued output with a short stability window across supported Node versions.
 parent: pm-todos-watcher
-comments[1]{created_at,author,text}:
+comments[4]{created_at,author,text}:
   "2026-10-23T20:50:19.067Z",codex-agent,Discovered while checking the F04/F09 SDK-adoption release gates. The baseline CI failure is independent of TODO conversion and host transport. Keep this follow-up open; no watcher implementation or coverage thresholds were changed in the SDK task.
-files[2]{path,scope}:
+  "2026-10-24T06:13:38.671Z",codex-agent,"Claimed issue #145. Source audit: one-shot command assumes a single timer sleep reaches the monotonic threshold; test settle/concurrent helpers and scripts/validate-source-watcher.ts repeat that assumption. Follow mode rechecks on each poll; remaining timers are cancellation, lock-contention or watchdog deadlines. Plan: shared bounded runOnce with injected monotonic clock/timer, budget max(1000 ms, 3 * stableMs), typed still_waiting refusal plus remedy/nonzero command exit; migrate helper assumptions and prove early-wake/change-deadline behavior on real non-git trackers. Use targeted local checks and 200 serial real-timer iterations, then both CI release gates without threshold changes."
+  "2026-10-24T06:15:47.013Z",codex-agent,"Regression proof: node --test --test-name-pattern=\"one-shot command rechecks the monotonic clock after early timer wakes\" test/watcher-timing.test.ts passes with the fix (1 pass, 0 fail). Reverting only the one-shot command branch to poll/sleep/poll, retaining the injected clock and all tests, fails exit 1 (0 pass, 1 fail): actual waiting, expected queued at monotonic 0.75 ms. Restored the fix immediately; identical command passes exit 0. Targeted watcher suite passes 19/19, including actual installed CLI without git and SIGTERM persistence. New timing suite passes 4/4, including 200/200 serial real-timer command cycles with persisted proposal checks. Typecheck, test/script typecheck and docstring gate pass (14 files, 89 declarations). No lint script is configured; docstring is the configured source lint gate."
+  "2026-10-24T06:17:11.473Z",codex-agent,"Final boundary refinement: runOnce checks its monotonic deadline before every sample, so an overslept timer cannot begin another read after budget expiry. Added an unchanged-source oversleep regression, bringing timing coverage to 5/5 (including 200 serial real-timer cycles); watcher suite 19/19. All five linked commands passed via pm test --run --progress: timing tests, typecheck, test/script typecheck, docstring gate and built watcher suite. Run-result persistence is disabled by existing project policy, so results are recorded here; no policy was changed. Poll interval help now describes both modes. Remaining timers were audited and only bound cancellation/contention/watchdog checks or rechecked polling; no other elapsed-time assumption remains. CI full release gates pending; no thresholds or dependency pins changed."
+files[5]{path,scope}:
+  index.ts,project
+  scripts/validate-source-watcher.ts,project
+  test/watcher-timing.test.ts,project
   test/watcher.test.ts,project
   watcher.ts,project
+tests[5]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+  node --test test/watcher-timing.test.ts,project,codex-agent,"2026-10-24T06:15:20.239Z",local_mutation,fix/oneshot-watch-completes-stable-cycle
+  npm run typecheck,project,codex-agent,"2026-10-24T06:15:21.823Z",local_mutation,fix/oneshot-watch-completes-stable-cycle
+  "npm run build:test",project,codex-agent,"2026-10-24T06:15:23.616Z",local_mutation,fix/oneshot-watch-completes-stable-cycle
+  npm run docstring,project,codex-agent,"2026-10-24T06:15:25.027Z",local_mutation,fix/oneshot-watch-completes-stable-cycle
+  node --test test/watcher.test.ts,project,codex-agent,"2026-10-24T06:16:21.735Z",local_mutation,fix/oneshot-watch-completes-stable-cycle
+docs[1]{path,scope}:
+  README.md,project
 body: ""
