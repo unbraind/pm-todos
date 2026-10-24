@@ -2,13 +2,18 @@ id: pm-todos-sdk-status-host
 title: Respect workspace terminal roles and use host-bound TODO operations
 description: Verified F04 and F09 at origin/main 16c0bd20e74249bb79e54479cd569bf21815fe32. Replace duplicated lifecycle and process transport contracts with the public SDK while retaining TODO fidelity and partial-import receipts.
 type: Task
-status: in_progress
+status: closed
 priority: 2
 tags: []
 created_at: "2026-10-23T20:26:57.170Z"
-updated_at: "2026-10-23T21:02:39.716Z"
+updated_at: "2026-10-24T23:15:08.831Z"
+closed_at: "2026-10-24T21:48:49.332Z"
+completed_at: "2026-10-23T21:17:31.000Z"
 author: codex-agent
 acceptance_criteria: "F04: custom terminal roles export completed and import with close evidence; prove the status wiring revert fails.; F09: host-bound complete reads and mutations work without git or a pm executable, retain author and source metadata; prove transport revert fails."
+resolution: "Uses declared terminal lifecycle roles and host-bound complete reads/mutations with native closure evidence, preserved authorship and real no-git/no-executable regressions."
+expected_result: "F04: custom terminal roles export completed and import with close evidence; prove the status wiring revert fails.; F09: host-bound complete reads and mutations work without git or a pm executable, retain author and source metadata; prove transport revert fails."
+actual_result: "https://github.com/unbraind/pm-todos/pull/146, merged 2026-10-23T21:17:31Z, merge eeed97507b37d33399276f03ddbc8c2d3294e382: Uses declared terminal lifecycle roles and host-bound complete reads/mutations with native closure evidence, preserved authorship and real no-git/no-executable regressions."
 comments[8]{created_at,author,text}:
   "2026-10-23T20:27:00.843Z",codex-agent,"Both findings are valid on origin/main 16c0bd20e74249bb79e54479cd569bf21815fe32: index.ts hard-codes closed/canceled in conversion and terminal write routing; runPmCommand duplicates executable discovery, argv and JSON transport. Plan: resolve the SDK status registry once per operation, use the supplied PmClient for certified reads and typed mutations, and add real non-git and packed regressions. Existing coverage thresholds remain 97/93/98."
   "2026-10-23T20:32:12.901Z",codex-agent,"Pinned SDK 2026.10.20 already supplies PmClient, listAllComplete, readSettings, resolveRuntimeStatusRegistry and statusIsTerminal. The old advertised minimum 2026.8.20 does not export statusIsTerminal; raise only the peer and manifest minimum to 2026.10.20 and keep the dev pin. Removed child executable discovery and stdout parsing from operational reads/mutations. Pure converters keep compatible signatures with an optional registry. Initial existing behaviour suite: 161 passed, zero failures."
@@ -31,4 +36,5 @@ tests[1]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
   node --test test/sdk-status-host.test.ts,project,codex-agent,"2026-10-23T20:32:10.600Z",local_mutation,refactor/sdk-status-roles-and-host
 docs[1]{path,scope}:
   README.md,project
+close_reason: "https://github.com/unbraind/pm-todos/pull/146, merged 2026-10-23T21:17:31Z, merge eeed97507b37d33399276f03ddbc8c2d3294e382: Uses declared terminal lifecycle roles and host-bound complete reads/mutations with native closure evidence, preserved authorship and real no-git/no-executable regressions."
 body: ""
