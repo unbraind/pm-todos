@@ -6,9 +6,9 @@ status: closed
 priority: 2
 tags: []
 created_at: "2026-10-23T20:26:57.170Z"
-updated_at: "2026-10-24T21:48:49.355Z"
+updated_at: "2026-10-24T23:15:08.831Z"
 closed_at: "2026-10-24T21:48:49.332Z"
-completed_at: "2026-10-24T21:48:49.332Z"
+completed_at: "2026-10-23T21:17:31.000Z"
 author: codex-agent
 acceptance_criteria: "F04: custom terminal roles export completed and import with close evidence; prove the status wiring revert fails.; F09: host-bound complete reads and mutations work without git or a pm executable, retain author and source metadata; prove transport revert fails."
 resolution: "Uses declared terminal lifecycle roles and host-bound complete reads/mutations with native closure evidence, preserved authorship and real no-git/no-executable regressions."
