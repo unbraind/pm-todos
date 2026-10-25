@@ -1,6 +1,6 @@
 /** Conflict-aware todo.txt sessions, independent of git and table importers. */
 import { createHash } from "node:crypto";
-import { listAllComplete, mutateItem, readSettings } from "@unbrained/pm-cli/sdk";
+import { getHistoryPath, listAllComplete, mutateItem, readHistoryEntries, readSettings, verifyHistoryEntries } from "@unbrained/pm-cli/sdk";
 import { parseTodoTxtLine, serializeTodoTxtLine, todoTxtItemToPm, type PmItem } from "./index.ts";
 
 /** Fields represented by an editable todo.txt line. */
@@ -167,7 +167,11 @@ export async function applyTodoEditingSession(pmRoot: string, session: unknown, 
   }
   for (const patch of preview.patches) {
     try {
-      await mutateItem({ pmRoot, settings, id: patch.id, op: "update", author: options.author, skipNoop: true, message: "Reconcile todo.txt editing session", extensionFieldNames: ["todos_todotxt", "todos_kv", "todos_creation_date", "todos_completion_date"], mutate(document) {
+      await mutateItem({ pmRoot, settings, id: patch.id, op: "update", author: options.author, skipNoop: true, message: "Reconcile todo.txt editing session", extensionFieldNames: ["todos_todotxt", "todos_kv", "todos_creation_date", "todos_completion_date"], async mutate(document) {
+        // An event-index cache is not an integrity receipt. Verify fresh history
+        // against the locked item before a proposed edit can drive a write.
+        const history = await readHistoryEntries(getHistoryPath(pmRoot, patch.id), patch.id);
+        if (!history.length || !verifyHistoryEntries(history, document).ok) throw new Error("Session history integrity verification failed");
         // Compare against the original baseline while holding the same item lock
         // used by ordinary core writers. Independent fields survive this merge.
         const row = baselines.get(patch.id);
