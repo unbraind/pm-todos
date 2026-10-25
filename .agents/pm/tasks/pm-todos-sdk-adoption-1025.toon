@@ -1,0 +1,29 @@
+id: pm-todos-sdk-adoption-1025
+title: Verify SDK session adoption limits and refuse corrupt history writes
+description: "Audit 2026-10-25 sessions.ts adoption: replace package-owned ordinary-field mutation preconditions with previewItemMutations and commitItemMutations where the supported SDK permits. Preserve marker parsing, three-way source conflicts, integrity checks and no-git behavior. Related SDK adoptions: pm-todos-sdk-status-host and pm-todos-x5my."
+type: Task
+status: in_progress
+priority: 2
+tags: []
+created_at: "2026-10-25T19:15:22.459Z"
+updated_at: "2026-10-25T19:26:33.415Z"
+assignee: codex-agent
+claim_principal: codex-agent
+author: codex-agent
+comments[5]{created_at,author,text}:
+  "2026-10-25T19:17:43.272Z",codex-agent,"Verified SDK 2026.10.20 (supported floor and development pin) and installed 2026.10.25 expose BulkItemUpdateMutation.match as only {key,value}. A title edit also guards todos_todotxt and recomputes source provenance under the item lock. Missing SDK API: multi-field expected-state matching with locked source replanning (or a transaction update callback). A blanket updated_at guard would refuse independent changes that sessions currently merge. Missing SDK API: transaction update extensionFieldNames for standalone SDK callers; field options require an installed active extension, while direct unknown metadata options are silently ignored. Tests record real no-git counterexamples; retaining mutateItem rather than splitting one atomic row into unsafe writes. Existing certified reads and watcher SDK locks remain adopted."
+  "2026-10-25T19:20:24.643Z",codex-agent,"The requested corruption-after-cache regression exposed a pre-existing session integrity gap: valid JSON with a corrupted after_hash was accepted and appended by mutateItem. Added fresh readHistoryEntries + verifyHistoryEntries(history, lockedDocument) inside the item lock before replanning or writing. Empty/missing history also refuses. Intentional documented stricter behavior: corrupt or drifted history produces write_failed with zero item/history writes for that row; preview remains comparison-only. SDK transactions remain blocked by the two documented API gaps; no dependency bump or local transaction coordinator."
+  "2026-10-25T19:21:37.499Z",codex-agent,"Differential proof passed against origin/main e6671b1: immutable public pm-todos tracker e6671b1 (98 items, 97 representable, 1 identical export refusal) and pm-graph tracker 3f02532 (106 items, 105 representable, 1 identical refusal). Eleven built-API comparison cases per tracker, 22 total: creation/sidecars, unchanged/edited/conflicting/omitted/duplicate/reordered/invalid reconciliation, planned patches, export and dry-run apply. Outputs byte-identical; full copied-tracker fingerprints unchanged; no git on child PATH and git discovery ceiling set. Script: npm run build && node scripts/compare-sdk-sessions.ts <public-repo> ... . Intentional difference tested separately: damaged history apply is refused."
+  "2026-10-25T19:21:41.900Z",codex-agent,"Behavioral revert proof: replacing only applyTodoEditingSession with origin/main implementation (new regression retained) makes node --test --test-name-pattern=\"session apply detects corrupt history\" test/sdk-session-adoption.test.ts fail 0/1: corrupted after_hash was accepted (true !== false). Restored implementation passes. Transaction replacement revert proofs are not applicable: zero transaction replacements shipped; executable SDK counterexamples justify retaining the public SDK mutateItem callback. Existing session suite plus SDK integrity/adoption tests passed 18/18 before additional empty/missing/malformed and item-drift cases."
+  "2026-10-25T19:26:33.415Z",codex-agent,"Final focused SDK/integrity tests: 7/7 pass, including locked-document drift and missing, empty and malformed histories. The same 7/7 pass with Node-only PATH (no git) and an explicit git discovery ceiling. Typecheck, test TypeScript compilation, docstring gate and whitespace checks pass. No separate lint script is configured. Strict project health passes with zero warnings after installing the CI-pinned local pm-github extension artifact; tracked extension registry unchanged. Full npm and Bun release checks and exact-head CI are pending."
+files[3]{path,scope}:
+  scripts/compare-sdk-sessions.ts,project
+  sessions.ts,project
+  test/sdk-session-adoption.test.ts,project
+tests[1]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
+  node --test test/sdk-session-adoption.test.ts,project,120,codex-agent,"2026-10-25T19:20:36.719Z",local_mutation,refactor/sdk-adoption-1025
+docs[3]{path,scope}:
+  docs/editing-sessions.md,project
+  "https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-x5my.toon",project
+  "https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-sdk-status-host.toon",project
+body: ""
