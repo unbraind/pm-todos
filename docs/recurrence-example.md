@@ -17,6 +17,11 @@ const input = { id, dialect: "todotxt-weekly-v1" as const };
 const preview = await previewTodoOccurrence(pmRoot, input);
 console.log(JSON.stringify(preview));
 if (process.argv.includes("--apply") && preview.ok && preview.revision) {
-  console.log(JSON.stringify(await applyTodoOccurrence(pmRoot, { ...input, expectedRevision: preview.revision }, { author: "recurrence-example" })));
+  console.log(JSON.stringify(await applyTodoOccurrence(pmRoot, { ...input, expectedRevision: preview.revision, expectedTargetRevision: preview.targetRevision }, { author: "recurrence-example" })));
 }
 ```
+
+For an existing successor, inspect `stored` versus `intended`. A `reschedule`
+preview retains the old stored top-level `nextDue` until apply succeeds. The
+example passes both source and target revisions. A `foreign_schedule` refusal
+requires explicit review of the peer's edit; the example never overwrites it.

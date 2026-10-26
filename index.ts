@@ -2853,10 +2853,11 @@ export default defineExtension({
         { long: "--dialect", value_name: "name", description: "Opt in with todotxt-weekly-v1" },
         { long: "--timezone", value_name: "policy", description: "floating only; date-only calendars, no DST conversion" },
         { long: "--expected-revision", value_name: "hash", description: "Source revision returned by preview (required to apply)" },
+        { long: "--expected-target-revision", value_name: "hash", description: "Successor revision returned by preview (required to reschedule)" },
       ],
       async run(ctx: CommandHandlerContext) {
         if (!["preview", "apply"].includes(ctx.args[0])) throw new CommandError("Use pm todos recur preview|apply <id>; preview first and pass its --expected-revision to apply.", EXIT_CODE.USAGE);
-        const input = { id: ctx.args[1], dialect: readStringOption(ctx.options, "dialect"), timezone: readStringOption(ctx.options, "timezone"), expectedRevision: readStringOption(ctx.options, "expected-revision", "expectedRevision") };
+        const input = { id: ctx.args[1], dialect: readStringOption(ctx.options, "dialect"), timezone: readStringOption(ctx.options, "timezone"), expectedRevision: readStringOption(ctx.options, "expected-revision", "expectedRevision"), expectedTargetRevision: readStringOption(ctx.options, "expected-target-revision", "expectedTargetRevision") };
         const result = ctx.args[0] === "preview"
           ? await previewTodoOccurrence(ctx.pm_root, input)
           : await applyTodoOccurrence(ctx.pm_root, input, { author: process.env.PM_AUTHOR ?? "pm-todos" });

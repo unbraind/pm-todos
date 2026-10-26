@@ -485,7 +485,9 @@ older blunt `pm history-repair --all` remains available as a lower-level primiti
 
 `pm todos recur preview <id> --dialect todotxt-weekly-v1` interprets a completed
 **fidelity** todo.txt item and returns one proposed successor, its stable series
-and occurrence ids, original due date, anchor, next due date and source revision.
+and occurrence ids, the intended schedule and source revision. An absent successor
+has `targetExists: false`; its proposed schedule lives only under `intended`. Existing
+successors include SDK-read `stored` facts and `targetRevision`.
 Apply is explicit and requires that revision:
 
 ```bash
@@ -514,7 +516,7 @@ without catching up to the wall clock. Complete each successor explicitly before
 previewing the following occurrence.
 
 Existing `todos_kv` metadata carries reserved `pmseries`, `pmoccurrence`,
-`pmoriginaldue`, `pmprevious` and `pmrevision` keys. JSONL and todo.txt **fidelity**
+`pmoriginaldue`, `pmprevious`, `pmrevision` and `pmanchor` keys. JSONL and todo.txt **fidelity**
 exports preserve them. Use JSONL for a lossless identity-bearing interchange;
 Markdown, tasklist and todojson are intentionally narrower projections. Same-title
 recurrences can make idless todo.txt upserts ambiguous; use JSONL stable ids.
@@ -526,10 +528,22 @@ The successor id depends on its predecessor identity, so later comments, old-inp
 replays or changed dates never create a second successor for that predecessor.
 Every apply revalidates the immutable source revision inside the SDK item lock,
 reads the live target, and uses native atomic SDK creation. Retry after an
-interruption previews current state again. An owned successor is reported
-`unchanged` even if a peer edited it; foreign or corrupt records are skipped
-with a reason and never overwritten. A changed source due that disagrees with
-an existing occurrence is refused for review. No frozen journal is replayed.
+interruption previews current state again. An owned successor is `unchanged` only when its stored deadline, rule, anchor,
+original due and configured open status equal the intended schedule. Unrelated
+peer title/comments edits remain intact. A source rule/due/completion change
+produces a `reschedule` preview with separate `stored` and `intended` values.
+Apply additionally requires `--expected-target-revision <targetRevision>`
+(SDK `expectedTargetRevision`), rechecks that exact revision inside the successor
+lock, and returns `rescheduled` after SDK read-back. `updated` is 0 or 1.
+
+Every materialized receipt's top-level `nextDue`, identity, provenance and
+`status` come from the live SDK target, including after competing transitions;
+they never echo the intended calculation. A peer's manual deadline, recurrence,
+source scheduling-token or lifecycle change is `foreign_schedule`, preserved
+without overwrite. A stale target plan is `target_conflict`. Deleted successors
+are `target_deleted` and never recreated from an old plan. Corrupt or foreign
+identities are refused. The latest package-written schedule is reconstructed by
+SDK history replay, without history edits or a frozen journal.
 
 The SDK exports `previewTodoOccurrence`, `applyTodoOccurrence` and typed requests,
 results, refusal codes and transition observations. Results contain one receipt
