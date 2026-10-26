@@ -40,6 +40,9 @@ npm run build
 
 ## Without git
 
+Recurrence preview/apply use SDK storage and item locks and work in a plain
+tracker without a `git` executable.
+
 Requires pm CLI/SDK 2026.10.20 or later. TODO completion follows workspace status
 roles, including custom terminal statuses. Imports, exports and sync use the
 host-bound SDK client without launching a child pm process.
@@ -477,6 +480,63 @@ itself lists each affected stream in its output; `pm history --verify <id>` spot
 content, so `reconcile` only re-greens the hash chain (no data loss) — see the authoritative
 [pm-cli merge-safety guide](https://github.com/unbraind/pm-cli/blob/main/docs/MERGE_SAFETY.md). The
 older blunt `pm history-repair --all` remains available as a lower-level primitive.
+
+## Explicit weekly recurrence
+
+`pm todos recur preview <id> --dialect todotxt-weekly-v1` interprets a completed
+**fidelity** todo.txt item and returns one proposed successor, its stable series
+and occurrence ids, original due date, anchor, next due date and source revision.
+Apply is explicit and requires that revision:
+
+```bash
+pm todos recur preview project-weekly --dialect todotxt-weekly-v1 --json
+pm todos recur apply project-weekly --dialect todotxt-weekly-v1 --expected-revision <revision>
+```
+
+- `rec:+1w` through `rec:+52w` advance from the source due date.
+- `rec:1w` through `rec:52w` advance from `todos_completion_date`, retained by
+  fidelity import. Missing completion dates are refused, never inferred from now.
+- Dates are real Gregorian `YYYY-MM-DD` values in years 0001–9999. The only
+  timezone policy is `floating`: calendar addition has no timezone conversion or
+  DST ambiguity. Timestamps, offsets, IANA zones, rollover dates and overflow
+  receive typed refusals with remedies. The current SDK deadline must agree with
+  the retained source due token. Duplicate `rec`/`due` tokens are refused.
+- Omitting `--dialect` disables recurrence and performs no tracker reads or writes.
+  Original source text, due date, relationships and history remain unchanged even
+  when enabled. Core status registry **done** roles enable recurrence; canceled,
+  blocked and active roles do not.
+
+A successor is a new Task in the configured open status. It copies title,
+priority, tags and source recurrence, with the next deadline; it does not inherit
+assignment, relationships, completion evidence, body or reminders. No scheduler
+or daemon is installed. Due-anchored overdue work advances exactly one interval,
+without catching up to the wall clock. Complete each successor explicitly before
+previewing the following occurrence.
+
+Existing `todos_kv` metadata carries reserved `pmseries`, `pmoccurrence`,
+`pmoriginaldue`, `pmprevious` and `pmrevision` keys. JSONL and todo.txt **fidelity**
+exports preserve them. Use JSONL for a lossless identity-bearing interchange;
+Markdown, tasklist and todojson are intentionally narrower projections. Same-title
+recurrences can make idless todo.txt upserts ambiguous; use JSONL stable ids.
+An imported occurrence lacks the materializer's original creation receipt and is
+reported as foreign rather than adopted. Reserved keys on an external original
+must be reviewed explicitly before starting a new series.
+
+The successor id depends on its predecessor identity, so later comments, old-input
+replays or changed dates never create a second successor for that predecessor.
+Every apply revalidates the immutable source revision inside the SDK item lock,
+reads the live target, and uses native atomic SDK creation. Retry after an
+interruption previews current state again. An owned successor is reported
+`unchanged` even if a peer edited it; foreign or corrupt records are skipped
+with a reason and never overwritten. A changed source due that disagrees with
+an existing occurrence is refused for review. No frozen journal is replayed.
+
+The SDK exports `previewTodoOccurrence`, `applyTodoOccurrence` and typed requests,
+results, refusal codes and transition observations. Results contain one receipt
+with a `created` count of 0 or 1; default CLI output is compact TOON (`--json` is
+also available). Input ids are bounded to 160 characters, authors to 80, source
+lines to 16384, titles to 4096, and metadata/tags to 100 entries; oversized or
+unsupported values are refused. [SDK example](docs/recurrence-example.md).
 
 ## Conflict-aware todo.txt editing sessions
 

@@ -18,6 +18,8 @@ import { isAbsolute, resolve, join, relative, sep } from "node:path";
 
 
 
+export * from "./recurrence.ts";
+import { previewTodoOccurrence, applyTodoOccurrence } from "./recurrence.ts";
 export * from "./sessions.ts";
 import { exportTodoEditingSession, applyTodoEditingSession } from "./sessions.ts";
 export * from "./watcher.ts";
@@ -2835,6 +2837,29 @@ export default defineExtension({
         try { text = readFileSync(file, "utf8"); }
         catch { throw new CommandError("Cannot read session todo.txt; restore the editing file or export a new session.", EXIT_CODE.USAGE); }
         const result = await applyTodoEditingSession(ctx.pm_root, session, text, { author: process.env.PM_AUTHOR ?? "pm-todos", dryRun: action === "preview" });
+        if (!result.ok) process.exitCode = EXIT_CODE.GENERIC_FAILURE;
+        return result;
+      },
+    });
+
+    api.registerCommand({
+      name: "todos recur",
+      description: "Preview or explicitly apply one weekly todo.txt occurrence (disabled without --dialect).",
+      arguments: [
+        { name: "action", required: true, description: "preview | apply" },
+        { name: "id", required: true, description: "Completed fidelity todo.txt item id" },
+      ],
+      flags: [
+        { long: "--dialect", value_name: "name", description: "Opt in with todotxt-weekly-v1" },
+        { long: "--timezone", value_name: "policy", description: "floating only; date-only calendars, no DST conversion" },
+        { long: "--expected-revision", value_name: "hash", description: "Source revision returned by preview (required to apply)" },
+      ],
+      async run(ctx: CommandHandlerContext) {
+        if (!["preview", "apply"].includes(ctx.args[0])) throw new CommandError("Use pm todos recur preview|apply <id>; preview first and pass its --expected-revision to apply.", EXIT_CODE.USAGE);
+        const input = { id: ctx.args[1], dialect: readStringOption(ctx.options, "dialect"), timezone: readStringOption(ctx.options, "timezone"), expectedRevision: readStringOption(ctx.options, "expected-revision", "expectedRevision") };
+        const result = ctx.args[0] === "preview"
+          ? await previewTodoOccurrence(ctx.pm_root, input)
+          : await applyTodoOccurrence(ctx.pm_root, input, { author: process.env.PM_AUTHOR ?? "pm-todos" });
         if (!result.ok) process.exitCode = EXIT_CODE.GENERIC_FAILURE;
         return result;
       },
