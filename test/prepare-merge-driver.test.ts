@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test, { after } from "node:test";
@@ -182,7 +182,9 @@ test("real npm packing succeeds with a held Git config lock and preserves the ar
   assert.equal(result.status, 0, result.stderr);
   // npm itself must run `prepare` with npm_command=pack; the guard proves it saw that environment.
   assert.match(result.stderr, /npm pack: skipping merge-driver install during artifact creation/);
-  const archive = join(directory, "artifact-real-pack-1.0.0.tgz");
+  const archives = readdirSync(directory).filter((name) => name.endsWith(".tgz"));
+  assert.equal(archives.length, 1, "npm pack must create exactly one artifact");
+  const archive = join(directory, archives[0]!);
   assert.equal(execFileSync("tar", ["-xOf", archive, "package/payload.txt"], { encoding: "utf8" }), "built distribution fixture\n");
   assert.equal(execFileSync("tar", ["-xOf", archive, "package/package.json"], { encoding: "utf8" }), readFileSync(join(directory, "package.json"), "utf8"));
   assert.deepEqual(readFileSync(config), before);

@@ -11,7 +11,7 @@ import extension, { applyTodoOccurrence, previewTodoOccurrence, type TodoRecurre
 import { packExtension } from "./packed-fixture.ts";
 
 /** Install the packed artifact on a plain tracker, with no discoverable git parent. */
-async function fixture(t: test.TestContext) {
+async function fixture(t: test.TestContext, sourceRoot = process.cwd()) {
   const root = mkdtempSync(join(tmpdir(), "todos-recurrence-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const pmRoot = join(root, "tracker");
@@ -20,7 +20,8 @@ async function fixture(t: test.TestContext) {
   /** Launch the actual host; optionally remove git and pm from executable lookup. */
   const command = (args: string[], restricted = false): string => execFileSync(process.execPath, [cli, "--pm-path", pmRoot, ...args], { cwd: root, env: { ...env, ...(restricted ? { PATH: join(root, "bin") } : {}) }, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
   command(["init", "--prefix", "fixture", "--defaults", "--agent-guidance", "skip", "--json"]);
-  command(["package", "install", packExtension(root), "--project", "--json"]);
+  const tarball = packExtension(root, sourceRoot);
+  command(["package", "install", tarball, "--project", "--json"]);
   mkdirSync(join(root, "bin"));
   copyFileSync(process.execPath, join(root, "bin", basename(process.execPath)));
   const client = new PmClient({ pmRoot, cwd: root, author: "test-agent" });
@@ -30,8 +31,37 @@ async function fixture(t: test.TestContext) {
     const line = "x 2026-10-25 (B) Weekly +project @context rec:+1w due:2026-10-20";
     return (await client.create({ id: "source-" + suffix.replaceAll("_", "-"), type: "Task", title: "Weekly", status: "closed", closeReason: "Completed test work", deadline: "2026-10-20", priority: 1, tags: "project,context", field: ["todos_todotxt=" + line, 'todos_kv={"rec":"+1w"}', "todos_completion_date=2026-10-25"], ...options })).item.id;
   };
-  return { root, pmRoot, client, harness, source, env, cli, command };
+  return { root, pmRoot, client, harness, source, env, cli, command, tarball };
 }
+
+/** Install the same discovered artifact into the independent reference tracker. */
+async function referenceFixture(f: Awaited<ReturnType<typeof fixture>>) {
+  const referenceRoot = join(f.root, "reference");
+  const reference = new PmClient({ pmRoot: referenceRoot, cwd: f.root, author: "test-agent" });
+  await reference.init("fixture", { defaults: true, agentGuidance: "skip" });
+  await reference.packageInstall(f.tarball, { project: true });
+  return { referenceRoot, reference };
+}
+
+test("release version bump packs and installs the actual artifact in both trackers", async t => {
+  const sourceRoot = mkdtempSync(join(tmpdir(), "todos-release-bump-"));
+  t.after(() => rmSync(sourceRoot, { recursive: true, force: true }));
+  // npm 10 still runs prepare during pack, including with --ignore-scripts.
+  for (const file of ["package.json", "manifest.json", "dist", "scripts", "README.md", "CHANGELOG.md"]) {
+    cpSync(join(process.cwd(), file), join(sourceRoot, file), { recursive: true });
+  }
+  const packageFile = join(sourceRoot, "package.json");
+  const metadata = JSON.parse(readFileSync(packageFile, "utf8")) as { version: string };
+  const [major, minor, patch] = metadata.version.split(".");
+  metadata.version = `${major}.${minor}.${Number(patch) + 1}`;
+  writeFileSync(packageFile, JSON.stringify(metadata));
+  const f = await fixture(t, sourceRoot);
+  const { referenceRoot } = await referenceFixture(f);
+  for (const tracker of [f.pmRoot, referenceRoot]) {
+    const installed = JSON.parse(readFileSync(join(tracker, "extensions", "pm-todos", "package.json"), "utf8")) as { version: string };
+    assert.equal(installed.version, metadata.version);
+  }
+});
 const dialect = "todotxt-weekly-v1" as const;
 /** Assert the public result cannot emit invalid numeric values or grow with the tracker. */
 function receipt(result: TodoRecurrenceResult): void {
@@ -206,10 +236,7 @@ test("seed 0x72656375: 500 random import/export/sync sequences retain fields and
     if (typeof values[0] === "string" && /^(Imported |sync: )/.test(values[0])) return;
     originalError(...values);
   });
-  const referenceRoot = join(f.root, "reference");
-  const reference = new PmClient({ pmRoot: referenceRoot, cwd: f.root, author: "test-agent" });
-  await reference.init("fixture", { defaults: true, agentGuidance: "skip" });
-  await reference.packageInstall(join(f.root, "pm-todos-2026.10.25.tgz"), { project: true });
+  const { referenceRoot, reference } = await referenceFixture(f);
   for (const client of [f.client, reference]) {
     await client.create({ id: "anchor", type: "Task", title: "Relationship anchor" });
     await client.create({ id: "model", type: "Task", title: "Model weekly", status: "closed", closeReason: "Model completed", parent: "fixture-anchor", dep: ["id=fixture-anchor,kind=related_to"], description: "Retained model description", body: "Retained body\n\nwith  whitespace", assignee: "test-agent", sprint: "initial", priority: 1, deadline: "2026-10-20", tags: "project,context", field: ['todos_kv={"rec":"+1w","owner":"initial"}', "todos_creation_date=2026-10-01", "todos_completion_date=2026-10-25", "todos_source_created_at=2026-10-01T00:00:00.000Z", "todos_source_updated_at=2026-10-25T00:00:00.000Z", "todos_todotxt=x 2026-10-25 (B) 2026-10-01 Model weekly +project @context rec:+1w due:2026-10-20 owner:initial"] });
