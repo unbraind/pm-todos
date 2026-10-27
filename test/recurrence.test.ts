@@ -46,7 +46,8 @@ async function referenceFixture(f: Awaited<ReturnType<typeof fixture>>) {
 test("release version bump packs and installs the actual artifact in both trackers", async t => {
   const sourceRoot = mkdtempSync(join(tmpdir(), "todos-release-bump-"));
   t.after(() => rmSync(sourceRoot, { recursive: true, force: true }));
-  for (const file of ["package.json", "manifest.json", "dist"]) {
+  // npm 10 still runs prepare during pack, including with --ignore-scripts.
+  for (const file of ["package.json", "manifest.json", "dist", "scripts", "README.md", "CHANGELOG.md"]) {
     cpSync(join(process.cwd(), file), join(sourceRoot, file), { recursive: true });
   }
   const packageFile = join(sourceRoot, "package.json");

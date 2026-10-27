@@ -6,21 +6,23 @@ status: in_progress
 priority: 1
 tags[3]: pack,regression,release
 created_at: "2026-10-27T03:30:27.538Z"
-updated_at: "2026-10-27T03:47:19.368Z"
-assignee: codex-agent
-claim_principal: codex-agent
+updated_at: "2026-10-27T03:58:31.539Z"
 author: codex-agent
 acceptance_criteria: No guessed tarball filenames in tests or scripts; bumped-version pack and install regression passes and fails under behavioral revert; npm and Bun release gates pass at unchanged thresholds.
-comments[3]{created_at,author,text}:
+comments[6]{created_at,author,text}:
   "2026-10-27T03:30:32.969Z",codex-agent,"Confirmed failure at Run release checks after Update release version: https://github.com/unbraind/pm-todos/actions/runs/40296525146 . Repository-wide scan found guesses in test/recurrence.test.ts and test/prepare-merge-driver.test.ts. Keep the existing exact-one-artifact strategy in test/packed-fixture.ts and scripts/accept-packed.ts, pass that artifact to the reference tracker, and exercise both installs against a bumped temporary package. No existing tracker item or open GitHub issue matches this defect."
   "2026-10-27T03:32:02.113Z",codex-agent,"Behavioral revert proof: with only referenceFixture changed back to the original guessed previous-version artifact, node --test --test-concurrency=2 --test-name-pattern=\"release version bump\" test/recurrence.test.ts exited 1 (1 test, 0 pass, 1 fail), reporting Local extension source does not exist. Restoring reference.packageInstall(f.tarball, { project: true }) made the same command pass (1 test, 1 pass, 0 fail). The new test bumps package.json in a temporary built-package copy and checks the installed version in both real non-git trackers. Initial focused packing run passed 6 tests. There is no standalone lint script; use the repository docstring gate and git diff --check alongside both TypeScript checks."
   "2026-10-27T03:47:19.365Z",codex-agent,"Validation so far: focused packing tests passed 6/6; the bumped-version regression passes and the behavioral revert fails 1/1 as expected. npm run typecheck, npm run build:test, npm run docstring (16 files and 107 declarations), git diff --check, and strict tracker health (zero warnings) pass. npm run changelog:full produced no content change and npm run changelog:check passes. The linked affected-file suite is still running; open the PR for mandatory npm and Bun release checks on both CI Node versions. CLI observation for the orchestrator: pm test --add with --pm-context none persisted the test link before rejecting the unsupported option combination with exit 2; no upstream issue filed under queue rules."
+  "2026-10-27T03:48:26.510Z",codex-agent,"The linked affected-file run completed successfully: node --test --test-concurrency=2 test/recurrence.test.ts test/packed-fixture.test.ts test/prepare-merge-driver.test.ts passed, including the 500-sequence recurrence case. PR: https://github.com/unbraind/pm-todos/pull/159 . CI release-gate matrix: https://github.com/unbraind/pm-todos/actions/runs/40446145104 . Both Node jobs have passed tracked project health and are running the mandatory release checks."
+  "2026-10-27T03:56:03.435Z",codex-agent,"CI run 40446145104 passed both Node 26 release gates (371/371 tests in each gate; four packed npm/Bun acceptance scenarios each). Node 22 failed only the new regression because npm 10 ran prepare despite ignore-scripts and the temporary package copy omitted that script (370 pass, 1 fail). Include scripts and published documentation in the temporary copy, reproduce with Node 22/npm 10, and re-run the CI matrix. This changes the regression fixture only; artifact discovery remains unchanged."
+  "2026-10-27T03:58:30.071Z",codex-agent,"Final local evidence: the affected-file suite passed 27/27, including 500 recurrence sequences. With the complete temporary package copy, npm exec --yes --package=node@22.18.0 --package=npm@10.9.3 -- node --test --test-concurrency=2 --test-name-pattern=release.version.bump test/recurrence.test.ts passes 1/1 through pm test --run --only-last --progress. Restoring only the guessed reference-install expression fails that same Node 22/npm 10 regression (0 pass, 1 fail, Local extension source does not exist); restoring f.tarball passes 1/1. TypeScript source/test checks and the docstring gate pass. Initial CI verified both Node 26 npm/Bun gates with 371/371 tests and four packed acceptance scenarios per gate. PR 159 carries the final CI matrix and receipts; leave the issue open for orchestrator verification."
 files[3]{path,scope,note}:
   test/packed-fixture.ts,project,Allow packing a temporary release package
   test/prepare-merge-driver.test.ts,project,Discover the sole packed artifact
   test/recurrence.test.ts,project,Carry the packed artifact through both installs and cover a release version bump
-tests[1]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
+tests[2]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
   node --test --test-concurrency=2 test/recurrence.test.ts test/packed-fixture.test.ts test/prepare-merge-driver.test.ts,project,1200,codex-agent,"2026-10-27T03:32:03.645Z",local_mutation,fix/pack-name-from-npm
+  npm exec --yes --package=node@22.18.0 --package=npm@10.9.3 -- node --test --test-concurrency=2 --test-name-pattern=release.version.bump test/recurrence.test.ts,project,300,codex-agent,"2026-10-27T03:57:57.250Z",local_mutation,fix/pack-name-from-npm
 docs[1]{path,scope,note}:
   CHANGELOG.md,project,Generated release history
 body: ""
