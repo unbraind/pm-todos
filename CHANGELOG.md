@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Release checks fail after the release version bump ([pm-todos-pack-name](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-pack-name.toon))
+
 ## 2026.10.25 - 2026-10-25
 
 ### Added

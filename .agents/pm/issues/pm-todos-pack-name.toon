@@ -2,27 +2,75 @@ id: pm-todos-pack-name
 title: Release checks fail after the release version bump
 description: Daily Release run 40296525146 failed after package.json was bumped because the recurrence reference tracker guessed the previous tarball filename. Use only the artifact returned by packing throughout tests and scripts; cover a bumped temporary package with real tracker installation.
 type: Issue
-status: in_progress
+status: closed
 priority: 1
 tags[3]: pack,regression,release
 created_at: "2026-10-27T03:30:27.538Z"
-updated_at: "2026-10-27T03:58:31.539Z"
+updated_at: "2026-10-27T11:56:32.201Z"
+closed_at: "2026-10-27T10:49:14.652Z"
+completed_at: "2026-10-27T04:17:55.000Z"
 author: codex-agent
 acceptance_criteria: No guessed tarball filenames in tests or scripts; bumped-version pack and install regression passes and fails under behavioral revert; npm and Bun release gates pass at unchanged thresholds.
-comments[6]{created_at,author,text}:
+repro_steps: "Bump the release package version, pack it, then run the recurrence reference tracker install; the old test constructed the previous-version tarball name and refused because that file did not exist."
+resolution: Carry the artifact actually produced by packing through real recurrence tracker installs and discover the sole archive in the merge-driver test.
+expected_result: "Release version bumps do not leave guessed tarball names in tests/scripts; both real tracker installs use the actual bumped package artifact, with unchanged release thresholds."
+actual_result: The bumped-version real-pack/install regression passes 1/1 on updated main fc476cff3c1bc0e8e4527058b4dc643aaa52a970. Fresh build uses the 2026.10.27 release inputs; both disposable trackers install the actual newly packed artifact. The source packing/discovery implementation is unchanged by the release metadata update. Final CI is required on the refreshed tracker head.
+comments[14]{created_at,author,text}:
   "2026-10-27T03:30:32.969Z",codex-agent,"Confirmed failure at Run release checks after Update release version: https://github.com/unbraind/pm-todos/actions/runs/40296525146 . Repository-wide scan found guesses in test/recurrence.test.ts and test/prepare-merge-driver.test.ts. Keep the existing exact-one-artifact strategy in test/packed-fixture.ts and scripts/accept-packed.ts, pass that artifact to the reference tracker, and exercise both installs against a bumped temporary package. No existing tracker item or open GitHub issue matches this defect."
   "2026-10-27T03:32:02.113Z",codex-agent,"Behavioral revert proof: with only referenceFixture changed back to the original guessed previous-version artifact, node --test --test-concurrency=2 --test-name-pattern=\"release version bump\" test/recurrence.test.ts exited 1 (1 test, 0 pass, 1 fail), reporting Local extension source does not exist. Restoring reference.packageInstall(f.tarball, { project: true }) made the same command pass (1 test, 1 pass, 0 fail). The new test bumps package.json in a temporary built-package copy and checks the installed version in both real non-git trackers. Initial focused packing run passed 6 tests. There is no standalone lint script; use the repository docstring gate and git diff --check alongside both TypeScript checks."
   "2026-10-27T03:47:19.365Z",codex-agent,"Validation so far: focused packing tests passed 6/6; the bumped-version regression passes and the behavioral revert fails 1/1 as expected. npm run typecheck, npm run build:test, npm run docstring (16 files and 107 declarations), git diff --check, and strict tracker health (zero warnings) pass. npm run changelog:full produced no content change and npm run changelog:check passes. The linked affected-file suite is still running; open the PR for mandatory npm and Bun release checks on both CI Node versions. CLI observation for the orchestrator: pm test --add with --pm-context none persisted the test link before rejecting the unsupported option combination with exit 2; no upstream issue filed under queue rules."
   "2026-10-27T03:48:26.510Z",codex-agent,"The linked affected-file run completed successfully: node --test --test-concurrency=2 test/recurrence.test.ts test/packed-fixture.test.ts test/prepare-merge-driver.test.ts passed, including the 500-sequence recurrence case. PR: https://github.com/unbraind/pm-todos/pull/159 . CI release-gate matrix: https://github.com/unbraind/pm-todos/actions/runs/40446145104 . Both Node jobs have passed tracked project health and are running the mandatory release checks."
   "2026-10-27T03:56:03.435Z",codex-agent,"CI run 40446145104 passed both Node 26 release gates (371/371 tests in each gate; four packed npm/Bun acceptance scenarios each). Node 22 failed only the new regression because npm 10 ran prepare despite ignore-scripts and the temporary package copy omitted that script (370 pass, 1 fail). Include scripts and published documentation in the temporary copy, reproduce with Node 22/npm 10, and re-run the CI matrix. This changes the regression fixture only; artifact discovery remains unchanged."
   "2026-10-27T03:58:30.071Z",codex-agent,"Final local evidence: the affected-file suite passed 27/27, including 500 recurrence sequences. With the complete temporary package copy, npm exec --yes --package=node@22.18.0 --package=npm@10.9.3 -- node --test --test-concurrency=2 --test-name-pattern=release.version.bump test/recurrence.test.ts passes 1/1 through pm test --run --only-last --progress. Restoring only the guessed reference-install expression fails that same Node 22/npm 10 regression (0 pass, 1 fail, Local extension source does not exist); restoring f.tarball passes 1/1. TypeScript source/test checks and the docstring gate pass. Initial CI verified both Node 26 npm/Bun gates with 371/371 tests and four packed acceptance scenarios per gate. PR 159 carries the final CI matrix and receipts; leave the issue open for orchestrator verification."
-files[3]{path,scope,note}:
-  test/packed-fixture.ts,project,Allow packing a temporary release package
-  test/prepare-merge-driver.test.ts,project,Discover the sole packed artifact
-  test/recurrence.test.ts,project,Carry the packed artifact through both installs and cover a release version bump
-tests[2]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
-  node --test --test-concurrency=2 test/recurrence.test.ts test/packed-fixture.test.ts test/prepare-merge-driver.test.ts,project,1200,codex-agent,"2026-10-27T03:32:03.645Z",local_mutation,fix/pack-name-from-npm
-  npm exec --yes --package=node@22.18.0 --package=npm@10.9.3 -- node --test --test-concurrency=2 --test-name-pattern=release.version.bump test/recurrence.test.ts,project,300,codex-agent,"2026-10-27T03:57:57.250Z",local_mutation,fix/pack-name-from-npm
+  "2026-10-27T10:47:03.691Z",codex-agent,"Closure audit of current main: Every acceptance criterion is accounted for: inspected tests/scripts use the artifact returned by packing or exactly-one .tgz discovery, without a guessed package/version name. The bumped temporary package test installs the real tarball into both non-git trackers. The merged PR retains the source-only revert failure and restored success under Node 22/npm 10, plus four successful npm/Bun CI gates with 371/371 tests and four packed acceptance scenarios each. The focused current-main version-bump regression is repeated before closure. Delivered by PR #159, merge commit 909211294b4f9751b06a6722063427822cb3f3ec, merged_at 2026-10-27T04:17:55Z. Focused verification follows; full npm and Bun release gates are delegated to PR CI for this tracker-only change."
+  "2026-10-27T10:48:49.140Z",codex-agent,"Verified current main with `node --test --test-concurrency=2 --test-name-pattern=\"release version bump\" test/recurrence.test.ts` via the pinned pm linked runner: PASS. Observed test counts: tests=1, pass=1, fail=0, cancelled=0, skipped=0, todo=0. Current-main bumped-version regression passes through pinned pm. Inspected packing/reference helpers and repository scan contain artifact discovery rather than guessed versioned tarball names. PR #159 retains the Node 22/npm 10 behavioral revert and all final npm/Bun release-gate receipts."
+  "2026-10-27T10:51:12.351Z",codex-agent,"Closure validation: project tracker health passes strictly with extensions disabled. Default health reports only the existing global extension version skew (extension_host_pm_cli_version_skew:2026.10.20:2026.10.27:pm-github). This local extension warning is separate from delivered acceptance and is not represented as a passing default health result. Dependency pins and global extensions are unchanged."
+  "2026-10-27T11:48:27.008Z",codex-agent,"Current main advanced to fc476cff3c1bc0e8e4527058b4dc643aaa52a970 through an external daily release. Integrated it without tracker overlap or history replacement. Dependency pins and package scripts are unchanged. Recheck `node --test --test-concurrency=2 --test-name-pattern=\"release version bump\" test/recurrence.test.ts` against the updated version inputs; retain the original implementation merge timestamp."
+  "2026-10-27T11:49:34.882Z",codex-agent,"Fresh verification after current-main integration: `node --test --test-concurrency=2 --test-name-pattern=\"release version bump\" test/recurrence.test.ts` PASS. The bumped-version real-pack/install regression passes 1/1 on updated main fc476cff3c1bc0e8e4527058b4dc643aaa52a970. Fresh build uses the 2026.10.27 release inputs; both disposable trackers install the actual newly packed artifact. The source packing/discovery implementation is unchanged by the release metadata update. Final CI is required on the refreshed tracker head."
+  "2026-10-27T11:50:40.876Z",codex-agent,"Closure validation: project tracker health passes strictly with extensions disabled. Default health reports only the existing global extension version skew (extension_host_pm_cli_version_skew:2026.10.20:2026.10.27:pm-github). This local extension warning is separate from delivered acceptance and is not represented as a passing default health result. Dependency pins and global extensions are unchanged."
+  "2026-10-27T11:56:17.215Z",codex-agent,"Bounded CI handoff: exact closure head 222393c2a491a137d42438d6215d18188e2ba025 has pending checks at 2.7 minutes after publication. An earlier closure head remained queued beyond the wait cap before the required current-main refresh. codeql (queued): https://github.com/unbraind/pm-todos/actions/runs/40499301541/job/122172656571; test (26) (queued): https://github.com/unbraind/pm-todos/actions/runs/40499301395/job/122172653604; test (22.18.0) (queued): https://github.com/unbraind/pm-todos/actions/runs/40499301395/job/122172653323. These checks are missing evidence, not passes or approval. Focused checks and changelog validation passed; recorded baseline health advisories remain separate. Full release validation remains for the orchestrator pipeline before merging. No PR merge or release was performed."
+  "2026-10-27T11:56:32.200Z",codex-agent,"Closure validation: project tracker health passes strictly with extensions disabled. Default health reports only the existing global extension version skew (extension_host_pm_cli_version_skew:2026.10.20:2026.10.27:pm-github). This local extension warning is separate from delivered acceptance and is not represented as a passing default health result. Dependency pins and global extensions are unchanged."
+files[4]:
+  - path: scripts/accept-packed.ts
+    scope: project
+  - path: test/packed-fixture.ts
+    scope: project
+    note: Allow packing a temporary release package
+  - path: test/prepare-merge-driver.test.ts
+    scope: project
+    note: Discover the sole packed artifact
+  - path: test/recurrence.test.ts
+    scope: project
+    note: Carry the packed artifact through both installs and cover a release version bump
+tests[3]:
+  - command: node --test --test-concurrency=2 test/recurrence.test.ts test/packed-fixture.test.ts test/prepare-merge-driver.test.ts
+    scope: project
+    timeout_seconds: 1200
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-27T03:32:03.645Z"
+      source_kind: local_mutation
+      source_ref: fix/pack-name-from-npm
+  - command: npm exec --yes --package=node@22.18.0 --package=npm@10.9.3 -- node --test --test-concurrency=2 --test-name-pattern=release.version.bump test/recurrence.test.ts
+    scope: project
+    timeout_seconds: 300
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-27T03:57:57.250Z"
+      source_kind: local_mutation
+      source_ref: fix/pack-name-from-npm
+  - command: "node --test --test-concurrency=2 --test-name-pattern=\"release version bump\" test/recurrence.test.ts"
+    scope: project
+    timeout_seconds: 900
+    pm_context_mode: schema
+    workspace_context_mode: source
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-27T10:47:30.709Z"
+      source_kind: local_mutation
+      source_ref: chore/close-delivered-1027
+    shared_host_safe: true
 docs[1]{path,scope,note}:
   CHANGELOG.md,project,Generated release history
+close_reason: "Delivered by merged PR #159 (909211294b4f9751b06a6722063427822cb3f3ec); current main evidence: test/recurrence.test.ts, test/packed-fixture.ts, test/prepare-merge-driver.test.ts, scripts/accept-packed.ts; focused linked checks passed."
 body: ""
