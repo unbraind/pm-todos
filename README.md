@@ -43,7 +43,7 @@ npm run build
 Recurrence preview/apply use SDK storage and item locks and work in a plain
 tracker without a `git` executable.
 
-Requires pm CLI/SDK 2026.10.20 or later. TODO completion follows workspace status
+Requires pm CLI/SDK 2026.10.23 or later. TODO completion follows workspace status
 roles, including custom terminal statuses. Imports, exports and sync use the
 host-bound SDK client without launching a child pm process.
 
@@ -553,6 +553,13 @@ lines to 16384, titles to 4096, and metadata/tags to 100 entries; oversized or
 unsupported values are refused. [SDK example](docs/recurrence-example.md).
 
 ## Conflict-aware todo.txt editing sessions
+
+For coordinated edits across files, use `pm todos sources export|preview|apply`
+with an explicit source manifest. Each identified row has exactly one file owner;
+moving it updates `todos_source_file` once. Duplicate ownership or a stale row in
+any selected file refuses the selection; unrelated files remain outside scope.
+The typed SDK reuses the editing-session planner and native SDK transactions.
+See the [cross-file example and concurrency contract](docs/source-editing-sessions.md).
 
 Use `pm todos session export --file todo.txt --session baseline.json`, edit the
 text while retaining each `pm-session:<id>` token, then run `preview` and `apply`

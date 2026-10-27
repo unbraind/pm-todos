@@ -1,0 +1,36 @@
+id: pm-todos-cross-file
+title: Coordinate row ownership across selected TODO files
+description: "Acceptance: moving one identified row between two selected files updates ownership once; duplicate source ownership refuses; a stale second file prevents an atomic selection from applying; unrelated files stay outside scope. Reuse the reviewed todo.txt session planner and core SDK transactions. Include typed SDK and CLI contracts, bounded TOON/JSON receipts, strict input schema, revision-bound recovery, seeded model tests, read-only public-data validation and packed installation coverage."
+type: Feature
+status: in_progress
+priority: 2
+tags: []
+created_at: "2026-10-27T17:28:50.173Z"
+updated_at: "2026-10-27T17:59:08.655Z"
+assignee: codex-agent
+claim_principal: codex-agent
+author: codex-agent
+acceptance_criteria: Moving one identified row between two selected files updates ownership once; duplicate source ownership refuses; a stale second file prevents an atomic selection from applying; unrelated files remain outside scope
+comments[4]{created_at,author,text}:
+  "2026-10-27T17:29:45.992Z",codex-agent,"Overlap recheck: core public workspace transactions and immutable item history already provide coordination and recovery; pm-todos glob import collects files and sessions reconcile one exchange; pm-csv roundtrip coordinates spreadsheet rows, and pm-memory owns memory projections. No existing cross-file TODO ownership selection was found. Reuse the todo.txt session planner, native SDK reads, mutations, locks and workspace transactions; no new import engine. The pinned SDK is 2026.10.23, retained per dependency policy; public registry currently reports 2026.10.27."
+  "2026-10-27T17:45:03.000Z",codex-agent,"Implementation: explicit source manifest and per-row immutable history revisions; reuse fidelity/session normalization and the same planner for preview, apply and recovery. Public SDK owns fenced selection leases, native item locks, append-only item histories and workspace transaction journals. No additional import engine. Added CLI export/preview/apply and individually skipped export refusals. Read-only public validation at main 847bc287: 102 rows inspected, 101 selected, 1 unsupported row skipped, 2 files, 11413 text bytes and 106696 manifest bytes; duplicate ownership refused and complete copied-file fingerprint unchanged. Native race compensation retains peer success and reports superseded instead of overwriting an already touched row."
+  "2026-10-27T17:55:23.388Z",codex-agent,"Packed compatibility testing found that the declared 2026.10.20 minimum lacks the public acquireLockLease declaration in both sdk/runtime.d.ts and core/lock/lock.d.ts. Raise only the supported peer/manifest minimum to the existing development pin 2026.10.23; the development dependency is unchanged. npm-global and bun-global packed moves/read-back/replays already pass. The seeded model also exposed unsafe native history round-trips for an own __proto__ metadata key; new source inputs refuse that key before writes, with an explicit remedy. Ordinary prototype-named keys are checked with own-property semantics."
+  "2026-10-27T17:59:08.653Z",codex-agent,"Behavioral revert proof: in a disposable copy only, removing assertRevision made the duplicate-ownership/stale-second-file regression fail (exit 1): the stale second row was accepted and the expected refusal disappeared. The package worktree was never altered for the revert; the fixed regression is rerun with the targeted tests. Full npm and Bun release gates are delegated to CI per the shared-host resource rule."
+files[11]{path,scope}:
+  index.ts,project
+  manifest.json,project
+  package-lock.json,project
+  package.json,project
+  scripts/accept-packed.ts,project
+  scripts/validate-source-sessions.ts,project
+  sessions.ts,project
+  source-session-command.ts,project
+  source-sessions.ts,project
+  test/compatibility-floor.test.ts,project
+  test/source-sessions.test.ts,project
+tests[1]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
+  node --test --test-concurrency=2 test/source-sessions.test.ts test/sessions.test.ts test/sdk-session-adoption.test.ts test/compatibility-floor.test.ts,project,1200,codex-agent,"2026-10-27T17:51:02.065Z",local_mutation,feat/cross-file-editing-session-contracts
+docs[2]{path,scope}:
+  docs/source-editing-sessions.md,project
+  README.md,project
+body: ""

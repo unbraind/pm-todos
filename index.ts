@@ -21,6 +21,8 @@ import { isAbsolute, resolve, join, relative, sep } from "node:path";
 export * from "./recurrence.ts";
 import { previewTodoOccurrence, applyTodoOccurrence } from "./recurrence.ts";
 export * from "./sessions.ts";
+export * from "./source-sessions.ts";
+import { runTodoSourceCommand } from "./source-session-command.ts";
 import { exportTodoEditingSession, applyTodoEditingSession } from "./sessions.ts";
 export * from "./watcher.ts";
 import { runTodoWatchCommand } from "./watcher.ts";
@@ -1206,8 +1208,8 @@ export function serializeTodoTxtLine(item: PmItem, mapping: TodoTxtMapping = "ta
         seenTags.add(tag);
       } else if (/^[^\s:]+:[^\s:]+$/.test(token)) {
         const [key, value] = token.split(":");
-        const current = key === "due" ? due : kv?.[key];
-        const original = key === "due" ? source.due : source.kv[key];
+        const current = key === "due" ? due : kv && Object.hasOwn(kv, key) ? kv[key] : undefined;
+        const original = key === "due" ? source.due : Object.hasOwn(source.kv, key) ? source.kv[key] : undefined;
         if (current) parts.push(`${key}:${current === original ? value : current}`);
         seenKeys.add(key);
       } else if (item.title === source.text) {
@@ -2781,6 +2783,17 @@ export default defineExtension({
 
   activate(api: ExtensionApi) {
     api.registerCommand({
+      name: "todos sources",
+      description: "Export, preview or atomically apply row ownership across explicitly selected todo.txt files.",
+      arguments: [{ name: "action", required: true, description: "export | preview | apply" }],
+      flags: [
+        { long: "--selection", value_name: "path", description: "Explicit source-to-ID JSON selection (export only)" },
+        { long: "--manifest", value_name: "path", description: "Immutable source manifest JSON" },
+        { long: "--directory", value_name: "path", description: "Directory for the selected editing files" },
+      ],
+      run: runTodoSourceCommand,
+    });
+    api.registerCommand({
       name: "todos watch",
       description: "Propose stable edits from one authorized session todo.txt file; never apply them.",
       flags: [
@@ -2873,6 +2886,7 @@ export default defineExtension({
       { name: "todos_completion_date", type: "string", optional: true },
       { name: "todos_source_created_at", type: "string", optional: true },
       { name: "todos_source_updated_at", type: "string", optional: true },
+      { name: "todos_source_file", type: "string", optional: true },
     ]);
 
     // -----------------------------------------------------------------------

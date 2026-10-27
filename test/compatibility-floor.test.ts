@@ -25,7 +25,7 @@ const releaseWorkflow = readFileSync(resolve(repoRoot, ".github/workflows/releas
 const packedAcceptance = readFileSync(resolve(repoRoot, "scripts/accept-packed.ts"), "utf8");
 const cliPackage = "@unbrained/pm-cli";
 const exactVersion = /^\d+\.\d+\.\d+$/u;
-const minimumHost = "2026.10.20";
+const minimumHost = "2026.10.23";
 
 /** Compare unpadded calendar-version components numerically. */
 function atOrAbove(pinned: string, floor: string): boolean {
