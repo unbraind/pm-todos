@@ -35,7 +35,6 @@
 ### Other
 
 - Enable GitHub CodeQL code scanning ([pm-todos-6g2c](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-6g2c.toon))
-- Bring pm-todos to 100% line/branch/function coverage and raise gate to 100 ([pm-todos-p60g](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-p60g.toon))
 - Certify pm-todos on PM CLI/SDK 2026.10.4 and consolidate pending dependency updates ([pm-todos-zpyc](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-zpyc.toon))
 
 ## 2026.10.12 - 2026-10-12
@@ -135,15 +134,15 @@
 
 ## 2026.8.28 - 2026-08-28
 
-### Security
+### Closed
 
-- The identity gate deadlocks the one remediation its own failure message prescribes ([pm-todos-3a03](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-3a03.toon))
+- Closed: The identity gate deadlocks the one remediation its own failure message prescribes ([pm-todos-3a03](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-3a03.toon))
 
 ## 2026.8.16 - 2026-08-16
 
-### Fixed
+### Closed
 
-- A truncated list-all answer is consumed as if it were the whole workspace ([pm-todos-iw4m](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-iw4m.toon))
+- Closed: A truncated list-all answer is consumed as if it were the whole workspace ([pm-todos-iw4m](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-iw4m.toon))
 
 ## 2026.8.14 - 2026-08-14
 
@@ -153,9 +152,9 @@
 
 ## 2026.8.11 - 2026-08-11
 
-### Fixed
+### Closed
 
-- Preflight override declared no static command ownership, so the host ran it on every command ([pm-todos-ldh7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ldh7.toon))
+- Closed: Preflight override declared no static command ownership, so the host ran it on every command ([pm-todos-ldh7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-ldh7.toon))
 
 ## 2026.8.10 - 2026-08-10
 
@@ -198,10 +197,6 @@
 
 ## 2026.7.27 - 2026-07-27
 
-### Fixed
-
-- todos validate and todos sync fail to register on pm-cli 2026.7.27 because they redeclare the host-owned --json global ([pm-todos-cq41](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-cq41.toon))
-
 ### Removed
 
 - Adopt pm-cli 2026.7.26 typed authoring contracts and remove the any-cast defineExtension shim ([pm-todos-sxrp](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-sxrp.toon))
@@ -210,35 +205,39 @@
 
 - Type every importer, exporter, and preflight context without any ([pm-todos-l5xl](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-l5xl.toon))
 
+### Closed
+
+- Closed: todos validate and todos sync fail to register on pm-cli 2026.7.27 because they redeclare the host-owned --json global ([pm-todos-cq41](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-cq41.toon))
+
 ## 2026.7.26 - 2026-07-26
-
-### Fixed
-
-- Documented install command fails: pm install github.com/unbraind/pm-todos cannot resolve an entry file ([pm-todos-zffc](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-zffc.toon))
 
 ### Other
 
 - Enable governance duplicate-detection advisory mode and adopt pm-cli 2026.7.25 ([pm-todos-wvxn](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-wvxn.toon))
 
+### Closed
+
+- Closed: Documented install command fails: pm install github.com/unbraind/pm-todos cannot resolve an entry file ([pm-todos-zffc](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-zffc.toon))
+
 ## 2026.7.25 - 2026-07-25
-
-### Fixed
-
-- pm item reads are capped at Node's 1 MiB spawnSync default, so a mature tracker fails with no diagnosis ([pm-todos-9b5z](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9b5z.toon))
 
 ### Other
 
 - Adopt --respect-item-release in changelog scripts and bump pm-changelog to 2026.7.24 ([pm-todos-sn6h](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-sn6h.toon))
 
+### Closed
+
+- Closed: pm item reads are capped at Node's 1 MiB spawnSync default, so a mature tracker fails with no diagnosis ([pm-todos-9b5z](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-9b5z.toon))
+
 ## 2026.7.23 - 2026-07-23
-
-### Fixed
-
-- Recommend pm merge reconcile (2026.7.22) over raw history-repair in Multi-agent merge safety docs ([pm-todos-11hd](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-11hd.toon))
 
 ### Other
 
 - Adopt pm field-aware merge driver for multi-agent branch-merge safety ([pm-todos-qa0y](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-qa0y.toon))
+
+### Closed
+
+- Closed: Recommend pm merge reconcile (2026.7.22) over raw history-repair in Multi-agent merge safety docs ([pm-todos-11hd](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-11hd.toon))
 
 ## 2026.7.11 - 2026-07-11
 
@@ -348,8 +347,11 @@
 
 ### Fixed
 
-- todos import/export return error object instead of throwing (exit 0 on failure) ([pm-todos-2wy2](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-2wy2.toon))
 - todos import --dry-run silently ignored (still writes) ([pm-todos-mn0f](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-mn0f.toon))
+
+### Closed
+
+- Closed: todos import/export return error object instead of throwing (exit 0 on failure) ([pm-todos-2wy2](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-2wy2.toon))
 
 ## 2026.5.28 - 2026-05-28
 
