@@ -23,8 +23,8 @@ export function packInvocation(destination: string, platform: string, environmen
   };
 }
 
-/** Pack the built distribution into the fixture instead of scanning node_modules. */
-export function packExtension(destination: string): string {
+/** Pack a built distribution and return the sole artifact found in its destination. */
+export function packExtension(destination: string, sourceRoot = process.cwd()): string {
   const env = {
     ...process.env,
     npm_config_userconfig: devNull,
@@ -34,7 +34,7 @@ export function packExtension(destination: string): string {
   };
   const invocation = packInvocation(destination, process.platform, env);
   execFileSync(invocation.executable, invocation.arguments, {
-    cwd: process.cwd(), env, encoding: "utf8", shell: invocation.shell,
+    cwd: sourceRoot, env, encoding: "utf8", shell: invocation.shell,
   });
   const archives = readdirSync(destination).filter((name) => name.endsWith(".tgz"));
   assert.equal(archives.length, 1, "fixture must install exactly one packed artifact");
