@@ -51,7 +51,7 @@ const cleanEnvironment: NodeJS.ProcessEnv = {
   PM_TELEMETRY_DISABLED: "1",
 };
 for (const key of Object.keys(cleanEnvironment)) {
-  if (key.toLowerCase() === "npm_config_allow_scripts" || /token|secret|password|credential|^NPM_MEDIA_SERVER$/i.test(key)) delete cleanEnvironment[key];
+  if (key.toLowerCase() === "npm_config_allow_scripts" || /token|secret|password|credential|api.?key|private.?key|access.?key|^NPM_MEDIA_SERVER$/i.test(key)) delete cleanEnvironment[key];
 }
 /** Maximum time allowed for one install, pack, or pm subprocess. */
 const commandTimeoutMs = 5 * 60 * 1000;

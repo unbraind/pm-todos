@@ -115,6 +115,8 @@ export interface PmItem {
   todos_completion_date?: string;
   todos_source_created_at?: string;
   todos_source_updated_at?: string;
+  /** Logical file owner established by a coordinated source editing selection. */
+  todos_source_file?: string;
 }
 
 interface PiTodo {

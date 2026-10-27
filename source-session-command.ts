@@ -1,5 +1,5 @@
 /** Bounded filesystem transport for the explicit source-selection SDK. */
-import { constants, closeSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { constants, closeSync, fstatSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { resolve, dirname, sep } from "node:path";
 import type { CommandHandlerContext } from "@unbrained/pm-cli/sdk/authoring";
 import { applyTodoSourceSelection, exportTodoSourceSelection, parseTodoSourceManifest, TodoSourceError } from "./source-sessions.ts";
@@ -33,23 +33,16 @@ export async function runTodoSourceCommand(ctx: CommandHandlerContext): Promise<
       const exported = await exportTodoSourceSelection(ctx.pm_root, JSON.parse(read(selection as string, 1024 * 1024)) as unknown);
       const outputs = [{ path: resolve(manifest), text: JSON.stringify(exported.manifest) + "\n" }, ...exported.files.map(file => ({ path: sourcePath(root, file.file), text: file.text }))];
       if (new Set(outputs.map(output => output.path)).size !== outputs.length) throw new TodoSourceError("source_scope", "Use a distinct manifest filename outside the selected source files.");
-      const created: { path: string; text: string; ino: number; dev: number }[] = [];
       try {
         for (const output of outputs) {
           const fd = openSync(output.path, "wx", 0o600);
           try {
-            const stat = fstatSync(fd);
-            created.push({ ...output, ino: stat.ino, dev: stat.dev });
             writeFileSync(fd, output.text);
           } finally { closeSync(fd); }
         }
       } catch {
-        for (const output of created.reverse()) {
-          try {
-            const stat = lstatSync(output.path);
-            if (stat.ino === output.ino && stat.dev === output.dev && stat.isFile() && read(output.path, 16 * 1024 * 1024) === output.text) unlinkSync(output.path);
-          } catch { /* A changed or inaccessible output belongs to its current writer. */ }
-        }
+        // Preserve created outputs too: a peer may already have edited them.
+        // File-content equality cannot prove that nobody wrote since creation.
         throw new TodoSourceError("apply_failed", "Export uses fresh filenames exclusively. Inspect any retained partial files and choose fresh filenames before retrying.");
       }
       return { ok: true, files: exported.files.length, selected: exported.manifest.session.entries.length, skipped: exported.skipped, refusals: exported.refusals, digest: exported.manifest.digest };

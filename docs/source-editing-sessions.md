@@ -19,6 +19,8 @@ unchanged. Every manifest identity must occur exactly once across the selected
 files. A duplicate or missing identity refuses the selection. New unidentified
 lines require `pm create`, followed by a fresh export. Export creates fresh files
 exclusively; it never overwrites editing work. Parent directories must exist.
+Failed exports retain any outputs already created, since another editor may
+have touched them. Inspect those files and export into a fresh editing directory.
 An unsupported or foreign-owned row is skipped individually during export,
 with a bounded refusal naming its ID. If every selected row is unusable, export
 refuses without producing a manifest.

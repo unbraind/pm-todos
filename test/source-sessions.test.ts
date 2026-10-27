@@ -65,6 +65,14 @@ test("moving one row updates ownership exactly once; unselected rows stay outsid
   const variants = exported.files.map(file => ({ ...file, text: file.text.replace(/ /g, "\t  ").replace(/\n/g, "\r\n") }));
   assert.equal((await apply(f.pmRoot, exported.manifest, variants, { author: "peer-agent" })).changed, 0);
   assert.equal(readFileSync(join(f.pmRoot, "history", `${f.ids[0]}.jsonl`), "utf8"), history);
+  const bound = await checkout(f.pmRoot, { sources: [{ file: "one.txt", ids: [] }, { file: "two.txt", ids: f.ids.slice(0, 2) }] });
+  const otherHistory = readFileSync(join(f.pmRoot, "history", `${f.ids[1]}.jsonl`), "utf8");
+  const beforeMove = (await core.readHistoryEntries(core.getHistoryPath(f.pmRoot, f.ids[0]), f.ids[0])).length;
+  move(bound.files, f.ids[0]);
+  const moved = await apply(f.pmRoot, bound.manifest, bound.files, { author: "selection-test" });
+  assert.deepEqual([moved.ok, moved.changed, moved.applied, moved.moved], [true, 1, 1, 1]);
+  assert.equal((await core.readHistoryEntries(core.getHistoryPath(f.pmRoot, f.ids[0]), f.ids[0])).length, beforeMove + 1);
+  assert.equal(readFileSync(join(f.pmRoot, "history", `${f.ids[1]}.jsonl`), "utf8"), otherHistory);
 });
 
 test("duplicate ownership refuses before writes, and a stale unchanged second file prevents all application", async t => {
@@ -213,6 +221,28 @@ test("compensation refuses to overwrite a peer; every compensation boundary is o
   }
 });
 
+test("a skipped foreign step cannot subtract another row's retained write from the failure receipt", async t => {
+  const f = await fixture(t), exported = await checkout(f.pmRoot, f.selection);
+  let injected = false;
+  const result = await apply(f.pmRoot, exported.manifest, exported.files, { author: "selection-test", sdk: {
+    ...core,
+    async mutateItem(options) {
+      if (options.id === f.ids[1] && options.message?.endsWith(":apply") && !injected) {
+        injected = true;
+        await f.client.update(f.ids[1], { description: "Peer before second write" });
+      }
+      return core.mutateItem(options);
+    },
+  }, async onTransition(context) {
+    if (context.transition === "compensating") await f.client.update(f.ids[0], { description: "Peer after first write" });
+  } });
+  assert.equal(injected, true); assert.equal(result.ok, false);
+  assert.equal(result.refusals[0].code, "superseded"); assert.equal(result.applied, 1);
+  assert.equal((await f.client.get(f.ids[0])).item.description, "Peer after first write");
+  assert.equal((await f.client.get(f.ids[1])).item.description, "Peer before second write");
+  assert.equal((await core.readHistoryEntries(core.getHistoryPath(f.pmRoot, f.ids[1]), f.ids[1])).length, 2);
+});
+
 test("schema fuzz rejects dense-array, extreme-number and prototype attacks before SDK acquisition", async t => {
   const f = await fixture(t), exported = await checkout(f.pmRoot, f.selection);
   const before = await state(f.client, f.ids);
@@ -232,6 +262,22 @@ test("schema fuzz rejects dense-array, extreme-number and prototype attacks befo
   assert.equal((await apply("unavailable-tracker", getter, [], { author: "selection-test" })).refusals[0].code, "invalid_input");
   assert.equal((await apply(f.pmRoot, exported.manifest, Array(2), { author: "selection-test" })).ok, false);
   assert.equal((await apply(f.pmRoot, exported.manifest, exported.files, { author: "" })).ok, false);
+  const inherited = structuredClone(exported.manifest);
+  Object.setPrototypeOf(inherited.sources, Object.create(Array.prototype));
+  assert.equal((await apply("unavailable-tracker", inherited, exported.files, { author: "selection-test" })).refusals[0].code, "invalid_input");
+  const hidden = Object.defineProperty({ ...exported.manifest }, "version", { value: 1, enumerable: false });
+  assert.equal((await apply("unavailable-tracker", hidden, exported.files, { author: "selection-test" })).refusals[0].code, "invalid_input");
+  const hiddenElement = structuredClone(exported.files);
+  Object.defineProperty(hiddenElement, "0", { value: hiddenElement[0], enumerable: false });
+  assert.equal((await apply("unavailable-tracker", exported.manifest, hiddenElement, { author: "selection-test" })).refusals[0].code, "invalid_input");
+  for (const corrupt of [
+    { ...exported.manifest, unexpected: true },
+    { version: 1, sources: exported.manifest.sources, session: exported.manifest.session, unexpected: true },
+    { ...exported.manifest, sources: Array.from({ length: 33 }, () => exported.manifest.sources[0]) },
+    { ...exported.manifest, sources: [{ file: "one.txt", rows: Array.from({ length: 1001 }, () => exported.manifest.sources[0].rows[0]) }] },
+  ]) { const result = await apply("unavailable-tracker", corrupt, exported.files, { author: "selection-test" }); assert.equal(result.ok, false); numbers(result); }
+  const foreign = structuredClone(exported.manifest); foreign.sources[0].rows[0].owner = "foreign.txt";
+  assert.equal((await apply("unavailable-tracker", foreign, exported.files, { author: "selection-test" })).refusals[0].code, "foreign_owner");
   assert.deepEqual(await state(f.client, f.ids), before);
 });
 
@@ -250,6 +296,15 @@ test("CLI export, preview, apply and typed refusals reuse the SDK selection cont
   assert.equal(readFileSync(join(directory, "unrelated.txt"), "utf8"), "Unrelated input without a session identity");
   for (const options of [{}, { directory, manifest, selection }, { directory: "", manifest }, { directory, manifest: selection }]) { await run("preview", options); assert.equal(process.exitCode, 1); process.exitCode = 0; }
   await run("export", { directory, selection, manifest }); assert.equal(process.exitCode, 1); process.exitCode = 0;
+  for (const blocked of ["one.txt", "two.txt"]) {
+    const partial = join(f.root, blocked + "-partial"); mkdirSync(partial);
+    writeFileSync(join(partial, blocked), "Peer editing work");
+    const sidecar = join(f.root, blocked + "-partial.json");
+    await run("export", { directory: partial, selection, manifest: sidecar });
+    assert.equal(process.exitCode, 1); process.exitCode = 0;
+    assert.equal(readFileSync(join(partial, blocked), "utf8"), "Peer editing work");
+    assert.ok(readFileSync(sidecar, "utf8").includes("digest"));
+  }
   rmSync(join(directory, "one.txt")); symlinkSync(selection, join(directory, "one.txt"));
   await run("apply", { directory, manifest }); assert.equal(process.exitCode, 1); process.exitCode = 0;
 });

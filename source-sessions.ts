@@ -82,14 +82,16 @@ function sdk(injected?: TodoSourceSdk): TodoSourceSdk {
 /** Reject prototypes, accessors and unknown keys before inspecting nested input. */
 function object(value: unknown, names: readonly string[]): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error();
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > names.length || keys.some(key => typeof key !== "string" || !names.includes(key))) throw new Error();
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  if (Reflect.ownKeys(value).some(key => typeof key !== "string" || !names.includes(key)) || Object.values(descriptors).some(entry => !Object.hasOwn(entry, "value"))) throw new Error();
+  if (Object.values(descriptors).some(entry => !entry.enumerable || !Object.hasOwn(entry, "value"))) throw new Error();
   return value as Record<string, unknown>;
 }
 /** Arrays must be dense JSON arrays with no hidden or extra properties. */
 function array(value: unknown, max: number): unknown[] {
-  if (!Array.isArray(value) || value.length > max || Reflect.ownKeys(value).length !== value.length + 1) throw new Error();
-  for (let i = 0; i < value.length; i++) if (!Object.hasOwn(value, i) || !Object.hasOwn(Object.getOwnPropertyDescriptor(value, String(i)) ?? {}, "value")) throw new Error();
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > max || Reflect.ownKeys(value).length !== value.length + 1) throw new Error();
+  for (let i = 0; i < value.length; i++) if (!Object.hasOwn(value, i) || Object.getOwnPropertyDescriptor(value, String(i))?.enumerable !== true || !Object.hasOwn(Object.getOwnPropertyDescriptor(value, String(i)) ?? {}, "value")) throw new Error();
   return value;
 }
 /** Only new manifest paths are portable relative names, never filesystem traversal. */
@@ -350,7 +352,7 @@ export async function applyTodoSourceSelection(pmRoot: string, manifest: unknown
             return row.id;
           },
           async compensate(data) {
-            await core.mutateItem({ pmRoot, settings, id: row.id, op: "update", author: options.author, message: marker(transaction, row.id, "compensate"), extensionFieldNames: EXTENSIONS, skipNoop: true,
+            const compensated = await core.mutateItem({ pmRoot, settings, id: row.id, op: "update", author: options.author, message: marker(transaction, row.id, "compensate"), extensionFieldNames: EXTENSIONS, skipNoop: true,
               async mutate(document) {
                 const current = await snapshot(core, pmRoot, settings, row.id, document);
                 if (current.history.at(-1)?.message !== marker(transaction, row.id)) {
@@ -365,7 +367,7 @@ export async function applyTodoSourceSelection(pmRoot: string, manifest: unknown
                 return { changedFields: fields };
               },
             });
-            result.applied = Math.max(0, result.applied - 1);
+            if (compensated.changedFields.length) result.applied = Math.max(0, result.applied - 1);
           },
         }));
         const controls = { transactionId: transaction, author: options.author, steps, lockTtlSeconds: 120,

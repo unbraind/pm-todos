@@ -4,19 +4,22 @@ description: "Acceptance: moving one identified row between two selected files u
 type: Feature
 status: in_progress
 priority: 2
-tags: []
+tags[1]: "gh:unbraind/pm-todos#162"
 created_at: "2026-10-27T17:28:50.173Z"
-updated_at: "2026-10-27T17:59:08.655Z"
-assignee: codex-agent
-claim_principal: codex-agent
+updated_at: "2026-10-27T18:31:08.595Z"
 author: codex-agent
 acceptance_criteria: Moving one identified row between two selected files updates ownership once; duplicate source ownership refuses; a stale second file prevents an atomic selection from applying; unrelated files remain outside scope
-comments[4]{created_at,author,text}:
+comments[9]{created_at,author,text}:
   "2026-10-27T17:29:45.992Z",codex-agent,"Overlap recheck: core public workspace transactions and immutable item history already provide coordination and recovery; pm-todos glob import collects files and sessions reconcile one exchange; pm-csv roundtrip coordinates spreadsheet rows, and pm-memory owns memory projections. No existing cross-file TODO ownership selection was found. Reuse the todo.txt session planner, native SDK reads, mutations, locks and workspace transactions; no new import engine. The pinned SDK is 2026.10.23, retained per dependency policy; public registry currently reports 2026.10.27."
   "2026-10-27T17:45:03.000Z",codex-agent,"Implementation: explicit source manifest and per-row immutable history revisions; reuse fidelity/session normalization and the same planner for preview, apply and recovery. Public SDK owns fenced selection leases, native item locks, append-only item histories and workspace transaction journals. No additional import engine. Added CLI export/preview/apply and individually skipped export refusals. Read-only public validation at main 847bc287: 102 rows inspected, 101 selected, 1 unsupported row skipped, 2 files, 11413 text bytes and 106696 manifest bytes; duplicate ownership refused and complete copied-file fingerprint unchanged. Native race compensation retains peer success and reports superseded instead of overwriting an already touched row."
   "2026-10-27T17:55:23.388Z",codex-agent,"Packed compatibility testing found that the declared 2026.10.20 minimum lacks the public acquireLockLease declaration in both sdk/runtime.d.ts and core/lock/lock.d.ts. Raise only the supported peer/manifest minimum to the existing development pin 2026.10.23; the development dependency is unchanged. npm-global and bun-global packed moves/read-back/replays already pass. The seeded model also exposed unsafe native history round-trips for an own __proto__ metadata key; new source inputs refuse that key before writes, with an explicit remedy. Ordinary prototype-named keys are checked with own-property semantics."
   "2026-10-27T17:59:08.653Z",codex-agent,"Behavioral revert proof: in a disposable copy only, removing assertRevision made the duplicate-ownership/stale-second-file regression fail (exit 1): the stale second row was accepted and the expected refusal disappeared. The package worktree was never altered for the revert; the fixed regression is rerun with the targeted tests. Full npm and Bun release gates are delegated to CI per the shared-host resource rule."
-files[11]{path,scope}:
+  "2026-10-27T18:15:09.631Z",codex-agent,"Pinned pm test execution passed all 41 targeted tests, including 500 seeded operation sequences across ten real non-git trackers (zero failed, canceled or skipped). The test runner used its default schema context; result tracking is disabled, so this comment preserves the measured receipt rather than changing project policy. Typecheck, test typecheck and docstring lint passed (19 files, 125 declarations). Follow-up pm-todos-native-kv-codec records the native prototype-key history limitation. Post-review hardening refuses non-JSON object/array shapes and retains partial export files so cleanup cannot delete a peer edit; focused schema/CLI regressions cover those changes. Initial CI is queued at https://github.com/unbraind/pm-todos/actions/runs/40556712342; full npm and Bun gates are not yet evidence."
+  "2026-10-27T18:20:10.353Z",codex-agent,"Final local acceptance: updated schema/CLI regressions passed 2/2; moving-row/duplicate regressions passed 2/2, including a bound-row move with changed=applied=moved=1, exactly one appended native event and byte-identical history for the other selected row. Packed npm-global and bun-global probes both passed on pm CLI 2026.10.26, two source rows each and replay changed=0, using identical artifact SHA256 c75b49cd84c75e316213d798854cb065e422587871ff45c8337cefc4b5908c9d. The initial CI jobs remain queued for hosted runners; 0 of 4 npm/Bun release-gate executions have completed. Keep this item open for orchestrator verification."
+  "2026-10-27T18:25:02.401Z",codex-agent,"Initial Node 26 CI executed 384 tests: 383 passed, with the sole failure an existing installed-package assertion expecting six extension fields after this feature adds the seventh todos_source_file field. Coverage still exceeded unchanged thresholds: 99.03 percent lines, 93.21 percent branches, 99.65 percent functions. Updated the registration-count contract and reran the rich JSONL integration plus schema fuzz tests. Local strict health is clean after installing the exact project pm-github version already used in CI; the earlier local host-version skew came from the ambient global extension, not the project package."
+  "2026-10-27T18:26:29.868Z",codex-agent,"The CI-discovered registration-count fix is verified: node --test --test-concurrency=2 --test-name-pattern=\"schema fuzz|installed package preserves\" test/source-sessions.test.ts test/integration.test.ts passed 2/2, including the real packed rich-JSONL import/export/sync path. Current local strict health is ok with zero findings. Initial CI run https://github.com/unbraind/pm-todos/actions/runs/40556712342 has one failed npm gate (the fixed count assertion), one skipped Bun gate and the second Node matrix job still queued. A fresh exact-head CI run is required after this final push."
+  "2026-10-27T18:31:08.595Z",codex-agent,"Added the interleaving between a second row preparation and its native write: a foreign skipped step cannot decrement the retained-write count for another row. Compensation/interleaving tests pass 2/2; reverting only that count guard in a disposable copy fails 0 versus 1, and the unchanged fixed checkout passes again 1/1. Partial export failures retain files instead of deleting possible peer edits. All tracker writes are complete; full exact-head CI remains required after the final push. The claim was released and both items remain open."
+files[12]{path,scope}:
   index.ts,project
   manifest.json,project
   package-lock.json,project
@@ -27,6 +30,7 @@ files[11]{path,scope}:
   source-session-command.ts,project
   source-sessions.ts,project
   test/compatibility-floor.test.ts,project
+  test/integration.test.ts,project
   test/source-sessions.test.ts,project
 tests[1]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
   node --test --test-concurrency=2 test/source-sessions.test.ts test/sessions.test.ts test/sdk-session-adoption.test.ts test/compatibility-floor.test.ts,project,1200,codex-agent,"2026-10-27T17:51:02.065Z",local_mutation,feat/cross-file-editing-session-contracts
