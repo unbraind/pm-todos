@@ -6,10 +6,10 @@ status: in_progress
 priority: 2
 tags[1]: "gh:unbraind/pm-todos#162"
 created_at: "2026-10-27T17:28:50.173Z"
-updated_at: "2026-10-27T18:35:08.513Z"
+updated_at: "2026-10-28T17:04:34.946Z"
 author: codex-agent
 acceptance_criteria: Moving one identified row between two selected files updates ownership once; duplicate source ownership refuses; a stale second file prevents an atomic selection from applying; unrelated files remain outside scope
-comments[10]{created_at,author,text}:
+comments[16]{created_at,author,text}:
   "2026-10-27T17:29:45.992Z",codex-agent,"Overlap recheck: core public workspace transactions and immutable item history already provide coordination and recovery; pm-todos glob import collects files and sessions reconcile one exchange; pm-csv roundtrip coordinates spreadsheet rows, and pm-memory owns memory projections. No existing cross-file TODO ownership selection was found. Reuse the todo.txt session planner, native SDK reads, mutations, locks and workspace transactions; no new import engine. The pinned SDK is 2026.10.23, retained per dependency policy; public registry currently reports 2026.10.27."
   "2026-10-27T17:45:03.000Z",codex-agent,"Implementation: explicit source manifest and per-row immutable history revisions; reuse fidelity/session normalization and the same planner for preview, apply and recovery. Public SDK owns fenced selection leases, native item locks, append-only item histories and workspace transaction journals. No additional import engine. Added CLI export/preview/apply and individually skipped export refusals. Read-only public validation at main 847bc287: 102 rows inspected, 101 selected, 1 unsupported row skipped, 2 files, 11413 text bytes and 106696 manifest bytes; duplicate ownership refused and complete copied-file fingerprint unchanged. Native race compensation retains peer success and reports superseded instead of overwriting an already touched row."
   "2026-10-27T17:55:23.388Z",codex-agent,"Packed compatibility testing found that the declared 2026.10.20 minimum lacks the public acquireLockLease declaration in both sdk/runtime.d.ts and core/lock/lock.d.ts. Raise only the supported peer/manifest minimum to the existing development pin 2026.10.23; the development dependency is unchanged. npm-global and bun-global packed moves/read-back/replays already pass. The seeded model also exposed unsafe native history round-trips for an own __proto__ metadata key; new source inputs refuse that key before writes, with an explicit remedy. Ordinary prototype-named keys are checked with own-property semantics."
@@ -20,21 +20,74 @@ comments[10]{created_at,author,text}:
   "2026-10-27T18:26:29.868Z",codex-agent,"The CI-discovered registration-count fix is verified: node --test --test-concurrency=2 --test-name-pattern=\"schema fuzz|installed package preserves\" test/source-sessions.test.ts test/integration.test.ts passed 2/2, including the real packed rich-JSONL import/export/sync path. Current local strict health is ok with zero findings. Initial CI run https://github.com/unbraind/pm-todos/actions/runs/40556712342 has one failed npm gate (the fixed count assertion), one skipped Bun gate and the second Node matrix job still queued. A fresh exact-head CI run is required after this final push."
   "2026-10-27T18:31:08.595Z",codex-agent,"Added the interleaving between a second row preparation and its native write: a foreign skipped step cannot decrement the retained-write count for another row. Compensation/interleaving tests pass 2/2; reverting only that count guard in a disposable copy fails 0 versus 1, and the unchanged fixed checkout passes again 1/1. Partial export failures retain files instead of deleting possible peer edits. All tracker writes are complete; full exact-head CI remains required after the final push. The claim was released and both items remain open."
   "2026-10-27T18:35:08.513Z",codex-agent,"CI handoff receipt for runtime commit 7024bb6: https://github.com/unbraind/pm-todos/actions/runs/40560848071 remains queued for both Node 22.18.0 and Node 26; zero of four full npm/Bun release gates have passed. The original 30-minute CI cutoff is retained and is not reset by this evidence-only commit. The initial 383/384 CI assertion failure was fixed and its integration test passed locally; canceled superseded checks are not approval. Final-head release evidence remains pending for orchestrator verification. No merge or release was performed."
-files[12]{path,scope}:
+  "2026-10-28T15:37:14.757Z",codex-agent,"Review round 1 resumed after a clean worktree check and merge of origin/main. General rule: recovery must recognize every transaction-owned durable phase, including append-only compensation, before revision guards can reject a plan; a peer revision must still refuse. Package-wide search covers sessions, recurrence, watcher, CLI transport, JSON/TOON and packed acceptance. The supplied report contains one blocker and GitHub has no actionable inline findings. Previous head CI eventually passed both Node matrices; fresh gates are required for this fix."
+  "2026-10-28T16:05:45.821Z",codex-agent,"Class audit: only source-sessions owns a compensating workspace transaction. Every source SDK/CLI entry now shares a three-state native-history classifier at preflight, inspection, preparation, locked apply and compensation. It proves the baseline prefix, alternating owned phases, preservation of unowned state and exact compensation values through public SDK replay/canonicalization. Single-file sessions, recurrence and watcher have no rollback journal and need no equivalent phase change. All 21 new no-git/no-git-on-PATH tests passed, covering every rollback boundary with two/three rows, custom statuses, host injection, repeated interruptions, peer revisions and copied markers. Two isolated behavioral reverts each fail: forward-only recovery returns stale_revision; trusting compensation markers without lineage accepts a peer revision. Fixed checkout rerun passes 2/2. No additional actionable findings were supplied or found in GitHub review threads."
+  "2026-10-28T16:14:26.288Z",codex-agent,"Pinned pm test execution also passed the recovery matrix 21/21 with zero failures/skips. Packed focus passed both npm minimum host 2026.10.23 in JSON and Bun global host 2026.10.26 in TOON, each recovering an interrupted two-row rollback through the installed artifact and real consumer CLI; artifact SHA256 7b2cbafb5f8635ab884b01c7fb824585596eb32f5a82ffa55c61da3d0e374df6 was identical. Strict health has zero findings. Starting the full npm and Bun release gates serially; coverage runner is explicitly capped at two workers, thresholds unchanged."
+  "2026-10-28T16:48:27.496Z",codex-agent,"Validation update: the revised packed driver passes npm-minimum on host 2026.10.23, resolving the supported SDK from its installed consumer context. The artifact remains sha256 7b2cbafb5f8635ab884b01c7fb824585596eb32f5a82ffa55c61da3d0e374df6. All 21 recovery tests also passed under coverage in the full npm attempt. That local attempt hit the existing recurrence model test timeout at 600 seconds after 100 sequences (166 imports, 245 exports, 79 syncs, 137 older replays, 126 CRLF variants); no assertion failed before the timeout. Stopped that failed process tree, including the unfinished source model test, to avoid wasting the saturated host. No timeouts, assertions, sequence counts or coverage thresholds were weakened. Following the original host constraint, the npm and Bun CI release gates are the full-suite evidence; local full gates are not claimed green. Strict tracker health has zero findings."
+  "2026-10-28T16:52:17.456Z",codex-agent,"The final package-wide audit finds one compensating coordinator in source-sessions.ts, reached by standalone SDK and injected CLI paths; sessions, recurrence and watchers do not own another rollback journal. Every revision guard now uses the same baseline/applied/compensated classifier. The revised installed-consumer driver passes npm minimum-host recovery. Its first Bun-global run exposed a harness assumption about the global package directory; supported BUN_INSTALL_GLOBAL_DIR and BUN_INSTALL_BIN now explicitly bind both destinations to the isolated fixture. The installed-artifact recovery assertion is the regression for that harness class; rerun pending. No actionable non-blocking review comments were supplied or present in the PR inline comments."
+  "2026-10-28T17:04:34.142Z",codex-agent,"Final focused validation: the host-managed installed-artifact driver passes node scripts/accept-packed.ts npm-minimum (SDK 2026.10.23, JSON) and node scripts/accept-packed.ts bun-global (SDK 2026.10.26, TOON). Each receipt reports 2 source rows, replay changed 0, rollback_recovered true and identical artifact sha256 7b2cbafb5f8635ab884b01c7fb824585596eb32f5a82ffa55c61da3d0e374df6. The driver uses the installed extension public entry and SDK loader, independent of npm/Bun storage layout; Bun receives explicit isolated global destinations/config. This corrects the earlier harness directory assumption; both final runs pass. Typecheck, test typecheck, docstring lint (21 files/129 declarations), changelog generation/check and strict health pass. All 21 recovery adversarial cases pass through the linked pm runner, and both behavioral revert proofs are recorded above. The supplied blocker is fixed across every native revision guard; no additional actionable inline findings exist. Full npm/Bun release gates will run in final-commit CI with two workers and unchanged thresholds. Local timeout evidence is retained above, not represented as a passing gate. Claim released for orchestrator review; items stay unclosed."
+files[16]{path,scope}:
   index.ts,project
   manifest.json,project
   package-lock.json,project
   package.json,project
   scripts/accept-packed.ts,project
+  scripts/coverage-gate.ts,project
+  scripts/interrupt-packed-source.ts,project
+  scripts/source-recovery-fixture.ts,project
   scripts/validate-source-sessions.ts,project
   sessions.ts,project
   source-session-command.ts,project
   source-sessions.ts,project
   test/compatibility-floor.test.ts,project
   test/integration.test.ts,project
+  test/source-recovery.test.ts,project
   test/source-sessions.test.ts,project
-tests[1]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
-  node --test --test-concurrency=2 test/source-sessions.test.ts test/sessions.test.ts test/sdk-session-adoption.test.ts test/compatibility-floor.test.ts,project,1200,codex-agent,"2026-10-27T17:51:02.065Z",local_mutation,feat/cross-file-editing-session-contracts
+tests[6]:
+  - command: node --test --test-concurrency=2 test/source-sessions.test.ts test/sessions.test.ts test/sdk-session-adoption.test.ts test/compatibility-floor.test.ts
+    scope: project
+    timeout_seconds: 1200
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-27T17:51:02.065Z"
+      source_kind: local_mutation
+      source_ref: feat/cross-file-editing-session-contracts
+  - command: node --test --test-concurrency=2 test/source-recovery.test.ts
+    scope: project
+    timeout_seconds: 600
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-28T16:05:39.898Z"
+      source_kind: local_mutation
+      source_ref: feat/cross-file-editing-session-contracts
+  - command: "npm run release:check"
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-28T16:35:38.567Z"
+      source_kind: local_mutation
+      source_ref: feat/cross-file-editing-session-contracts
+  - command: "bun run release:check"
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-28T16:35:46.752Z"
+      source_kind: local_mutation
+      source_ref: feat/cross-file-editing-session-contracts
+  - command: node scripts/accept-packed.ts npm-minimum
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-28T17:04:32.535Z"
+      source_kind: local_mutation
+      source_ref: feat/cross-file-editing-session-contracts
+  - command: node scripts/accept-packed.ts bun-global
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-28T17:04:33.343Z"
+      source_kind: local_mutation
+      source_ref: feat/cross-file-editing-session-contracts
 docs[2]{path,scope}:
   docs/source-editing-sessions.md,project
   README.md,project

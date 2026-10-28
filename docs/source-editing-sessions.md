@@ -93,6 +93,22 @@ every target, including previously completed rows; dependent rows never proceed
 after a refusal. Retained package history markers recognize a peer's completed
 application without counting another write.
 
+Recovery recognizes baseline, applied and compensated states through one shared
+native-history classifier. It anchors the entire operation suffix to the exported
+revision, verifies alternating forward/compensation records, and uses SDK history
+replay and canonicalization to prove that compensation restored the original
+owned fields while preserving other metadata, relationships and bodies. A copied
+marker alone never authorizes a peer revision. This check runs at preview, item
+inspection, compensation preparation, locked mutation and compensation itself.
+The native coordinator can therefore finish an interrupted rollback before it
+starts a fresh forward attempt, including after repeated rollback interruptions.
+
+`changed`, `moved` and `unchanged` describe the logical differences from current
+values at the start of apply, matching preview. `applied` counts forward writes
+retained from this call. Recovery may first undo a prior forward write and then
+reapply it, so `applied` can exceed `changed`; those append-only audit events are
+recovery work, not additional logical row moves.
+
 This uses core's compensating transaction contract, not snapshot isolation for
 arbitrary native writers. A late native race triggers compensation; audit and
 compensation history remain append-only. If a peer touches an already applied

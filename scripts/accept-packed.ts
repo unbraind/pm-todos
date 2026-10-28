@@ -1,8 +1,10 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
+import { stripTypeScriptTypes } from "node:module";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { decodeToon } from "@unbrained/pm-cli/sdk/testing";
 
 /** Package fields that define the installed-extension acceptance matrix. */
 interface PackageContract {
@@ -28,6 +30,8 @@ interface AcceptanceReceipt {
   readonly fixtures_present: true;
   readonly source_rows: number;
   readonly source_replay_changed: number;
+  readonly rollback_recovered: true;
+  readonly recovery_format: "json" | "toon";
 }
 
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -142,14 +146,21 @@ try {
       npm_config_cache: isolatedNpmCache,
       BUN_INSTALL_CACHE_DIR: isolatedBunCache,
       BUN_INSTALL: join(scenarioRoot, "prefix"),
+      // Bun exposes independent global package/bin destinations; pin both so
+      // the consumer fixture never assumes they follow its install prefix.
+      BUN_INSTALL_GLOBAL_DIR: join(scenarioRoot, "prefix", "install", "global"),
+      BUN_INSTALL_BIN: join(scenarioRoot, "prefix", "bin"),
       PM_ACCEPT_PREFIX: join(scenarioRoot, "prefix"),
+      GIT_CEILING_DIRECTORIES: temporaryRoot,
     };
     if (scenario.manager === "npm") {
       run(npmCommand, ["init", "-y"], scenarioRoot, scenarioEnvironment);
       run(npmCommand, ["install", "--ignore-scripts", ...(scenario.global ? ["--global", "--prefix", scenarioEnvironment.PM_ACCEPT_PREFIX!] : []), `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
     } else {
+      const bunConfig = join(scenarioRoot, "accept-bunfig.toml");
+      writeFileSync(bunConfig, `[install]\nglobalDir = ${JSON.stringify(scenarioEnvironment.BUN_INSTALL_GLOBAL_DIR)}\nglobalBinDir = ${JSON.stringify(scenarioEnvironment.BUN_INSTALL_BIN)}\n`);
       run(bunCommand, ["init", "-y"], scenarioRoot, scenarioEnvironment);
-      run(bunCommand, ["add", "--ignore-scripts", ...(scenario.global ? ["--global"] : []), `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
+      run(bunCommand, ["add", `--config=${bunConfig}`, "--ignore-scripts", ...(scenario.global ? ["--global"] : []), `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
     }
     const actualVersion = runPm(scenario, scenarioRoot, scenarioEnvironment, ["--version"]).stdout.trim();
     if (actualVersion !== scenario.hostVersion) {
@@ -204,6 +215,35 @@ try {
       const read = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", id, "--full", "--json"]).stdout, "source SDK read-back");
       if ((read.item as Record<string, unknown>).todos_source_file !== "two.txt") throw new Error("Packed row ownership was not persisted");
     }
+    // Interrupt the installed artifact after one native compensation, then
+    // recover via the actual consumer CLI in both supported output formats.
+    const recoveryDirectory = join(scenarioRoot, "recovery-edits"), recoveryManifest = join(scenarioRoot, "recovery-manifest.json");
+    mkdirSync(recoveryDirectory);
+    writeFileSync(selectionFile, JSON.stringify({ sources: [{ file: "one.txt", ids: [] }, { file: "two.txt", ids: selectedIds }] }));
+    const recoveryArgs = ["--manifest", recoveryManifest, "--directory", recoveryDirectory];
+    runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", selectionFile, ...recoveryArgs, "--json"]);
+    writeFileSync(join(recoveryDirectory, "one.txt"), readFileSync(join(recoveryDirectory, "two.txt")));
+    writeFileSync(join(recoveryDirectory, "two.txt"), "");
+    // Use the host-managed artifact already installed above, independent of the
+    // package manager's global storage layout. Its public loader supplies the SDK.
+    const packageDirectory = join(scenarioEnvironment.PM_PATH!, "extensions", "pm-todos");
+    const driverDirectory = join(packageDirectory, ".accept-recovery"); mkdirSync(driverDirectory);
+    for (const name of ["interrupt-packed-source", "source-recovery-fixture"]) {
+      const source = readFileSync(join(repoRoot, "scripts", name + ".ts"), "utf8");
+      const javascript = stripTypeScriptTypes(source).replace('"./source-recovery-fixture.ts"', '"./source-recovery-fixture.js"');
+      writeFileSync(join(driverDirectory, name + ".js"), javascript);
+    }
+    run(process.execPath, [join(driverDirectory, "interrupt-packed-source.js"), scenarioEnvironment.PM_PATH!, recoveryManifest, recoveryDirectory], scenarioRoot, scenarioEnvironment);
+    const recoveryPreview = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...recoveryArgs, "--json"]).stdout, "sources recovery preview");
+    if (recoveryPreview.ok !== true || recoveryPreview.changed !== 1 || recoveryPreview.applied !== 0) throw new Error("Packed recovery preview rejected the native rollback lineage");
+    const recoveryFormat = scenario.manager === "npm" ? "json" : "toon";
+    const rawRecovery = runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "apply", ...recoveryArgs, ...(recoveryFormat === "json" ? ["--json"] : [])]);
+    const recovered = requireJsonObject(recoveryFormat === "json" ? rawRecovery.stdout : JSON.stringify(decodeToon(rawRecovery.stdout)), "sources rollback recovery");
+    if (recovered.ok !== true || recovered.applied !== 2 || recovered.changed !== recoveryPreview.changed) throw new Error("Packed consumer could not finish rollback and retry its selection");
+    for (const id of selectedIds) {
+      const read = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", id, "--full", "--json"]).stdout, "recovered ownership read-back");
+      if ((read.item as Record<string, unknown>).todos_source_file !== "one.txt") throw new Error("Recovered packed ownership was not persisted");
+    }
     receipts.push({
       scenario: scenario.name,
       host_version: actualVersion,
@@ -213,6 +253,8 @@ try {
       fixtures_present: true,
       source_rows: selectedIds.length,
       source_replay_changed: sourceReplay.changed as number,
+      rollback_recovered: true,
+      recovery_format: recoveryFormat,
     });
   }
 
