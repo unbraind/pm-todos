@@ -1,6 +1,6 @@
 /** Conflict-aware todo.txt sessions, independent of git and table importers. */
 import { createHash } from "node:crypto";
-import { getHistoryPath, listAllComplete, mutateItem, readHistoryEntries, readSettings, verifyHistoryEntries } from "@unbrained/pm-cli/sdk";
+import { getHistoryPath, listAllComplete, mutateItem, readHistoryEntries, readSettings, verifyHistoryEntries, type RuntimeStatusRegistry } from "@unbrained/pm-cli/sdk";
 import { parseTodoTxtLine, serializeTodoTxtLine, todoTxtItemToPm, type PmItem } from "./index.ts";
 
 /** Fields represented by an editable todo.txt line. */
@@ -58,10 +58,10 @@ function fieldDigests(item: PmItem): Record<TodoSessionField, string> {
   return Object.fromEntries([...FIELDS, "todos_todotxt", "status"].map(field => [field, digest(item[field as keyof PmItem])])) as Record<TodoSessionField, string>;
 }
 /** Export stable ids and digests using the existing fidelity serializer. */
-export function createTodoEditingSession(items: readonly PmItem[]): { session: TodoEditingSession; text: string } {
+export function createTodoEditingSession(items: readonly PmItem[], registry?: RuntimeStatusRegistry): { session: TodoEditingSession; text: string } {
   const entries = [...items].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map(item => {
     if (!/^[a-zA-Z0-9_-]+$/.test(item.id)) throw new TypeError(`Item ${item.id} requires a stable pm item id.`);
-    const line = serializeTodoTxtLine(item, "fidelity");
+    const line = serializeTodoTxtLine(item, "fidelity", registry);
     if (/[\r\n]/.test(line) || /(?:^|\s)pm-session:/.test(line)) throw new TypeError(`Item ${item.id} cannot represent multiline text or a reserved pm-session token; use JSONL export.`);
     let roundTrip: Record<string, unknown>;
     try { roundTrip = projected(line); }
@@ -92,7 +92,7 @@ function sessionLine(raw: string): { line: string; id: string } | undefined {
   return { line, id };
 }
 /** Reconcile every line before writing; omitted baseline rows are retained. */
-function plan(session: unknown, text: string, items: readonly PmItem[]): { result: TodoSessionResult; patches: TodoSessionPatch[] } {
+function plan(session: unknown, text: string, items: readonly PmItem[], registry?: RuntimeStatusRegistry): { result: TodoSessionResult; patches: TodoSessionPatch[] } {
   const refusals: TodoSessionRefusal[] = [];
   let refusalCount = 0;
   /** Keep agent output bounded even for malformed large documents. */
@@ -126,7 +126,7 @@ function plan(session: unknown, text: string, items: readonly PmItem[]): { resul
         }
         if (before.status !== after.status) refuse({ code: "lifecycle_required", id, field: "status", remedy: "Use pm close or pm reopen with its required reason, then export a new session." });
         if (line.trim() !== baseline.line.trim()) {
-          const source = serializeTodoTxtLine({ ...item, ...values, todos_todotxt: line.trim() } as PmItem, "fidelity");
+          const source = serializeTodoTxtLine({ ...item, ...values, todos_todotxt: line.trim() } as PmItem, "fidelity", registry);
           if (item.todos_todotxt !== source) {
             if (digest(item.todos_todotxt) !== baseline.fieldDigests.todos_todotxt) refuse({ code: "field_conflict", id, field: "todos_todotxt", remedy: "Source token order changed concurrently; export a new session." });
             else values.todos_todotxt = source;
@@ -143,8 +143,21 @@ export function reconcileTodoEditingSession(session: unknown, text: string, curr
   return plan(session, text, current).result;
 }
 /** Return the same validated field proposals used by session apply, without writes. */
-export function planTodoEditingSession(session: unknown, text: string, current: readonly PmItem[]): { result: TodoSessionResult; patches: TodoSessionPatch[] } {
-  return plan(session, text, current);
+export function planTodoEditingSession(session: unknown, text: string, current: readonly PmItem[], registry?: RuntimeStatusRegistry): { result: TodoSessionResult; patches: TodoSessionPatch[] } {
+  return plan(session, text, current, registry);
+}
+/** Normalize editor whitespace through the fidelity producer used by writes, retaining invalid lines for refusal. */
+export function normalizeTodoEditingText(text: string): string {
+  return text.split(/\r?\n/).filter(line => line.trim()).map(raw => {
+    const row = sessionLine(raw);
+    if (!row) return raw;
+    try {
+      projected(row.line);
+      const item = parseTodoTxtLine(row.line);
+      if (!item) return raw;
+      return `${serializeTodoTxtLine(todoTxtItemToPm(item, row.id, "fidelity"), "fidelity")} pm-session:${row.id}`;
+    } catch { return raw; }
+  }).join("\n") + "\n";
 }
 /** Read a certified complete tracker snapshot using the public SDK. */
 export async function exportTodoEditingSession(pmRoot: string): Promise<ReturnType<typeof createTodoEditingSession>> {

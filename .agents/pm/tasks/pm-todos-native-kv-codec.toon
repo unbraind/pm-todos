@@ -1,0 +1,15 @@
+id: pm-todos-native-kv-codec
+title: Investigate native history round-trips for prototype-named extension metadata
+description: "A real non-git tracker using the public mutateItem callback with extensionFieldNames and an own __proto__ entry in todos_kv failed verifyHistoryEntries against the SDK-read document immediately after persistence. Existing todo.txt parsing drops this key, while a safe own-key parser exposed the native codec mismatch. Cross-file source inputs now refuse new __proto__ tokens before mutation; historical source strings still read and export. Reproduce and resolve through the public SDK before lifting that guard; never repair or rewrite existing history. No upstream GitHub issue was filed under the execution rules."
+type: Task
+status: open
+priority: 2
+tags[2]: native-history,sdk-compatibility
+created_at: "2026-10-27T18:00:11.790Z"
+updated_at: "2026-10-27T18:15:14.672Z"
+author: codex-agent
+files[1]{path,scope}:
+  source-sessions.ts,project
+docs[1]{path,scope}:
+  docs/source-editing-sessions.md,project
+body: ""

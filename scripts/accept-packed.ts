@@ -1,7 +1,10 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { createHash } from "node:crypto";
+import { stripTypeScriptTypes } from "node:module";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { decodeToon } from "@unbrained/pm-cli/sdk/testing";
 
 /** Package fields that define the installed-extension acceptance matrix. */
 interface PackageContract {
@@ -14,6 +17,7 @@ interface AcceptanceScenario {
   readonly name: string;
   readonly manager: "npm" | "bun";
   readonly hostVersion: string;
+  readonly global?: boolean;
 }
 
 /** Machine-readable proof emitted for one successful packed extension. */
@@ -24,6 +28,11 @@ interface AcceptanceReceipt {
   readonly exported_rows: number;
   readonly stderr_bytes: number;
   readonly fixtures_present: true;
+  readonly source_rows: number;
+  readonly source_replay_changed: number;
+  readonly rollback_recovered: true;
+  readonly copied_apply_refused: true;
+  readonly recovery_format: "json" | "toon";
 }
 
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -47,13 +56,13 @@ const cleanEnvironment: NodeJS.ProcessEnv = {
   PM_TELEMETRY_DISABLED: "1",
 };
 for (const key of Object.keys(cleanEnvironment)) {
-  if (key.toLowerCase() === "npm_config_allow_scripts") delete cleanEnvironment[key];
+  if (key.toLowerCase() === "npm_config_allow_scripts" || /token|secret|password|credential|api.?key|private.?key|access.?key|^NPM_MEDIA_SERVER$/i.test(key)) delete cleanEnvironment[key];
 }
 /** Maximum time allowed for one install, pack, or pm subprocess. */
 const commandTimeoutMs = 5 * 60 * 1000;
 
 /** Run one shell-free command and fail with bounded diagnostics. */
-function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = cleanEnvironment): SpawnSyncReturns<string> {
+function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = cleanEnvironment, expectedStatus = 0): SpawnSyncReturns<string> {
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
@@ -64,17 +73,18 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
   if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") {
     throw new Error(`${command} ${args.join(" ")} exceeded ${String(commandTimeoutMs)}ms and was terminated`);
   }
-  if (result.status !== 0) {
+  if (result.status !== expectedStatus) {
     throw new Error(`${command} ${args.join(" ")} failed with status ${String(result.status)}: ${(result.stderr || result.error?.message || result.stdout).trim()}`);
   }
   return result;
 }
 
 /** Invoke the scenario-local pm host through its user-facing launcher. */
-function runPm(scenario: AcceptanceScenario, cwd: string, env: NodeJS.ProcessEnv, args: string[]): SpawnSyncReturns<string> {
+function runPm(scenario: AcceptanceScenario, cwd: string, env: NodeJS.ProcessEnv, args: string[], expectedStatus = 0): SpawnSyncReturns<string> {
+  if (scenario.global) return run(join(env.PM_ACCEPT_PREFIX!, "bin", process.platform === "win32" ? "pm.cmd" : "pm"), args, cwd, env, expectedStatus);
   return scenario.manager === "npm"
-    ? run(npxCommand, ["--no-install", "pm", ...args], cwd, env)
-    : run(bunxCommand, ["--no-install", "pm", ...args], cwd, env);
+    ? run(npxCommand, ["--no-install", "pm", ...args], cwd, env, expectedStatus)
+    : run(bunxCommand, ["--no-install", "pm", ...args], cwd, env, expectedStatus);
 }
 
 /** Require parseable object stdout from one installed command surface. */
@@ -109,10 +119,15 @@ try {
     { name: "bun-current", manager: "bun", hostVersion: developmentVersion },
     { name: "npm-minimum", manager: "npm", hostVersion: minimumVersion },
     { name: "bun-minimum", manager: "bun", hostVersion: minimumVersion },
+    { name: "npm-global", manager: "npm", hostVersion: "2026.10.26", global: true },
+    { name: "bun-global", manager: "bun", hostVersion: "2026.10.26", global: true },
   ];
   const receipts: AcceptanceReceipt[] = [];
 
-  for (const scenario of scenarios) {
+  const requested = process.argv[2];
+  const selectedScenarios = requested ? scenarios.filter(scenario => scenario.name === requested) : scenarios;
+  if (!selectedScenarios.length) throw new Error("Unknown packed acceptance scenario");
+  for (const scenario of selectedScenarios) {
     const scenarioRoot = join(temporaryRoot, scenario.name);
     const isolatedConfig = join(scenarioRoot, "xdg-config");
     const isolatedData = join(scenarioRoot, "xdg-data");
@@ -131,13 +146,22 @@ try {
       XDG_DATA_HOME: isolatedData,
       npm_config_cache: isolatedNpmCache,
       BUN_INSTALL_CACHE_DIR: isolatedBunCache,
+      BUN_INSTALL: join(scenarioRoot, "prefix"),
+      // Bun exposes independent global package/bin destinations; pin both so
+      // the consumer fixture never assumes they follow its install prefix.
+      BUN_INSTALL_GLOBAL_DIR: join(scenarioRoot, "prefix", "install", "global"),
+      BUN_INSTALL_BIN: join(scenarioRoot, "prefix", "bin"),
+      PM_ACCEPT_PREFIX: join(scenarioRoot, "prefix"),
+      GIT_CEILING_DIRECTORIES: temporaryRoot,
     };
     if (scenario.manager === "npm") {
       run(npmCommand, ["init", "-y"], scenarioRoot, scenarioEnvironment);
-      run(npmCommand, ["install", "--ignore-scripts", `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
+      run(npmCommand, ["install", "--ignore-scripts", ...(scenario.global ? ["--global", "--prefix", scenarioEnvironment.PM_ACCEPT_PREFIX!] : []), `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
     } else {
+      const bunConfig = join(scenarioRoot, "accept-bunfig.toml");
+      writeFileSync(bunConfig, `[install]\nglobalDir = ${JSON.stringify(scenarioEnvironment.BUN_INSTALL_GLOBAL_DIR)}\nglobalBinDir = ${JSON.stringify(scenarioEnvironment.BUN_INSTALL_BIN)}\n`);
       run(bunCommand, ["init", "-y"], scenarioRoot, scenarioEnvironment);
-      run(bunCommand, ["add", "--ignore-scripts", `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
+      run(bunCommand, ["add", `--config=${bunConfig}`, "--ignore-scripts", ...(scenario.global ? ["--global"] : []), `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
     }
     const actualVersion = runPm(scenario, scenarioRoot, scenarioEnvironment, ["--version"]).stdout.trim();
     if (actualVersion !== scenario.hostVersion) {
@@ -175,6 +199,68 @@ try {
     if (/deprecated|list-all/iu.test(stderr)) {
       throw new Error(`${scenario.name} emitted a deprecated-command diagnostic: ${stderr.trim()}`);
     }
+    const selectionFile = join(scenarioRoot, "selection.json"), manifestFile = join(scenarioRoot, "sources.json");
+    const edits = join(scenarioRoot, "edits"); mkdirSync(edits);
+    const selectedIds = rows.map(row => String(row.id));
+    writeFileSync(selectionFile, JSON.stringify({ sources: [{ file: "one.txt", ids: selectedIds }, { file: "two.txt", ids: [] }] }));
+    const sourceArgs = ["--manifest", manifestFile, "--directory", edits];
+    const sourceExport = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", selectionFile, ...sourceArgs, "--json"]).stdout, "sources export");
+    if (sourceExport.selected !== 2) throw new Error("Packed source export omitted selected rows");
+    writeFileSync(join(edits, "two.txt"), readFileSync(join(edits, "one.txt")));
+    writeFileSync(join(edits, "one.txt"), "");
+    const sourcePreview = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...sourceArgs, "--json"]).stdout, "sources preview");
+    const sourceApply = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "apply", ...sourceArgs, "--json"]).stdout, "sources apply");
+    const sourceReplay = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "apply", ...sourceArgs, "--json"]).stdout, "sources replay");
+    if (sourcePreview.changed !== 2 || sourceApply.applied !== 2 || sourceReplay.changed !== 0) throw new Error("Packed cross-file move or replay failed");
+    for (const id of selectedIds) {
+      const read = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", id, "--full", "--json"]).stdout, "source SDK read-back");
+      if ((read.item as Record<string, unknown>).todos_source_file !== "two.txt") throw new Error("Packed row ownership was not persisted");
+    }
+    // Interrupt the installed artifact after one native compensation, then
+    // recover via the actual consumer CLI in both supported output formats.
+    const recoveryDirectory = join(scenarioRoot, "recovery-edits"), recoveryManifest = join(scenarioRoot, "recovery-manifest.json");
+    mkdirSync(recoveryDirectory);
+    writeFileSync(selectionFile, JSON.stringify({ sources: [{ file: "one.txt", ids: [] }, { file: "two.txt", ids: selectedIds }] }));
+    const recoveryArgs = ["--manifest", recoveryManifest, "--directory", recoveryDirectory];
+    runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", selectionFile, ...recoveryArgs, "--json"]);
+    writeFileSync(join(recoveryDirectory, "one.txt"), readFileSync(join(recoveryDirectory, "two.txt")));
+    writeFileSync(join(recoveryDirectory, "two.txt"), "");
+    // Use the host-managed artifact already installed above, independent of the
+    // package manager's global storage layout. Its public loader supplies the SDK.
+    const packageDirectory = join(scenarioEnvironment.PM_PATH!, "extensions", "pm-todos");
+    const driverDirectory = join(packageDirectory, ".accept-recovery"); mkdirSync(driverDirectory);
+    for (const name of ["interrupt-packed-source", "source-recovery-fixture"]) {
+      const source = readFileSync(join(repoRoot, "scripts", name + ".ts"), "utf8");
+      const javascript = stripTypeScriptTypes(source).replace('"./source-recovery-fixture.ts"', '"./source-recovery-fixture.js"');
+      writeFileSync(join(driverDirectory, name + ".js"), javascript);
+    }
+    run(process.execPath, [join(driverDirectory, "interrupt-packed-source.js"), scenarioEnvironment.PM_PATH!, recoveryManifest, recoveryDirectory], scenarioRoot, scenarioEnvironment);
+    const recoveryPreview = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...recoveryArgs, "--json"]).stdout, "sources recovery preview");
+    if (recoveryPreview.ok !== true || recoveryPreview.changed !== 1 || recoveryPreview.applied !== 0) throw new Error("Packed recovery preview rejected the native rollback lineage");
+    const recoveryFormat = scenario.manager === "npm" ? "json" : "toon";
+    const rawRecovery = runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "apply", ...recoveryArgs, ...(recoveryFormat === "json" ? ["--json"] : [])]);
+    const recovered = requireJsonObject(recoveryFormat === "json" ? rawRecovery.stdout : JSON.stringify(decodeToon(rawRecovery.stdout)), "sources rollback recovery");
+    if (recovered.ok !== true || recovered.applied !== 2 || recovered.changed !== recoveryPreview.changed) throw new Error("Packed consumer could not finish rollback and retry its selection");
+    for (const id of selectedIds) {
+      const read = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", id, "--full", "--json"]).stdout, "recovered ownership read-back");
+      if ((read.item as Record<string, unknown>).todos_source_file !== "one.txt") throw new Error("Recovered packed ownership was not persisted");
+    }
+    const poisonedDirectory = join(scenarioRoot, "foreign-edits"), poisonedManifest = join(scenarioRoot, "foreign-manifest.json");
+    mkdirSync(poisonedDirectory);
+    writeFileSync(selectionFile, JSON.stringify({ sources: [{ file: "one.txt", ids: selectedIds }, { file: "two.txt", ids: [] }] }));
+    const poisonedArgs = ["--manifest", poisonedManifest, "--directory", poisonedDirectory];
+    runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", selectionFile, ...poisonedArgs, "--json"]);
+    writeFileSync(join(poisonedDirectory, "two.txt"), readFileSync(join(poisonedDirectory, "one.txt")));
+    writeFileSync(join(poisonedDirectory, "one.txt"), "");
+    const foreignDriverArgs = [join(driverDirectory, "interrupt-packed-source.js"), scenarioEnvironment.PM_PATH!, poisonedManifest, poisonedDirectory];
+    run(process.execPath, [...foreignDriverArgs, "poison"], scenarioRoot, scenarioEnvironment);
+    for (const action of ["preview", "apply"]) {
+      const refused = runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", action, ...poisonedArgs, ...(recoveryFormat === "json" ? ["--json"] : [])], 1);
+      const output = requireJsonObject(recoveryFormat === "json" ? refused.stdout : JSON.stringify(decodeToon(refused.stdout)), "copied apply refusal");
+      const reason = (output.refusals as Record<string, unknown>[] | undefined)?.[0];
+      if (output.ok !== false || output.applied !== 0 || reason?.code !== "stale_revision" || typeof reason.remedy !== "string" || !reason.remedy) throw new Error("Packed consumer accepted foreign ownership under a copied apply marker");
+    }
+    run(process.execPath, [...foreignDriverArgs, "verify-poison"], scenarioRoot, scenarioEnvironment);
     receipts.push({
       scenario: scenario.name,
       host_version: actualVersion,
@@ -182,10 +268,15 @@ try {
       exported_rows: rows.length,
       stderr_bytes: Buffer.byteLength(stderr),
       fixtures_present: true,
+      source_rows: selectedIds.length,
+      source_replay_changed: sourceReplay.changed as number,
+      rollback_recovered: true,
+      copied_apply_refused: true,
+      recovery_format: recoveryFormat,
     });
   }
 
-  process.stdout.write(`${JSON.stringify({ ok: true, receipts })}\n`);
+  process.stdout.write(`${JSON.stringify({ ok: true, artifact_sha256: createHash("sha256").update(readFileSync(tarball)).digest("hex"), receipts })}\n`);
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
 }
