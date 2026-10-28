@@ -213,31 +213,46 @@ function recoveryValues(core: TodoSourceSdk, document: ItemDocument, settings: P
   const metadata = Object.fromEntries(Object.entries(canonical.metadata).filter(([field]) => field !== "updated_at" && field !== "item_format_version" && WRITE_FIELDS.has(field) === owned));
   return core.stableUpsertValue(owned ? { metadata } : { metadata, body: canonical.body });
 }
-/** Recognize the complete native forward/rollback lineage without adopting any intervening peer revision. */
-function revisionState(core: TodoSourceSdk, current: Snapshot, row: TodoSourceRow, transaction: string, settings: PmSettings): "pending" | "applied" | "compensated" {
-  if (current.revision === row.revision) return "pending";
+/** Refuse unproven ownership without echoing either native values or operator paths. */
+function staleRevision(id: string): never {
+  throw new TodoSourceError("stale_revision", "A selected row changed since export. Export all selected files again and review the edit before retrying.", id);
+}
+/** Recover the immutable exported document from verified native history, never from observed edited values. */
+function revisionBaseline(core: TodoSourceSdk, current: Snapshot, row: TodoSourceRow, transaction: string): Snapshot {
+  if (current.revision === row.revision) return current;
   const applied = marker(transaction, row.id), compensated = marker(transaction, row.id, "compensate");
-  const stale = (): never => { throw new TodoSourceError("stale_revision", "A selected row changed since export. Export all selected files again and review the edit before retrying.", row.id); };
   let start = current.history.length;
   while (start > 0 && [applied, compensated].includes(current.history[start - 1].message ?? "")) start--;
-  if (!start || start === current.history.length || historyRevision(current.history.slice(0, start)) !== row.revision) return stale();
-  const baseline = core.replayHistoryToTarget(current.history, start - 1);
-  const originalValues = recoveryValues(core, baseline as ItemDocument, settings, true);
-  let document = baseline, phase: "pending" | "applied" | "compensated" = "pending";
-  for (let index = start; index < current.history.length; index++) {
+  if (!start || start === current.history.length || historyRevision(current.history.slice(0, start)) !== row.revision) return staleRevision(row.id);
+  return { document: core.replayHistoryToTarget(current.history, start - 1) as ItemDocument, history: current.history.slice(0, start), revision: row.revision };
+}
+/** Recognize ownership only when every forward event equals the immutable producer-derived intent. */
+function revisionState(core: TodoSourceSdk, current: Snapshot, row: TodoSourceRow, transaction: string, settings: PmSettings, intended: string): "pending" | "applied" | "compensated" {
+  if (current.revision === row.revision) return "pending";
+  const baseline = revisionBaseline(core, current, row, transaction);
+  const originalValues = recoveryValues(core, baseline.document, settings, true);
+  let document = baseline.document, phase: "pending" | "applied" | "compensated" = "pending";
+  for (let index = baseline.history.length; index < current.history.length; index++) {
     const entry = current.history[index];
-    const next = core.applyHistoryPatch(document, entry.patch, index + 1, entry.op);
-    if (entry.op !== "update" || recoveryValues(core, document as ItemDocument, settings, false) !== recoveryValues(core, next as ItemDocument, settings, false)) return stale();
-    if (entry.message === applied) {
-      if (phase === "applied") return stale();
+    const next = core.applyHistoryPatch(document, entry.patch, index + 1, entry.op) as ItemDocument;
+    if (entry.op !== "update" || recoveryValues(core, document, settings, false) !== recoveryValues(core, next, settings, false)) return staleRevision(row.id);
+    if (entry.message === marker(transaction, row.id)) {
+      if (phase === "applied" || recoveryValues(core, next, settings, true) !== intended) return staleRevision(row.id);
       phase = "applied";
     } else {
-      if (phase !== "applied" || recoveryValues(core, next as ItemDocument, settings, true) !== originalValues) return stale();
+      if (phase !== "applied" || recoveryValues(core, next, settings, true) !== originalValues) return staleRevision(row.id);
       phase = "compensated";
     }
     document = next;
   }
   return phase;
+}
+/** Materialize intent and native writes with one patch applicator; SDK canonicalization supplies comparisons. */
+function applyValues(document: ItemDocument, values: TodoSessionPatch["values"]): string[] {
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) delete document.metadata[key]; else document.metadata[key] = value;
+  }
+  return Object.keys(values);
 }
 /** Parse ownership using the same embedded editing-session planner as field edits. */
 function proposals(manifest: TodoSourceManifest, files: TodoSourceFile[], current: Snapshot[], registry: RuntimeStatusRegistry): { patches: TodoSessionPatch[]; moved: number } {
@@ -332,13 +347,23 @@ export async function applyTodoSourceSelection(pmRoot: string, manifest: unknown
     const rows = parsed.manifest.sources.flatMap(source => source.rows);
     const transaction = core.deriveMutationTransactionId(JSON.stringify(["pm-todos-source-v1", parsed.manifest.digest, [...parsed.files].sort((a,b) => a.file < b.file ? -1 : a.file > b.file ? 1 : 0).map(file => [file.file, file.text.split("\n").filter(Boolean).sort()])]));
     result = { ...result, files: parsed.files.length, selected: rows.length, transaction };
+    const baselines = new Map<string, Snapshot>();
+    for (const row of rows) baselines.set(row.id, revisionBaseline(core, await snapshot(core, pmRoot, settings, row.id), row, transaction));
+    const intent = new Map(proposals(parsed.manifest, parsed.files, [...baselines.values()], registry).patches.map(patch => [patch.id, patch.values]));
+    const intended = new Map([...baselines].map(([id, baseline]) => {
+      const document = structuredClone(baseline.document);
+      applyValues(document, intent.get(id) ?? {});
+      return [id, recoveryValues(core, document, settings, true)];
+    }));
+    /** Every use still reads and verifies the current target, including while its native write lock is held. */
+    const inspectRevision = (current: Snapshot, row: TodoSourceRow) => revisionState(core, current, row, transaction, settings, intended.get(row.id)!);
     /** Revalidate every target, including unchanged targets and previously completed steps. */
     let hasTransactionHistory = false;
     const readAll = async (): Promise<Snapshot[]> => {
       const current: Snapshot[] = [];
       for (const row of rows) {
         const value = await snapshot(core, pmRoot, settings, row.id);
-        const phase = revisionState(core, value, row, transaction, settings); current.push(value);
+        const phase = inspectRevision(value, row); current.push(value);
         if (phase !== "pending") hasTransactionHistory = true;
       }
       return current;
@@ -358,25 +383,22 @@ export async function applyTodoSourceSelection(pmRoot: string, manifest: unknown
           id: row.id,
           async inspect() {
             const current = await snapshot(core, pmRoot, settings, row.id);
-            return { state: revisionState(core, current, row, transaction, settings), result: row.id };
+            return { state: inspectRevision(current, row), result: row.id };
           },
           async prepareCompensation() {
             const current = await snapshot(core, pmRoot, settings, row.id);
-            revisionState(core, current, row, transaction, settings);
+            inspectRevision(current, row);
             return JSON.parse(JSON.stringify(current.document.metadata)) as WorkspaceTransactionJsonValue;
           },
           async apply() {
             await plan();
             const changed = await core.mutateItem({ pmRoot, settings, id: row.id, op: "update", author: options.author, message: marker(transaction, row.id), extensionFieldNames: EXTENSIONS, skipNoop: true,
               async mutate(document) {
-                revisionState(core, await snapshot(core, pmRoot, settings, row.id, document), row, transaction, settings);
+                inspectRevision(await snapshot(core, pmRoot, settings, row.id, document), row);
                 const all = await readAll();
                 const index = rows.indexOf(row); all[index] = await snapshot(core, pmRoot, settings, row.id, document);
                 const patch = proposals(parsed.manifest, parsed.files, all, registry).patches.find(patch => patch.id === row.id);
-                for (const [key, value] of Object.entries(patch?.values ?? {})) {
-                  if (value === undefined) delete document.metadata[key]; else document.metadata[key] = value;
-                }
-                return { changedFields: Object.keys(patch?.values ?? {}) };
+                return { changedFields: applyValues(document, patch?.values ?? {}) };
               },
             });
             if (changed.changedFields.length) result.applied++;
@@ -387,17 +409,16 @@ export async function applyTodoSourceSelection(pmRoot: string, manifest: unknown
               async mutate(document) {
                 const current = await snapshot(core, pmRoot, settings, row.id, document);
                 try {
-                  if (revisionState(core, current, row, transaction, settings) !== "applied") return { changedFields: [] };
+                  if (inspectRevision(current, row) !== "applied") return { changedFields: [] };
                 } catch {
                   if (!current.history.some(entry => entry.message === marker(transaction, row.id))) return { changedFields: [] };
                   throw new TodoSourceError("superseded", "A peer changed an applied row. Preserve the journal and reconcile it; compensation will not overwrite the peer.", row.id);
                 }
                 if (data === null || typeof data !== "object" || Array.isArray(data)) throw new TodoSourceError("apply_failed", "Preserve and inspect the native transaction journal before retrying.", row.id);
-                const fields = [...FIELD_NAMES.filter(key => key !== "status"), "todos_source_file"];
-                for (const field of fields) {
-                  if (Object.hasOwn(data, field)) document.metadata[field] = data[field]; else delete document.metadata[field];
-                }
-                return { changedFields: fields };
+                const baseline = baselines.get(row.id)!.document;
+                const saved = { metadata: data as ItemDocument["metadata"], body: baseline.body };
+                if (recoveryValues(core, saved, settings, true) !== recoveryValues(core, baseline, settings, true)) throw new TodoSourceError("apply_failed", "Compensation data does not match the exported native revision. Preserve and inspect the transaction journal.", row.id);
+                return { changedFields: applyValues(document, Object.fromEntries([...WRITE_FIELDS].map(field => [field, baseline.metadata[field]]))) };
               },
             });
             if (compensated.changedFields.length) result.applied = Math.max(0, result.applied - 1);
@@ -411,7 +432,7 @@ export async function applyTodoSourceSelection(pmRoot: string, manifest: unknown
         };
         if (options.commit) await options.commit(controls);
         else await core.commitWorkspaceTransaction({ ...controls, pmRoot });
-        await plan();
+        if ((await plan()).patches.length) throw new TodoSourceError("apply_failed", "The native transaction did not complete every selected row. Preserve the journal and reconcile the remaining targets before retrying.");
         return receipt(result);
       });
     } finally { await lease.release(); }

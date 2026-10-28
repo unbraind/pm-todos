@@ -97,8 +97,14 @@ Recovery recognizes baseline, applied and compensated states through one shared
 native-history classifier. It anchors the entire operation suffix to the exported
 revision, verifies alternating forward/compensation records, and uses SDK history
 replay and canonicalization to prove that compensation restored the original
-owned fields while preserving other metadata, relationships and bodies. A copied
-marker alone never authorizes a peer revision. This check runs at preview, item
+owned fields while preserving other metadata, relationships and bodies. Forward
+intent comes from the exported native baseline and the same planner and patch
+applicator as actual writes. Every apply event must equal that complete intended
+projection, including owned fields the edit did not change. This also refuses a
+poisoned intermediate event hidden by later compensation. Saved compensation
+values must match the verified baseline, and success requires a final SDK read
+showing no pending selection changes. A copied marker alone never authorizes a
+peer revision. This check runs at preview, item
 inspection, compensation preparation, locked mutation and compensation itself.
 The native coordinator can therefore finish an interrupted rollback before it
 starts a fresh forward attempt, including after repeated rollback interruptions.

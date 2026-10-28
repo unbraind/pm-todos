@@ -31,6 +31,7 @@ interface AcceptanceReceipt {
   readonly source_rows: number;
   readonly source_replay_changed: number;
   readonly rollback_recovered: true;
+  readonly copied_apply_refused: true;
   readonly recovery_format: "json" | "toon";
 }
 
@@ -61,7 +62,7 @@ for (const key of Object.keys(cleanEnvironment)) {
 const commandTimeoutMs = 5 * 60 * 1000;
 
 /** Run one shell-free command and fail with bounded diagnostics. */
-function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = cleanEnvironment): SpawnSyncReturns<string> {
+function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = cleanEnvironment, expectedStatus = 0): SpawnSyncReturns<string> {
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
@@ -72,18 +73,18 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
   if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") {
     throw new Error(`${command} ${args.join(" ")} exceeded ${String(commandTimeoutMs)}ms and was terminated`);
   }
-  if (result.status !== 0) {
+  if (result.status !== expectedStatus) {
     throw new Error(`${command} ${args.join(" ")} failed with status ${String(result.status)}: ${(result.stderr || result.error?.message || result.stdout).trim()}`);
   }
   return result;
 }
 
 /** Invoke the scenario-local pm host through its user-facing launcher. */
-function runPm(scenario: AcceptanceScenario, cwd: string, env: NodeJS.ProcessEnv, args: string[]): SpawnSyncReturns<string> {
-  if (scenario.global) return run(join(env.PM_ACCEPT_PREFIX!, "bin", process.platform === "win32" ? "pm.cmd" : "pm"), args, cwd, env);
+function runPm(scenario: AcceptanceScenario, cwd: string, env: NodeJS.ProcessEnv, args: string[], expectedStatus = 0): SpawnSyncReturns<string> {
+  if (scenario.global) return run(join(env.PM_ACCEPT_PREFIX!, "bin", process.platform === "win32" ? "pm.cmd" : "pm"), args, cwd, env, expectedStatus);
   return scenario.manager === "npm"
-    ? run(npxCommand, ["--no-install", "pm", ...args], cwd, env)
-    : run(bunxCommand, ["--no-install", "pm", ...args], cwd, env);
+    ? run(npxCommand, ["--no-install", "pm", ...args], cwd, env, expectedStatus)
+    : run(bunxCommand, ["--no-install", "pm", ...args], cwd, env, expectedStatus);
 }
 
 /** Require parseable object stdout from one installed command surface. */
@@ -244,6 +245,22 @@ try {
       const read = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", id, "--full", "--json"]).stdout, "recovered ownership read-back");
       if ((read.item as Record<string, unknown>).todos_source_file !== "one.txt") throw new Error("Recovered packed ownership was not persisted");
     }
+    const poisonedDirectory = join(scenarioRoot, "foreign-edits"), poisonedManifest = join(scenarioRoot, "foreign-manifest.json");
+    mkdirSync(poisonedDirectory);
+    writeFileSync(selectionFile, JSON.stringify({ sources: [{ file: "one.txt", ids: selectedIds }, { file: "two.txt", ids: [] }] }));
+    const poisonedArgs = ["--manifest", poisonedManifest, "--directory", poisonedDirectory];
+    runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", selectionFile, ...poisonedArgs, "--json"]);
+    writeFileSync(join(poisonedDirectory, "two.txt"), readFileSync(join(poisonedDirectory, "one.txt")));
+    writeFileSync(join(poisonedDirectory, "one.txt"), "");
+    const foreignDriverArgs = [join(driverDirectory, "interrupt-packed-source.js"), scenarioEnvironment.PM_PATH!, poisonedManifest, poisonedDirectory];
+    run(process.execPath, [...foreignDriverArgs, "poison"], scenarioRoot, scenarioEnvironment);
+    for (const action of ["preview", "apply"]) {
+      const refused = runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", action, ...poisonedArgs, ...(recoveryFormat === "json" ? ["--json"] : [])], 1);
+      const output = requireJsonObject(recoveryFormat === "json" ? refused.stdout : JSON.stringify(decodeToon(refused.stdout)), "copied apply refusal");
+      const reason = (output.refusals as Record<string, unknown>[] | undefined)?.[0];
+      if (output.ok !== false || output.applied !== 0 || reason?.code !== "stale_revision" || typeof reason.remedy !== "string" || !reason.remedy) throw new Error("Packed consumer accepted foreign ownership under a copied apply marker");
+    }
+    run(process.execPath, [...foreignDriverArgs, "verify-poison"], scenarioRoot, scenarioEnvironment);
     receipts.push({
       scenario: scenario.name,
       host_version: actualVersion,
@@ -254,6 +271,7 @@ try {
       source_rows: selectedIds.length,
       source_replay_changed: sourceReplay.changed as number,
       rollback_recovered: true,
+      copied_apply_refused: true,
       recovery_format: recoveryFormat,
     });
   }
