@@ -1,38 +1,12 @@
+import { fingerprintValidationTree, readonlyValidationTree } from "./validation-tree.ts";
 /** Compare built session APIs on immutable public tracker copies outside git. */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { listAllComplete } from "@unbrained/pm-cli/sdk";
-
-/** Snapshot all copied files, including any unexpected SDK-created state. */
-function fingerprint(root: string): string {
-  const hash = createHash("sha256");
-  /** Traverse in stable order without following symlinks. */
-  function visit(directory: string): void {
-    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const file = join(directory, entry.name);
-      if (entry.isDirectory()) visit(file);
-      else { assert.ok(entry.isFile()); hash.update(file.slice(root.length)); hash.update(readFileSync(file)); }
-    }
-  }
-  visit(root);
-  return hash.digest("hex");
-}
-
-/** Set immutable input permissions, or restore directory ownership for cleanup. */
-function permissions(root: string, readonly: boolean): void {
-  chmodSync(root, 0o755);
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const file = join(root, entry.name);
-    if (entry.isDirectory()) permissions(file, readonly);
-    else chmodSync(file, readonly ? 0o444 : 0o644);
-  }
-  if (readonly) chmodSync(root, 0o555);
-}
 
 /** Extract committed data only; never copy mutable checkout caches or local data. */
 function archive(repo: string, ref: string, destination: string, paths: string[] = []): void {
@@ -45,7 +19,7 @@ const repos = process.argv.slice(2).map(repo => resolve(repo));
 assert.ok(repos.length, "Pass public fleet repository directories as arguments.");
 const repoRoot = resolve(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "todos-session-differential-"));
-const immutable: string[] = [];
+const restoreCopies: (() => void)[] = [];
 try {
   const before = join(scratch, "before");
   archive(repoRoot, "origin/main", before);
@@ -60,9 +34,8 @@ try {
     const head = execFileSync("git", ["-C", repo, "rev-parse", "origin/main"], { encoding: "utf8" }).trim();
     const copy = join(scratch, `fleet-${index}`);
     archive(repo, "origin/main", copy, [".agents/pm"]);
-    immutable.push(copy);
-    permissions(copy, true);
-    const initial = fingerprint(copy);
+    restoreCopies.push(readonlyValidationTree(copy));
+    const initial = fingerprintValidationTree(copy).digest;
     const pmRoot = join(copy, ".agents", "pm");
     const items = (await listAllComplete({}, { pmRoot, cwd: copy })).items;
     const input = join(scratch, `items-${index}.json`);
@@ -92,11 +65,11 @@ process.stdout.write(JSON.stringify({total:items.length,eligible:eligible.length
       }));
     }
     assert.equal(outputs[1], outputs[0], "Session outputs must match origin/main byte for byte");
-    assert.equal(fingerprint(copy), initial, "Differential functions must leave copied tracker bytes unchanged");
+    assert.equal(fingerprintValidationTree(copy).digest, initial, "Differential functions must leave copied tracker bytes unchanged");
     const result = JSON.parse(outputs[0]) as { total: number; eligible: number; rejected: unknown[]; cases: unknown[] };
     console.log(JSON.stringify({ repo: basename(repo), head, total: result.total, eligible: result.eligible, rejected: result.rejected.length, cases: result.cases.length, identical: true, trackerUnchanged: true, gitOnPath: false }));
   }
 } finally {
-  for (const copy of immutable) permissions(copy, false);
-  rmSync(scratch, { recursive: true, force: true });
+  try { for (const restore of restoreCopies.reverse()) restore(); }
+  finally { rmSync(scratch, { recursive: true, force: true }); }
 }

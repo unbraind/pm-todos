@@ -1,42 +1,27 @@
+import { fingerprintValidationTree, readonlyValidationTree } from "./validation-tree.ts";
 /** Measure hierarchy previews on committed public tracker data in a read-only non-git copy. */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { listAllComplete } from "@unbrained/pm-cli/sdk";
 import { applyTodoHierarchy, exportTodoHierarchy } from "../index.ts";
 
-/** Hash all files in the bounded copied tracker, excluding no authoritative input. */
-function fingerprint(root: string): string {
-  const digest = createHash("sha256");
-  for (const entry of readdirSync(root, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile()).sort((a,b) => join(a.parentPath,a.name).localeCompare(join(b.parentPath,b.name)))) {
-    const file = join(entry.parentPath, entry.name); digest.update(file.slice(root.length)); digest.update(readFileSync(file));
-  }
-  return digest.digest("hex");
-}
-/** Restore permissions only on the disposable copy, including on failure. */
-function permissions(root: string, readonly: boolean): void {
-  chmodSync(root, 0o755);
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const file = join(root, entry.name);
-    if (entry.isDirectory()) permissions(file, readonly); else chmodSync(file, readonly ? 0o444 : 0o644);
-  }
-  if (readonly) chmodSync(root, 0o555);
-}
+
 const source = process.argv[2];
 if (!source) throw new Error("Pass a public fleet package repository.");
 const repo = resolve(source), scratch = mkdtempSync(join(tmpdir(), "todos-hierarchy-public-")), copy = join(scratch, "copy");
 const previousPath = process.env.PATH, previousCeiling = process.env.GIT_CEILING_DIRECTORIES;
+let restore: (() => void) | undefined;
 try {
   const remote = execFileSync("git", ["-C", repo, "remote", "get-url", "origin"], { encoding: "utf8" }).trim();
   assert.match(remote, /^https:\/\/github\.com\/unbraind\/pm-[a-z-]+(?:\.git)?$/);
   const head = execFileSync("git", ["-C", repo, "rev-parse", "origin/main"], { encoding: "utf8" }).trim();
   const archive = execFileSync("git", ["-C", repo, "archive", "--format=tar", head, ".agents/pm"], { maxBuffer: 64 * 1024 * 1024 });
   mkdirSync(copy); execFileSync("tar", ["-xf", "-", "-C", copy], { input: archive });
-  const pmRoot = join(copy, ".agents", "pm"), initial = fingerprint(copy);
-  permissions(copy, true);
+  const pmRoot = join(copy, ".agents", "pm"), initial = fingerprintValidationTree(copy).digest;
+  restore = readonlyValidationTree(copy);
   const bin = join(scratch, "bin"); mkdirSync(bin); symlinkSync(process.execPath, join(bin, "node"));
   process.env.PATH = bin; process.env.GIT_CEILING_DIRECTORIES = dirname(copy);
   const complete = await listAllComplete({}, { pmRoot, cwd: copy });
@@ -62,11 +47,11 @@ try {
     for (const refusal of candidate.refusals) { const code = refusal.nativeCode ?? refusal.code; refused.set(code, (refused.get(code) ?? 0) + 1); }
   }
   assert.ok(proposal, "Read-only changed relation previews must succeed without a staging-permission bypass");
-  assert.equal(fingerprint(copy), initial);
+  assert.equal(fingerprintValidationTree(copy).digest, initial);
   // The archive is the complete immutable input; no source checkout files are opened for writes.
   console.log(JSON.stringify({ repo: basename(repo), head, items: complete.items.length, exported: exported.session.rows.length, skipped: exported.skipped, text_bytes: Buffer.byteLength(exported.text), session_bytes: Buffer.byteLength(JSON.stringify(exported.session)), unchanged: unchanged.unchanged, changed_preview_ok: proposal?.ok ?? false, proposed_changes: proposal?.changed ?? 0, affected: proposal ? proposal.affected.length + proposal.omittedAffected : 0, staged_refusals: Object.fromEntries(refused), preview_bytes: proposal ? Buffer.byteLength(JSON.stringify(proposal)) : 0, copied_bytes_unchanged: true, readonly: true, git_on_path: false, source_unchanged: true }));
 } finally {
   if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
   if (previousCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = previousCeiling;
-  try { permissions(copy, false); } finally { rmSync(scratch, { recursive: true, force: true }); }
+  try { restore?.(); } finally { rmSync(scratch, { recursive: true, force: true }); }
 }

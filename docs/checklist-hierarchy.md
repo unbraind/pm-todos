@@ -131,6 +131,16 @@ operation sequences against an independent state model, reading every assertion
 back through the SDK. `node scripts/validate-hierarchy.ts <public-package-repo>`
 extracts committed public tracker data into a read-only non-git scratch copy,
 previews it and reports counts and byte preservation without changing the source.
+The public-corpus validators accept ordinary directories and single-link regular
+files only (at most 10,000 entries, on hosts supporting `O_NOFOLLOW`). Symbolic
+links, hard-linked files and special files refuse as `unsafe_validation_entry`;
+remove them from the validation corpus and retry. Permission setup preflights the
+complete copy, then uses verified open descriptors. Cleanup restores exact
+original modes through those same descriptors, even if paths are replaced; it
+never recursively changes permissions on newly discovered entries. The editing
+session validator retains its existing generated-cache exclusions for both copy
+and fingerprint operations. Normal SDK/CLI hierarchy operations and their
+JSON/TOON receipts do not change filesystem permissions.
 
 The inspected SDK 2026.10.25 `previewItemMutations` cannot supply this preview
 contract: it returns `EACCES` on read-only copies and rejects symlinks introduced

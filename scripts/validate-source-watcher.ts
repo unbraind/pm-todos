@@ -1,31 +1,16 @@
+import { fingerprintValidationTree } from "./validation-tree.ts";
 /** Measure watcher acceptance against a supplied read-only public tracker copy outside git. */
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, renameSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listAllComplete } from "@unbrained/pm-cli/sdk";
 import { createTodoEditingSession, TodoSourceWatcher, type PmItem, type TodoWatcherReceipt } from "../index.ts";
 
-/** Hash every supplied tracker file; reject linked entries rather than following them. */
-function fingerprint(root: string): { digest: string; files: number } {
-  const hash = createHash("sha256");
-  let files = 0;
-  const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      assert.ok(!entry.isSymbolicLink(), "Public copy must not contain links");
-      const path = join(directory, entry.name);
-      hash.update(entry.name);
-      if (entry.isDirectory()) visit(path); else { files++; hash.update(readFileSync(path)); }
-    }
-  };
-  visit(root);
-  return { digest: hash.digest("hex"), files };
-}
 
 const source = process.argv[2];
 if (!source) throw new Error("Pass a read-only public tracker copy outside git.");
-const before = fingerprint(source);
+const before = fingerprintValidationTree(source);
 const root = mkdtempSync(join(tmpdir(), "todos-public-watch-"));
 try {
   const items = (await listAllComplete({}, { pmRoot: source })).items as PmItem[];
@@ -64,7 +49,7 @@ try {
   const queue = JSON.parse(readFileSync(join(spool, "proposals.json"), "utf8")) as { proposals: { result: { applied: number } }[] };
   assert.equal(queue.proposals.length, 2);
   assert.ok(queue.proposals.every(row => row.result.applied === 0));
-  const after = fingerprint(source);
+  const after = fingerprintValidationTree(source);
   assert.deepEqual(after, before);
   console.log(JSON.stringify({ items: items.length, sessionEligible: eligible.length, unrepresentable: items.length - eligible.length, sourceFiles: before.files, sourceBytes: Buffer.byteLength(edited), sidecarBytes: Buffer.byteLength(JSON.stringify(baseline.session)), partialRefusals: 1, proposedChanges: proposed.changed, duplicateRevisionsSuppressed: duplicates, truncationOmitted: truncated.omitted, truncationChanges: truncated.changed, pendingAfterShutdown: queue.proposals.length, trackerWrites: 0, sourceUnchanged: true, maxReceiptBytes: Math.max(...[partial, proposed, replacement, truncated].map(row => Buffer.byteLength(JSON.stringify(row)))) }));
 } finally { rmSync(root, { recursive: true, force: true }); }
