@@ -119,10 +119,15 @@ function rows(text: string, session: TodoHierarchySession): Row[] {
   const known = new Set(session.rows.map(row => row.id)), seen = new Set<string>(), stack: string[] = [], result: Row[] = [];
   for (const [index, raw] of text.split(/\r?\n/).entries()) {
     if (!raw.trim()) continue;
-    const match = /^( *)(?:-|\*) \[[ xX]\] (.+?)\s+<!-- pm-session:([a-zA-Z0-9_-]{1,160}) -->\s*$/.exec(raw);
-    if (!match || /<!--\s*pm-session:/.test(match[2])) refuse("orphan_row", "Keep exactly one exported pm-session marker on each checklist row; use pm create for new rows.", undefined, index + 1);
-    const id = match[3], depth = match[1].length / 2;
-    if (match[1].length % 2 || depth > 100 || depth > stack.length) refuse("ambiguous_indent", "Use two spaces per level and retain the immediately preceding marked ancestor.", id, index + 1);
+    // Disjoint scans keep malformed long whitespace rows linear. A title and
+    // whitespace quantifier must never compete for the same character span.
+    const prefix = /^( *)(?:-|\*) \[[ xX]\] /.exec(raw), tail = raw.trimEnd();
+    const marker = "<!-- pm-session:", ending = " -->", markerIndex = tail.lastIndexOf(marker);
+    const id = markerIndex < 0 ? "" : tail.slice(markerIndex + marker.length, -ending.length);
+    const title = prefix && markerIndex >= prefix[0].length ? tail.slice(prefix[0].length, markerIndex).trimEnd() : "";
+    if (!prefix || !tail.endsWith(ending) || !/^[a-zA-Z0-9_-]{1,160}$/.test(id) || !/\s/.test(tail[markerIndex - 1] ?? "") || !title.trim() || /[\r\n\u2028\u2029]/.test(title) || /<!--\s*pm-session:/.test(title)) refuse("orphan_row", "Keep exactly one exported pm-session marker on each checklist row; use pm create for new rows.", undefined, index + 1);
+    const depth = prefix[1].length / 2;
+    if (prefix[1].length % 2 || depth > 100 || depth > stack.length) refuse("ambiguous_indent", "Use two spaces per level and retain the immediately preceding marked ancestor.", id, index + 1);
     if (!known.has(id)) refuse("unknown_id", "Export a selection including this exact identity; titles are never matched.", id, index + 1);
     if (seen.has(id)) refuse("duplicate_id", "Keep one row per stable identity.", id, index + 1);
     seen.add(id); stack.length = depth;
@@ -284,14 +289,14 @@ export async function applyTodoHierarchy(pmRoot: string, session: unknown, text:
         propose(core, document, relation, row.target, options.author, core.nowIso());
         return document.metadata;
       });
-      for (const row of intent) {
-        if (row.target && !current.has(row.target)) refuse("missing_item", "The proposed parent must be a selected, existing marked row.", row.id);
+      for (const row of intent) if (row.target && !current.has(row.target)) refuse("missing_item", "The proposed parent must be a selected, existing marked row.", row.id);
+      const changes = intent.filter(row => target(core, current.get(row.id)!.document, relation) !== row.target).map(row => ({ id: row.id, relation, before: target(core, current.get(row.id)!.document, relation), after: row.target }));
+      for (const row of changes) {
         try { core.assertHierarchyMutationAllowed(before, after, row.id, status => core.statusIsTerminal(status, registry)); }
         catch { refuse("cycle", "The proposal violates native hierarchy topology. Review parent/dependency edges and export again.", row.id); }
         if (core.collectNewOrderingCycleWarnings(before, after, row.id).length) refuse("cycle", "The proposal creates a native dependency cycle. Remove the conflicting relation and preview again.", row.id);
       }
-      const changes = intent.filter(row => target(core, current.get(row.id)!.document, relation) !== row.target).map(row => ({ id: row.id, relation, before: target(core, current.get(row.id)!.document, relation), after: row.target }));
-      const graphs = [core.RelationshipGraph.fromItems(before), core.RelationshipGraph.fromItems(after)], affected = new Set<string>();
+      const graphs = changes.length ? [core.RelationshipGraph.fromItems(before), core.RelationshipGraph.fromItems(after)] : [], affected = new Set<string>();
       for (const change of changes) {
         affected.add(change.id);
         for (const id of [change.before, change.after]) if (id) affected.add(id);

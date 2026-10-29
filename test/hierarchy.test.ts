@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 import * as core from "@unbrained/pm-cli/sdk";
 import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
@@ -378,4 +379,19 @@ test("native ownership still refuses a relation edit held by a peer", async t =>
   const result = await apply(f.pmRoot, exported.session, markdown(f.ids, [null, f.ids[0]]), { author: "hierarchy-test" });
   assert.equal(result.ok, false); assert.equal(result.applied, 0); assert.equal(result.refusals[0].code, "native_refusal");
   assert.deepEqual(await state(f.pmRoot, f.ids), before);
+});
+
+
+test("hierarchy row parsing refuses a million-space adversarial row in bounded time", async t => {
+  const f = await fixture(t, 1), exported = await checkout(f.pmRoot, f.ids);
+  const module = pathToFileURL(resolve(import.meta.dirname, "../hierarchy.ts")).href;
+  const script = `import {applyTodoHierarchy} from ${JSON.stringify(module)};
+const receipt = await applyTodoHierarchy(process.argv[1], JSON.parse(process.argv[2]), '- [ ] a' + ' '.repeat(1000000) + '!', {author:'parser-test',dryRun:true});
+process.stdout.write(JSON.stringify(receipt));`;
+  const childEnvironment: NodeJS.ProcessEnv = { ...process.env, GIT_CEILING_DIRECTORIES: dirname(f.root) };
+  for (const key of Object.keys(childEnvironment)) if (/token|secret|password|credential|api.?key|private.?key|access.?key|^NPM_MEDIA_SERVER$/i.test(key)) delete childEnvironment[key];
+  const result = spawnSync(process.execPath, ["--no-enable-experimental-regexp-engine-on-excessive-backtracks", "--input-type=module", "-e", script, f.pmRoot, JSON.stringify(exported.session)], { cwd: f.root, env: childEnvironment, encoding: "utf8", timeout: 15000 });
+  assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr);
+  const receipt = JSON.parse(result.stdout) as TodoHierarchyResult;
+  assert.equal(receipt.ok, false); assert.equal(receipt.refusals[0].code, "orphan_row"); assert.equal(receipt.applied, 0);
 });
