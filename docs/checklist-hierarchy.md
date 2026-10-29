@@ -64,7 +64,8 @@ No native create/update defaulting is involved, so ambient focus cannot assign a
 parent and unrelated legacy fields stay intact.
 
 Selections contain 1..1000 unique canonical IDs; input arrays are dense plain
-JSON arrays. Markdown is at most 1 MiB and 1000 rows, with at most 100 levels,
+JSON arrays. The CLI selection file is at most 256 KiB; the sidecar and Markdown
+files are each at most 1 MiB. Markdown is at most 1 MiB and 1000 rows, with at most 100 levels,
 exactly two spaces per indent and no tab indentation. CRLF and trailing/editor
 text whitespace are accepted. Export skips unrepresentable display rows alone
 and reports their IDs. Existing native titles containing punctuation, metadata

@@ -77,7 +77,7 @@ test("marked dependencies reuse native blocker updates; cycles and deleted paren
   const applied = await apply(f.pmRoot, exported.session, text, { author: "hierarchy-test" });
   assert.equal(applied.ok, true, JSON.stringify(applied));
   const child = (await state(f.pmRoot, [f.ids[1]]))[0];
-  assert.equal(child.blocked_by, f.ids[0]); assert.ok(child.dependencies?.some(dep => dep.id === f.ids[0] && core.canonicalizeRelationshipKind(dep.kind) === "blocked_by"));
+  assert.equal(child.blocked_by, f.ids[0]); assert.equal(child.dependencies?.[0].author_source, "asserted"); assert.ok(child.dependencies?.some(dep => dep.id === f.ids[0] && core.canonicalizeRelationshipKind(dep.kind) === "blocked_by"));
   assert.equal((await apply(f.pmRoot, exported.session, text, { author: "peer" })).changed, 0);
   const moveSession = await checkout(f.pmRoot, f.ids.slice(0, 3), "blocked_by");
   const moved = await apply(f.pmRoot, moveSession.session, markdown(f.ids.slice(0, 3), [null, f.ids[2], null]), { author: "hierarchy-test" });
@@ -216,7 +216,7 @@ test("500 seeded operation sequences compare SDK state with an independent relat
           if (relation === "blocked_by" && key === "dependencies" && index >= 0) {
             const edges = item.dependencies ?? [];
             assert.equal(edges.length, desired ? 1 : 0);
-            if (desired) { assert.equal(edges[0].id, desired); assert.equal(edges[0].kind, "blocked_by"); assert.equal(edges[0].author, "model-agent"); assert.equal(edges[0].source_kind, "pm-todos:hierarchy"); assert.deepEqual(Object.keys(edges[0]).sort(), ["author", "created_at", "id", "kind", "source_kind"]); assert.ok(Number.isFinite(Date.parse(edges[0].created_at!))); }
+            if (desired) { assert.equal(edges[0].id, desired); assert.equal(edges[0].kind, "blocked_by"); assert.equal(edges[0].author, "model-agent"); assert.equal(edges[0].source_kind, "pm-todos:hierarchy"); assert.equal(edges[0].author_source, "asserted"); assert.deepEqual(Object.keys(edges[0]).sort(), ["author", "author_source", "created_at", "id", "kind", "source_kind"]); assert.ok(Number.isFinite(Date.parse(edges[0].created_at!))); }
             continue;
           }
           assert.deepEqual((item as unknown as Record<string, unknown>)[key], (wanted as unknown as Record<string, unknown>)[key], `${cohort}/${sequence}: ${key}`);

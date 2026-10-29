@@ -165,7 +165,7 @@ function propose(core: TodoHierarchySdk, document: ItemDocument, relation: TodoH
     const dependencies = (document.metadata.dependencies ?? []).filter(dep => !(core.resolveCanonicalRelationshipKind(dep.kind) === "blocked_by" && dep.id === previous));
     if (next) {
       const definition = core.assertRelationshipEdgeAllowed(document.metadata.id, next, "blocked_by");
-      dependencies.push({ id: next, kind: definition.kind, author, created_at: timestamp, source_kind: "pm-todos:hierarchy" });
+      dependencies.push({ id: next, kind: definition.kind, author, created_at: timestamp, source_kind: "pm-todos:hierarchy", author_source: "asserted" });
     }
     if (dependencies.length) document.metadata.dependencies = dependencies; else delete document.metadata.dependencies;
     fields.push("dependencies");
@@ -189,7 +189,7 @@ function checkRevision(core: TodoHierarchySdk, current: Snapshot, row: TodoHiera
       const old = row.target;
       const kept = (document: ItemDocument) => (document.metadata.dependencies ?? []).filter(dep => !(core.resolveCanonicalRelationshipKind(dep.kind) === "blocked_by" && [old, next].includes(dep.id)));
       const edges = (current.document.metadata.dependencies ?? []).filter(dep => core.resolveCanonicalRelationshipKind(dep.kind) === "blocked_by" && [old, next].includes(dep.id));
-      if (core.stableUpsertValue(kept(before)) === core.stableUpsertValue(kept(current.document)) && edges.length === (next ? 1 : 0) && (!next || (edges[0].id === next && edges[0].source_kind === "pm-todos:hierarchy" && edges[0].author === last.author && Number.isFinite(Date.parse(edges[0].created_at ?? ""))))) return;
+      if (core.stableUpsertValue(kept(before)) === core.stableUpsertValue(kept(current.document)) && edges.length === (next ? 1 : 0) && (!next || (edges[0].id === next && edges[0].source_kind === "pm-todos:hierarchy" && edges[0].author === last.author && edges[0].author_source === "asserted" && Number.isFinite(Date.parse(edges[0].created_at ?? ""))))) return;
     }
   }
   refuse("stale_revision", "A target changed since export, including ABA edits. Export again and review the current topology before retrying.", row.id);

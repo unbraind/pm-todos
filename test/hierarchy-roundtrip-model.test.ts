@@ -34,9 +34,10 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
     await client.schemaAddStatus(active, { role: [random(2) ? "active" : "blocked"] });
     const parent = await client.create({ id: "model-parent", title: "Reference parent", type: "Feature", parent: "none", sprint: "none", release: "none", blockedBy: "none", dep: [] });
     const peer = await client.create({ id: "model-peer", title: "Reference peer", type: "Feature", parent: "none", sprint: "none", release: "none", blockedBy: "none", dep: [] });
-    const child = await client.create({ id: "model-child", title: "Stable native row", status: active, type: "Task", parent: parent.item.id, sprint: "none", release: "none", blockedBy: "none", dep: [`id=${peer.item.id},kind=related`], priority: 2, tags: "todo", deadline: "2026-12-01", description: "Preserved native description todo-id:1", body: "Preserved body", comment: ["text=Seeded comment"], note: ["text=Seeded note"], file: ["path=example.ts"], doc: ["path=README.md"], test: ["command=node --version"], acceptanceCriteria: "Retain repaired relations" });
+    const child = await client.create({ id: "model-child", title: "Stable native row", status: active, type: "Task", parent: parent.item.id, assignee: "roundtrip-model", sprint: "2026-W48", release: "2026.12", blockedBy: "none", dep: [`id=${peer.item.id},kind=related`], priority: 2, tags: "todo", deadline: "2026-12-01", description: "Preserved native description todo-id:1", body: "Preserved body", comment: ["text=Seeded comment"], note: ["text=Seeded note"], file: ["path=example.ts"], doc: ["path=README.md"], test: ["command=node --version"], acceptanceCriteria: "Retain repaired relations" });
     const id = child.item.id, ids = [parent.item.id, peer.item.id, id];
     const baseline = await native(pmRoot, id), model = structuredClone(baseline);
+    const unselected = await Promise.all(ids.slice(0, 2).map(parentId => native(pmRoot, parentId)));
     const file = join(root, format, "exchange"), output = join(root, format, "exported");
     const settings = await core.readSettings(pmRoot);
     const inputVersions: { text: string; priority: number; deadline: string }[] = [];
@@ -47,7 +48,7 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
       if (format === "markdown" || format === "checkbox") text = `- [ ] ${line} [Task] <!-- ${id} -->\n`;
       else if (format === "todotxt") text = `(${String.fromCharCode(65 + priority)}) Stable native row +todo due:${deadline}\n`;
       else if (format === "todojson") text = JSON.stringify({ action: "list", todos: [{ id: 1, text: "Stable native row", done: false }], nextId: 2 }) + "\n";
-      else text = JSON.stringify({ id, title: "Stable native row", status: active, type: "Task", priority, tags: ["todo"], deadline, description: baseline.metadata.description, created_at: "2020-01-01T00:00:00.000Z", updated_at: "2020-01-02T00:00:00.000Z", creationDate: "2020-01-01", kv: { note: "retained" } }) + "\n";
+      else text = JSON.stringify({ id, title: "Stable native row", status: active, type: "Task", priority, tags: ["todo"], deadline, description: baseline.metadata.description, assignee: "roundtrip-model", sprint: "2026-W48", todos_todotxt: "Source-only retained line", created_at: "2020-01-01T00:00:00.000Z", updated_at: "2020-01-02T00:00:00.000Z", creationDate: "2020-01-01", completionDate: "2020-01-02", kv: { note: "retained", constructor: "literal-key" } }) + "\n";
       const op = (random(4) + sequence) % 4;
       let incoming = { text, priority, deadline };
       if (op === 3 && inputVersions.length) incoming = inputVersions[random(inputVersions.length)];
@@ -63,17 +64,21 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
         assert.equal(repaired.ok, true, JSON.stringify(repaired)); model.metadata.parent = parentId;
       }
       await client.focus(peer.item.id);
-      const options = { format, upsert: true, sectionTags: false, status: active, metadata: true, type: "Task" };
+      const options = { format, upsert: true, sectionTags: false, status: active, metadata: true, type: "Task", filter: "type=Task" };
       // Both importer names and sync share the real native write path.
       if (op % 3 === 0) { await harness.runImporter({ importer: "todos", args: [file], options, pmRoot }); covered.add(`${format}:import`); }
       else if (op % 3 === 1) { await harness.runImporter({ importer: "todos-import", args: [file], options, pmRoot }); covered.add(`${format}:legacy`); }
       else { await harness.runCommand({ command: "todos sync", args: [file], options, pmRoot }); covered.add(`${format}:sync`); }
+      if (op % 3 === 2) {
+        await harness.runCommand({ command: "todos validate", args: [file], options: { format }, pmRoot, sdk });
+        await harness.runImporter({ importer: "todos", args: [file], options, pmRoot });
+      }
       assert.notEqual(process.exitCode, 1, "Native import must not silently drop a record");
       const read = await native(pmRoot, id);
       model.metadata.priority = incoming.priority as 0 | 1 | 2 | 3 | 4; model.metadata.deadline = core.resolveIsoOrRelative(incoming.deadline);
       if (format === "jsonl") {
         model.metadata.todos_source_created_at = "2020-01-01T00:00:00.000Z"; model.metadata.todos_source_updated_at = "2020-01-02T00:00:00.000Z";
-        model.metadata.todos_creation_date = "2020-01-01"; model.metadata.todos_kv = { note: "retained" };
+        model.metadata.todos_creation_date = "2020-01-01"; model.metadata.todos_completion_date = "2020-01-02"; model.metadata.todos_todotxt = "Source-only retained line"; model.metadata.todos_kv = { note: "retained", constructor: "literal-key" };
       }
       // Core timestamps are nondeterministic. Verify them against SDK history,
       // while every value owned by the adapter/model is compared exactly.
@@ -94,6 +99,7 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
       const roundtrip = await native(pmRoot, id);
       for (const key of new Set([...Object.keys(read.metadata), ...Object.keys(roundtrip.metadata)])) if (key !== "updated_at") assert.deepEqual((roundtrip.metadata as unknown as Record<string, unknown>)[key], (read.metadata as unknown as Record<string, unknown>)[key], `${format}/${sequence}: producer ${key}`);
       assert.equal(roundtrip.body, model.body);
+      for (const [index, parentId] of ids.slice(0, 2).entries()) assert.deepEqual(await native(pmRoot, parentId), unselected[index], "Unselected native parents must stay unchanged");
     }
     assert.equal((await core.readSettings(pmRoot)).item_format, settings.item_format);
     t.diagnostic(`${format}: 100 model sequences`);
