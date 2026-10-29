@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.29 - 2026-10-29
+
+### Added
+
+- Preview marked checklist hierarchy repairs before applying relations ([pm-todos-checklist-hierarchy](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-checklist-hierarchy.toon))
+- Coordinate row ownership across selected TODO files ([pm-todos-cross-file](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-cross-file.toon))
+
 ## 2026.10.28 - 2026-10-28
 
 ### Fixed
