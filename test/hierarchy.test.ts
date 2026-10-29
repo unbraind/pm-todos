@@ -103,6 +103,54 @@ test("marked dependencies reuse native blocker updates; cycles and deleted paren
   assert.equal((await apply(f.pmRoot, fresh.session, fresh.text, { author: "peer" })).refusals[0].code, "stale_revision");
 });
 
+/** Assert every durable prefix against public SDK validators using native read-back. */
+async function validTopology(pmRoot: string, ids: string[]): Promise<void> {
+  const items = await state(pmRoot, ids), registry = core.resolveRuntimeStatusRegistry((await core.readSettings(pmRoot)).schema);
+  for (const id of ids) {
+    core.assertHierarchyMutationAllowed([], items, id, status => core.statusIsTerminal(status, registry));
+    assert.deepEqual(core.collectNewOrderingCycleWarnings([], items, id), [], `persisted cycle at ${id}`);
+  }
+}
+
+test("every persisted hierarchy prefix stays valid before a later ownership refusal or interruption", async t => {
+  for (const stop of ["none", "ownership", "interrupt-1", "interrupt-2"] as const) {
+    const f = await fixture(t, 3), [x, z, y] = f.ids;
+    // X -> Z -> Y is stored partly as inverse ordering edges. The edited
+    // checklist lists Y, then child X, then root Z: applying text order cycles.
+    await f.client.update(z, { blockedBy: x, dep: [`id=${x},kind=blocked_by`, `id=${y},kind=blocks`] });
+    if (stop === "ownership") {
+      await f.client.config("project", "set", "governance-ownership-enforcement", "strict");
+      await f.client.claim(z, { author: "peer-owner" });
+    }
+    const exported = await checkout(f.pmRoot, f.ids, "blocked_by"), text = markdown([y, x, z], [null, y, null]);
+    const before = await state(f.pmRoot, f.ids), histories = f.ids.map(id => readFileSync(core.getHistoryPath(f.pmRoot, id), "utf8"));
+    const preview = await apply(f.pmRoot, exported.session, text, { author: "hierarchy-test", dryRun: true });
+    assert.equal(preview.ok, true, JSON.stringify(preview)); assert.equal(preview.changed, 2);
+    assert.deepEqual(await state(f.pmRoot, f.ids), before);
+    const writes: string[] = [];
+    const result = await apply(f.pmRoot, exported.session, text, { author: "hierarchy-test", async onBoundary(at, id) {
+      await validTopology(f.pmRoot, f.ids);
+      if (at === "after_write") {
+        writes.push(id!);
+        if (stop === `interrupt-${writes.length}`) throw new Error("Stop at durable prefix");
+      }
+    } });
+    await validTopology(f.pmRoot, f.ids);
+    assert.deepEqual(writes, stop === "ownership" ? [] : stop === "interrupt-1" ? [z] : [z, x]);
+    assert.equal(result.ok, stop === "none"); assert.equal(result.applied, writes.length);
+    if (stop === "ownership") {
+      assert.equal(result.refusals[0].code, "native_refusal"); assert.deepEqual(await state(f.pmRoot, f.ids), before);
+      assert.deepEqual(f.ids.map(id => readFileSync(core.getHistoryPath(f.pmRoot, id), "utf8")), histories);
+    } else {
+      const retry = await apply(f.pmRoot, exported.session, text, { author: "hierarchy-test" });
+      assert.equal(retry.ok, true, JSON.stringify(retry)); assert.equal(retry.applied, 2 - writes.length);
+      await validTopology(f.pmRoot, f.ids);
+      assert.equal((await state(f.pmRoot, [x]))[0].blocked_by, y);
+      assert.equal((await state(f.pmRoot, [z]))[0].blocked_by, undefined);
+    }
+  }
+});
+
 test("orphans, ambiguous indentation, duplicate/unknown markers and native parent cycles are typed non-writing refusals", async t => {
   const f = await fixture(t), exported = await checkout(f.pmRoot, f.ids.slice(0, 3)), before = await state(f.pmRoot, f.ids);
   for (const [text, code] of [
@@ -192,14 +240,18 @@ test("500 seeded operation sequences compare SDK state with an independent relat
       parseTodoHierarchySession(JSON.parse(JSON.stringify(exported.session)));
       const op = (random(9) + sequence) % 9; operations.add(op);
       const proposed = [...targets];
-      if (op < 3) proposed[1 + random(2)] = random(2) ? ids[0] : null;
+      if (op < 3) {
+        const order = [...ids];
+        for (let index = order.length - 1; index > 0; index--) { const other = random(index + 1); [order[index], order[other]] = [order[other], order[index]]; }
+        for (const [index, id] of order.entries()) proposed[ids.indexOf(id)] = index && random(2) ? order[random(index)] : null;
+      }
       const text = markdown(ids, proposed, sequence % 2 === 0).replaceAll("Same title", sequence % 3 ? "  Similar  titles  " : "__proto__ constructor: old title");
       await f.client.focus(f.ids[random(f.ids.length)]);
       const snapshotBefore = await state(f.pmRoot, f.ids);
       const preview = await apply(f.pmRoot, exported.session, text, { author: "model-agent", dryRun: true });
       assert.equal(preview.ok, true, JSON.stringify(preview)); counts(preview);
       assert.deepEqual(await state(f.pmRoot, f.ids), snapshotBefore);
-      const result = await apply(f.pmRoot, exported.session, text, { author: "model-agent" });
+      const result = await apply(f.pmRoot, exported.session, text, { author: "model-agent", async onBoundary(boundary) { if (boundary === "after_write") await validTopology(f.pmRoot, f.ids); } });
       assert.equal(result.ok, true, `${cohort}/${sequence}/${op}: ${JSON.stringify(result)}`); assert.equal(result.changed, preview.changed); counts(result);
       const readBack = await state(f.pmRoot, f.ids);
       for (const item of readBack) {

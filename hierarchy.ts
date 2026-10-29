@@ -273,6 +273,12 @@ export async function applyTodoHierarchy(pmRoot: string, session: unknown, text:
     const marker = (id: string) => `pm-todos-hierarchy-v1:${transaction}:${id}`;
     const baseline = new Map(parsed.session.rows.map(row => [row.id, row]));
     result.selected = intent.length;
+    /** Validate the same native transition for the final graph, each scheduled prefix and the locked write. */
+    const validate = (before: ItemDocument["metadata"][], after: ItemDocument["metadata"][], id: string) => {
+      try { core.assertHierarchyMutationAllowed(before, after, id, status => core.statusIsTerminal(status, registry)); }
+      catch { refuse("cycle", "The proposal violates native hierarchy topology. Review parent/dependency edges and export again.", id); }
+      if (core.collectNewOrderingCycleWarnings(before, after, id).length) refuse("cycle", "The proposal creates a native dependency cycle. Remove the conflicting relation and preview again.", id);
+    };
     /** Re-read all selected targets and relevant native topology before each decision/write. */
     const plan = async () => {
       const current = new Map<string, Snapshot>();
@@ -291,10 +297,25 @@ export async function applyTodoHierarchy(pmRoot: string, session: unknown, text:
       });
       for (const row of intent) if (row.target && !current.has(row.target)) refuse("missing_item", "The proposed parent must be a selected, existing marked row.", row.id);
       const changes = intent.filter(row => target(core, current.get(row.id)!.document, relation) !== row.target).map(row => ({ id: row.id, relation, before: target(core, current.get(row.id)!.document, relation), after: row.target }));
-      for (const row of changes) {
-        try { core.assertHierarchyMutationAllowed(before, after, row.id, status => core.statusIsTerminal(status, registry)); }
-        catch { refuse("cycle", "The proposal violates native hierarchy topology. Review parent/dependency edges and export again.", row.id); }
-        if (core.collectNewOrderingCycleWarnings(before, after, row.id).length) refuse("cycle", "The proposal creates a native dependency cycle. Remove the conflicting relation and preview again.", row.id);
+      for (const row of changes) validate(before, after, row.id);
+      // A valid final graph is insufficient: ownership, storage or interruption
+      // can stop after any write. Find an order whose EVERY durable prefix is
+      // valid, without temporary detach writes or relying on later compensation.
+      const desired = new Map(after.map(item => [item.id, item]));
+      const pending = [...changes], writes: typeof changes = [];
+      let intermediate = before;
+      while (pending.length) {
+        let accepted = false;
+        for (const [index, change] of pending.entries()) {
+          const next = intermediate.map(item => item.id === change.id ? desired.get(item.id)! : item);
+          try { validate(intermediate, next, change.id); }
+          catch (error) {
+            if (!(error instanceof TodoHierarchyError) || error.detail.code !== "cycle") throw error;
+            continue;
+          }
+          writes.push(change); pending.splice(index, 1); intermediate = next; accepted = true; break;
+        }
+        if (!accepted) refuse("cycle", "No fully validated sequence of native item writes was found. Review conflicting relations through native commands, then export again.", pending[0].id);
       }
       const graphs = changes.length ? [core.RelationshipGraph.fromItems(before), core.RelationshipGraph.fromItems(after)] : [], affected = new Set<string>();
       for (const change of changes) {
@@ -308,13 +329,13 @@ export async function applyTodoHierarchy(pmRoot: string, session: unknown, text:
         }
       }
       if (affected.size > MAX_ROWS) refuse("invalid_input", "Narrow the affected topology to at most 1000 nodes.");
-      return { current, changes, affected: [...affected].sort() };
+      return { current, changes, writes, before, desired, affected: [...affected].sort() };
     };
     const initial = await plan();
     result = { ...result, ok: true, changed: initial.changes.length, unchanged: intent.length - initial.changes.length, changes: initial.changes.slice(0, OUTPUT_ROWS), omittedChanges: Math.max(0, initial.changes.length - OUTPUT_ROWS), affected: initial.affected.slice(0, OUTPUT_ROWS), omittedAffected: Math.max(0, initial.affected.length - OUTPUT_ROWS) };
     await options.onBoundary?.("planned");
     if (options.dryRun) return receipt(result);
-    for (const change of initial.changes) {
+    for (const change of initial.writes) {
       await options.onBoundary?.("before_write", change.id);
       const fresh = await plan();
       if (!fresh.changes.some(row => row.id === change.id)) continue;
@@ -323,10 +344,13 @@ export async function applyTodoHierarchy(pmRoot: string, session: unknown, text:
       const written = await core.mutateItem({ pmRoot, settings, id: change.id, op: "update", author: options.author, message: marker(change.id), skipNoop: true, extensionFieldNames: EXTENSIONS,
         async mutate(document) {
           await options.onBoundary?.("locked", change.id);
-          await plan();
+          const lockedPlan = await plan();
           const locked = await snapshot(core, pmRoot, settings, change.id);
           checkRevision(core, locked, baseline.get(change.id)!, relation, change.after, marker(change.id));
           if (core.stableUpsertValue(core.canonicalDocument(document)) !== core.stableUpsertValue(core.canonicalDocument(locked.document))) refuse("stale_revision", "The native locked document differs from the verified SDK revision. Preview again.", change.id);
+          // The live graph may now need a different order. Validate THIS write,
+          // rather than assuming the remaining final graph makes it safe.
+          validate(lockedPlan.before, lockedPlan.before.map(item => item.id === change.id ? lockedPlan.desired.get(item.id)! : item), change.id);
           return { changedFields: propose(core, document, relation, change.after, options.author, core.nowIso()) };
         },
       });

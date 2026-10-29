@@ -93,9 +93,18 @@ refuse with a remedy. There is no package-owned mutable checkpoint, claim, lease
 or frozen journal plan to replay. A skipped export row cannot authorize a child
 that depends on it.
 
+Preview and apply validate the final graph and schedule only native item changes
+whose every persisted intermediate graph passes the same SDK topology validators.
+The order can differ from checklist order: for example, a blocker detachment must
+precede an edge that would otherwise form a temporary cycle. No temporary detach
+writes or compensating edits are invented. If no fully validated sequence is found, `cycle`
+refuses before writes with a native-review remedy. A later ownership refusal or
+interruption therefore leaves only previously validated graph prefixes.
+
 All known conflicts and native topology failures prevent writes. Before **each**
 native write, apply re-reads every selected revision and revalidates topology
-inside that target's native item lock. Ordinary SDK writers share this item lock,
+inside that target's native item lock, including the exact next intermediate
+graph rather than only the planned final graph. Ordinary SDK writers share this item lock,
 so a concurrent edit to that target cannot slip past the revision check. Other
 items can still change after their last read and before this target is persisted.
 There is no workspace isolation from ordinary writers (pm-cli #1620/#1576). No multi-item atomicity is claimed. A late race or native

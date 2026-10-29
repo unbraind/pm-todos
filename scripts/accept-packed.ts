@@ -32,6 +32,7 @@ interface AcceptanceReceipt {
   readonly hierarchy_rows: number;
   readonly hierarchy_applied: number;
   readonly hierarchy_replay_changed: number;
+  readonly hierarchy_prefix_safe: true;
   readonly source_replay_changed: number;
   readonly rollback_recovered: true;
   readonly copied_apply_refused: true;
@@ -218,6 +219,27 @@ try {
     if (hierarchyPreview.changed !== 1 || hierarchyApply.applied !== 1 || hierarchyReplay.changed !== 0) throw new Error("Packed hierarchy preview/apply/replay mismatch");
     const hierarchyChild = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", hierarchyIds[1]!, "--full", "--json"]).stdout, "hierarchy native read-back");
     if ((hierarchyChild.item as Record<string, unknown>).parent !== hierarchyIds[0]) throw new Error("Packed hierarchy relation did not persist");
+    // A claimed prerequisite must stop the entire unsafe prefix, in JSON and
+    // TOON, under every supported local/global package-manager consumer.
+    const prefixDriverDirectory = join(scenarioEnvironment.PM_PATH!, "extensions", "pm-todos", ".accept-hierarchy");
+    mkdirSync(prefixDriverDirectory);
+    const prefixDriver = join(prefixDriverDirectory, "prefix.js");
+    writeFileSync(prefixDriver, stripTypeScriptTypes(readFileSync(join(repoRoot, "scripts", "accept-hierarchy-prefix.ts"), "utf8")));
+    const prefixFile = join(scenarioRoot, "prefix.md"), prefixSession = join(scenarioRoot, "prefix.json");
+    const prefixDriverArgs = [prefixDriver, scenarioEnvironment.PM_PATH!, prefixFile, prefixSession];
+    run(process.execPath, [...prefixDriverArgs, "seed"], scenarioRoot, scenarioEnvironment);
+    const prefixArgs = ["--file", prefixFile, "--session", prefixSession];
+    const prefixFormat = scenario.manager === "npm" ? ["--json"] : [];
+    /** Decode either public output transport without a separate graph oracle. */
+    const prefixReceipt = (stdout: string) => requireJsonObject(prefixFormat.length ? stdout : JSON.stringify(decodeToon(stdout)), "hierarchy prefix");
+    const prefixPreview = prefixReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "preview", ...prefixArgs, ...prefixFormat]).stdout);
+    if (prefixPreview.ok !== true || prefixPreview.changed !== 2) throw new Error("Packed prefix preview failed");
+    const prefixRefused = prefixReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...prefixArgs, ...prefixFormat], 1).stdout);
+    if (prefixRefused.ok !== false || prefixRefused.applied !== 0 || (prefixRefused.refusals as Record<string, unknown>[])[0]?.code !== "native_refusal") throw new Error("Packed hierarchy persisted an unsafe prefix before ownership refusal");
+    run(process.execPath, [...prefixDriverArgs, "verify-refused"], scenarioRoot, scenarioEnvironment);
+    const prefixApplied = prefixReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...prefixArgs, ...prefixFormat]).stdout);
+    if (prefixApplied.ok !== true || prefixApplied.applied !== 2) throw new Error("Packed safe prefix ordering failed");
+    run(process.execPath, [...prefixDriverArgs, "verify-applied"], scenarioRoot, scenarioEnvironment);
     const selectionFile = join(scenarioRoot, "selection.json"), manifestFile = join(scenarioRoot, "sources.json");
     const edits = join(scenarioRoot, "edits"); mkdirSync(edits);
     const selectedIds = rows.map(row => String(row.id));
@@ -291,6 +313,7 @@ try {
       hierarchy_rows: hierarchyIds.length,
       hierarchy_applied: hierarchyApply.applied as number,
       hierarchy_replay_changed: hierarchyReplay.changed as number,
+      hierarchy_prefix_safe: true,
       source_replay_changed: sourceReplay.changed as number,
       rollback_recovered: true,
       copied_apply_refused: true,

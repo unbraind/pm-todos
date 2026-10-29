@@ -665,7 +665,9 @@ pm todos hierarchy apply --file checklist.md --session hierarchy.json --json
 
 Preview returns only relation changes and affected ancestors/descendants, capped
 at 40 rows per array with omission counts. Both preview and apply use the same
-planner, native SDK topology checks and the native item-mutation API. Orphans,
+planner, native SDK topology checks and the native item-mutation API. It schedules
+writes so every persisted intermediate graph is valid, including when a later
+step refuses ownership or is interrupted. Orphans,
 ambiguous jumps, duplicate/unknown markers, deleted parents, cycles and stale
 history revisions return typed refusals with remedies. Preview does not write
 native items, history or journals. See [the worked example](docs/checklist-hierarchy.md)
