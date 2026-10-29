@@ -29,6 +29,9 @@ interface AcceptanceReceipt {
   readonly stderr_bytes: number;
   readonly fixtures_present: true;
   readonly source_rows: number;
+  readonly hierarchy_rows: number;
+  readonly hierarchy_applied: number;
+  readonly hierarchy_replay_changed: number;
   readonly source_replay_changed: number;
   readonly rollback_recovered: true;
   readonly copied_apply_refused: true;
@@ -119,8 +122,8 @@ try {
     { name: "bun-current", manager: "bun", hostVersion: developmentVersion },
     { name: "npm-minimum", manager: "npm", hostVersion: minimumVersion },
     { name: "bun-minimum", manager: "bun", hostVersion: minimumVersion },
-    { name: "npm-global", manager: "npm", hostVersion: "2026.10.26", global: true },
-    { name: "bun-global", manager: "bun", hostVersion: "2026.10.26", global: true },
+    { name: "npm-global", manager: "npm", hostVersion: "2026.10.28", global: true },
+    { name: "bun-global", manager: "bun", hostVersion: "2026.10.28", global: true },
   ];
   const receipts: AcceptanceReceipt[] = [];
 
@@ -199,6 +202,22 @@ try {
     if (/deprecated|list-all/iu.test(stderr)) {
       throw new Error(`${scenario.name} emitted a deprecated-command diagnostic: ${stderr.trim()}`);
     }
+    // Exercise the shipped hierarchy module through every global/local launcher.
+    const hierarchySelection = join(scenarioRoot, "hierarchy-ids.json"), hierarchyFile = join(scenarioRoot, "hierarchy.md"), hierarchySession = join(scenarioRoot, "hierarchy.json");
+    const hierarchyIds = rows.map(row => String(row.id));
+    writeFileSync(hierarchySelection, JSON.stringify(hierarchyIds));
+    const hierarchyArgs = ["--file", hierarchyFile, "--session", hierarchySession];
+    const hierarchyExport = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "export", "--selection", hierarchySelection, ...hierarchyArgs, "--json"]).stdout, "hierarchy export");
+    if (hierarchyExport.selected !== 2) throw new Error("Packed hierarchy selection omitted an identity");
+    const hierarchyLines = readFileSync(hierarchyFile, "utf8").trimEnd().split("\n");
+    hierarchyLines[1] = "  " + hierarchyLines[1];
+    writeFileSync(hierarchyFile, hierarchyLines.join("\r\n") + "\r\n");
+    const hierarchyPreview = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "preview", ...hierarchyArgs, "--json"]).stdout, "hierarchy preview");
+    const hierarchyApply = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...hierarchyArgs, "--json"]).stdout, "hierarchy apply");
+    const hierarchyReplay = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...hierarchyArgs, "--json"]).stdout, "hierarchy replay");
+    if (hierarchyPreview.changed !== 1 || hierarchyApply.applied !== 1 || hierarchyReplay.changed !== 0) throw new Error("Packed hierarchy preview/apply/replay mismatch");
+    const hierarchyChild = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", hierarchyIds[1]!, "--full", "--json"]).stdout, "hierarchy native read-back");
+    if ((hierarchyChild.item as Record<string, unknown>).parent !== hierarchyIds[0]) throw new Error("Packed hierarchy relation did not persist");
     const selectionFile = join(scenarioRoot, "selection.json"), manifestFile = join(scenarioRoot, "sources.json");
     const edits = join(scenarioRoot, "edits"); mkdirSync(edits);
     const selectedIds = rows.map(row => String(row.id));
@@ -269,6 +288,9 @@ try {
       stderr_bytes: Buffer.byteLength(stderr),
       fixtures_present: true,
       source_rows: selectedIds.length,
+      hierarchy_rows: hierarchyIds.length,
+      hierarchy_applied: hierarchyApply.applied as number,
+      hierarchy_replay_changed: hierarchyReplay.changed as number,
       source_replay_changed: sourceReplay.changed as number,
       rollback_recovered: true,
       copied_apply_refused: true,

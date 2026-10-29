@@ -22,6 +22,8 @@ export * from "./recurrence.ts";
 import { previewTodoOccurrence, applyTodoOccurrence } from "./recurrence.ts";
 export * from "./sessions.ts";
 export * from "./source-sessions.ts";
+export * from "./hierarchy.ts";
+import { runTodoHierarchyCommand } from "./hierarchy-command.ts";
 import { runTodoSourceCommand } from "./source-session-command.ts";
 import { exportTodoEditingSession, applyTodoEditingSession } from "./sessions.ts";
 export * from "./watcher.ts";
@@ -2784,6 +2786,18 @@ export default defineExtension({
   version: "2026.10.28",
 
   activate(api: ExtensionApi) {
+    api.registerCommand({
+      name: "todos hierarchy",
+      description: "Export, preview or apply reviewed native relations from marked checklist indentation.",
+      arguments: [{ name: "action", required: true, description: "export | preview | apply" }],
+      flags: [
+        { long: "--selection", value_name: "path", description: "JSON array of canonical item IDs (export only)" },
+        { long: "--file", value_name: "path", description: "Marked Markdown checklist" },
+        { long: "--session", value_name: "path", description: "Unchanged revision baseline JSON" },
+        { long: "--relation", value_name: "kind", description: "parent (default) | blocked_by (export only)" },
+      ],
+      run: runTodoHierarchyCommand,
+    });
     api.registerCommand({
       name: "todos sources",
       description: "Export, preview or atomically apply row ownership across explicitly selected todo.txt files.",
