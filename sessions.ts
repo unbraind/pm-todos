@@ -1,6 +1,7 @@
+import { todoExtensionFieldNames, withTodoWorkspace } from "./workspace.ts";
 /** Conflict-aware todo.txt sessions, independent of git and table importers. */
 import { createHash } from "node:crypto";
-import { getHistoryPath, listAllComplete, mutateItem, readHistoryEntries, readSettings, verifyHistoryEntries, type RuntimeStatusRegistry } from "@unbrained/pm-cli/sdk";
+import { getActiveExtensionRegistrations, runWithActiveExtensions, getHistoryPath, listAllComplete, mutateItem, readHistoryEntries, readSettings, verifyHistoryEntries, type RuntimeStatusRegistry } from "@unbrained/pm-cli/sdk";
 import { parseTodoTxtLine, serializeTodoTxtLine, todoTxtItemToPm, type PmItem } from "./index.ts";
 
 /** Fields represented by an editable todo.txt line. */
@@ -161,46 +162,50 @@ export function normalizeTodoEditingText(text: string): string {
 }
 /** Read a certified complete tracker snapshot using the public SDK. */
 export async function exportTodoEditingSession(pmRoot: string): Promise<ReturnType<typeof createTodoEditingSession>> {
-  const result = await listAllComplete({}, { pmRoot });
-  return createTodoEditingSession(result.items as PmItem[]);
+  return withTodoWorkspace({ runWithActiveExtensions }, pmRoot, async () => {
+    const result = await listAllComplete({}, { pmRoot });
+    return createTodoEditingSession(result.items as PmItem[]);
+  });
 }
 /** Apply per-item changes under core item locks, with append-only history. */
 export async function applyTodoEditingSession(pmRoot: string, session: unknown, text: string, options: { author: string; dryRun?: boolean }): Promise<TodoSessionResult> {
-  const current = await listAllComplete({}, { pmRoot });
-  const preview = plan(session, text, current.items as PmItem[]);
-  if (!preview.result.ok || options.dryRun || !preview.patches.length) return preview.result;
-  const settings = await readSettings(pmRoot);
-  const baselines = new Map((session as TodoEditingSession).entries.map(entry => [entry.id, entry]));
-  const linesById = new Map<string, string[]>();
-  for (const raw of text.split(/\r?\n/)) {
-    const id = sessionLine(raw)?.id;
-    if (!id) continue;
-    const lines = linesById.get(id);
-    if (lines) lines.push(raw); else linesById.set(id, [raw]);
-  }
-  for (const patch of preview.patches) {
-    try {
-      await mutateItem({ pmRoot, settings, id: patch.id, op: "update", author: options.author, skipNoop: true, message: "Reconcile todo.txt editing session", extensionFieldNames: ["todos_todotxt", "todos_kv", "todos_creation_date", "todos_completion_date"], async mutate(document) {
-        // An event-index cache is not an integrity receipt. Verify fresh history
-        // against the locked item before a proposed edit can drive a write.
-        const history = await readHistoryEntries(getHistoryPath(pmRoot, patch.id), patch.id);
-        if (!history.length || !verifyHistoryEntries(history, document).ok) throw new Error("Session history integrity verification failed");
-        // Compare against the original baseline while holding the same item lock
-        // used by ordinary core writers. Independent fields survive this merge.
-        const row = baselines.get(patch.id);
-        const locked = plan(row ? { version: 1, entries: [row], digest: digest([row]) } : null, (linesById.get(patch.id) ?? []).join("\n"), [document.metadata as PmItem]);
-        if (!locked.result.ok) throw Object.assign(new Error("Session conflict"), { refusals: locked.result.refusals });
-        const values = locked.patches[0]?.values ?? {};
-        for (const [field, value] of Object.entries(values)) {
-          if (value === undefined) delete document.metadata[field]; else document.metadata[field] = value;
-        }
-        return { changedFields: Object.keys(values) };
-      } });
-      preview.result.applied++;
-    } catch (error) {
-      const known = error instanceof Error && "refusals" in error ? error.refusals as TodoSessionRefusal[] : [{ code: "write_failed" as const, id: patch.id, remedy: "Inspect pm ownership, workflow and health; preserve this receipt and preview again before retrying." }];
-      return { ...preview.result, ok: false, refusalCount: known.length, refusals: known, hasMore: false };
+  return withTodoWorkspace({ runWithActiveExtensions }, pmRoot, async () => {
+    const current = await listAllComplete({}, { pmRoot });
+    const preview = plan(session, text, current.items as PmItem[]);
+    if (!preview.result.ok || options.dryRun || !preview.patches.length) return preview.result;
+    const settings = await readSettings(pmRoot);
+    const baselines = new Map((session as TodoEditingSession).entries.map(entry => [entry.id, entry]));
+    const linesById = new Map<string, string[]>();
+    for (const raw of text.split(/\r?\n/)) {
+      const id = sessionLine(raw)?.id;
+      if (!id) continue;
+      const lines = linesById.get(id);
+      if (lines) lines.push(raw); else linesById.set(id, [raw]);
     }
-  }
-  return preview.result;
+    for (const patch of preview.patches) {
+      try {
+        await mutateItem({ pmRoot, settings, id: patch.id, op: "update", author: options.author, skipNoop: true, message: "Reconcile todo.txt editing session", extensionFieldNames: todoExtensionFieldNames({ getActiveExtensionRegistrations }), async mutate(document) {
+          // An event-index cache is not an integrity receipt. Verify fresh history
+          // against the locked item before a proposed edit can drive a write.
+          const history = await readHistoryEntries(getHistoryPath(pmRoot, patch.id), patch.id);
+          if (!history.length || !verifyHistoryEntries(history, document).ok) throw new Error("Session history integrity verification failed");
+          // Compare against the original baseline while holding the same item lock
+          // used by ordinary core writers. Independent fields survive this merge.
+          const row = baselines.get(patch.id);
+          const locked = plan(row ? { version: 1, entries: [row], digest: digest([row]) } : null, (linesById.get(patch.id) ?? []).join("\n"), [document.metadata as PmItem]);
+          if (!locked.result.ok) throw Object.assign(new Error("Session conflict"), { refusals: locked.result.refusals });
+          const values = locked.patches[0]?.values ?? {};
+          for (const [field, value] of Object.entries(values)) {
+            if (value === undefined) delete document.metadata[field]; else document.metadata[field] = value;
+          }
+          return { changedFields: Object.keys(values) };
+        } });
+        preview.result.applied++;
+      } catch (error) {
+        const known = error instanceof Error && "refusals" in error ? error.refusals as TodoSessionRefusal[] : [{ code: "write_failed" as const, id: patch.id, remedy: "Inspect pm ownership, workflow and health; preserve this receipt and preview again before retrying." }];
+        return { ...preview.result, ok: false, refusalCount: known.length, refusals: known, hasMore: false };
+      }
+    }
+    return preview.result;
+  });
 }

@@ -560,6 +560,10 @@ moving it updates `todos_source_file` once. Duplicate ownership or a stale row i
 any selected file refuses the selection; unrelated files remain outside scope.
 The typed SDK reuses the editing-session planner and native SDK transactions.
 See the [cross-file example and concurrency contract](docs/source-editing-sessions.md).
+Scoped source-file IO uses kernel directory descriptors to prevent ancestor
+replacement from redirecting reads or creates. Linux procfs is supported; hosts
+without a descriptor-relative filesystem view receive a typed `source_scope`
+refusal. The in-memory SDK does not require this filesystem capability.
 
 Use `pm todos session export --file todo.txt --session baseline.json`, edit the
 text while retaining each `pm-session:<id>` token, then run `preview` and `apply`
@@ -645,3 +649,35 @@ refuse the whole proposal with a typed code and remedy; they never silently trun
 changes or evict pending work. Queue writes use the public SDK atomic writer and
 queue lock. This guarantees completed proposals survive normal shutdown and
 process restart; it does not assert power-loss durability.
+
+## Checklist hierarchy repair previews
+
+`pm todos hierarchy export|preview|apply` gives **reviewed indentation** native
+relationship meaning. Select exact item IDs in a JSON array, export a marked
+Markdown checklist and keep its revision sidecar unchanged. Two spaces per level
+propose a scalar `parent`; `--relation blocked_by` explicitly opts into a native
+blocker/dependency instead. Text, checkbox edits and similar titles never pick a
+parent or change a native field. Ordinary import/export/sync retain their existing
+contracts; hierarchy application is a separate explicit action.
+
+```sh
+pm todos hierarchy export --selection ids.json --file checklist.md --session hierarchy.json
+# Reindent identified rows, retaining their pm-session markers.
+pm todos hierarchy preview --file checklist.md --session hierarchy.json --json
+pm todos hierarchy apply --file checklist.md --session hierarchy.json --json
+```
+
+Preview returns only relation changes and affected ancestors/descendants, capped
+at 40 rows per array with omission counts. Both preview and apply use the same
+planner, native SDK topology checks and the native item-mutation API. The SDK
+activates the target workspace registry, including unselected extension-defined
+types. Native reads and writes retain other registered extensions’ fields under
+strict unknown-field rejection; each workflow updates its documented fields.
+It schedules writes so every persisted intermediate graph is valid, including when a later
+step refuses ownership or is interrupted. Orphans,
+ambiguous jumps, duplicate/unknown markers, deleted parents, cycles and stale
+history revisions return typed refusals with remedies. Preview does not write
+native items, history or journals. See [the worked example](docs/checklist-hierarchy.md)
+for SDK calls, limits, concurrency and retry semantics. These commands work
+without git; only the optional public-corpus validation script uses git to extract
+committed public input.

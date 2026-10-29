@@ -8,7 +8,7 @@ import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
 import extension from "../index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "pm-todos-canonical-reader-"));
-const client = new PmClient({ pmRoot: join(root, "tracker"), cwd: root, author: "reader-fixture", noExtensions: true });
+const client = new PmClient({ pmRoot: join(root, "tracker"), cwd: root, author: "reader-fixture" });
 const harness = await createExtensionTestHarness(extension, {
   name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"],
 });

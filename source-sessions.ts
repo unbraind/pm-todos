@@ -1,3 +1,4 @@
+import { todoExtensionFieldNames, withTodoWorkspace, type TodoWorkspaceSdk } from "./workspace.ts";
 /** Explicit cross-file ownership; core owns item storage, leases and transaction journals. */
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
@@ -7,7 +8,7 @@ import { createTodoEditingSession, planTodoEditingSession, normalizeTodoEditingT
 import type { PmItem } from "./index.ts";
 
 /** Public SDK primitives injectable by standalone callers; never discover a host via argv. */
-export type TodoSourceSdk = Pick<typeof CoreSdk, "acquireLockLease" | "readSettings" | "locateItem" | "readLocatedItem" | "readHistoryEntries" | "getHistoryPath" | "verifyHistoryEntries" | "mutateItem" | "commitWorkspaceTransaction" | "deriveMutationTransactionId" | "resolveRuntimeStatusRegistry" | "resolveItemTypeRegistry" | "replayHistoryToTarget" | "applyHistoryPatch" | "canonicalDocument" | "stableUpsertValue">;
+export type TodoSourceSdk = TodoWorkspaceSdk & Pick<typeof CoreSdk, "acquireLockLease" | "readSettings" | "locateItem" | "readLocatedItem" | "readHistoryEntries" | "getHistoryPath" | "verifyHistoryEntries" | "mutateItem" | "commitWorkspaceTransaction" | "deriveMutationTransactionId" | "resolveRuntimeStatusRegistry" | "resolveItemTypeRegistry" | "replayHistoryToTarget" | "applyHistoryPatch" | "canonicalDocument" | "stableUpsertValue">;
 /** An explicit, disjoint initial selection, bounded to 32 files and 1000 rows. */
 export interface TodoSourceSelection { sources: { file: string; ids: string[] }[] }
 /** Editable content is supplied separately from the immutable manifest. */
@@ -61,7 +62,6 @@ export class TodoSourceError extends Error {
 /** Export and apply use one schema, including the producers' own output. */
 type Request = { action: "export"; selection: TodoSourceSelection } | { action: "apply"; manifest: TodoSourceManifest; files: TodoSourceFile[] };
 interface Snapshot { document: ItemDocument; history: Awaited<ReturnType<TodoSourceSdk["readHistoryEntries"]>>; revision: string }
-const EXTENSIONS = ["todos_todotxt", "todos_kv", "todos_creation_date", "todos_completion_date", "todos_source_file"];
 const FIELD_NAMES = ["title", "priority", "tags", "deadline", "todos_creation_date", "todos_completion_date", "todos_kv", "todos_todotxt", "status"];
 const WRITE_FIELDS = new Set([...FIELD_NAMES.filter(field => field !== "status"), "todos_source_file"]);
 const MAX_BYTES = 4 * 1024 * 1024;
@@ -193,9 +193,9 @@ export function parseTodoSourceManifest(input: unknown): TodoSourceManifest {
 async function snapshot(core: TodoSourceSdk, pmRoot: string, settings: PmSettings, id: string, document?: ItemDocument): Promise<Snapshot> {
   try {
   if (!document) {
-    const located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings).type_to_folder);
+    const located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings, core.getActiveExtensionRegistrations()).type_to_folder);
     if (!located) throw new TodoSourceError("stale_revision", "Restore the missing row or export a fresh selection.", id);
-    document = (await core.readLocatedItem(located, { schema: settings.schema, extensionFieldNames: EXTENSIONS })).document;
+    document = (await core.readLocatedItem(located, { schema: settings.schema, extensionFieldNames: todoExtensionFieldNames(core) })).document;
   }
   const history = await core.readHistoryEntries(core.getHistoryPath(pmRoot, id), id);
   if (!history.length || !core.verifyHistoryEntries(history, document).ok) throw new TodoSourceError("invalid_history", "Inspect pm health and preserve the damaged history; export again only after integrity is restored.", id);
@@ -209,7 +209,7 @@ async function snapshot(core: TodoSourceSdk, pmRoot: string, settings: PmSetting
 function marker(transaction: string, id: string, phase = "apply"): string { return `pm-todos-source-v1:${transaction}:${id}:${phase}`; }
 /** Compare SDK-normalized values, projecting only ownership fields or the fields they must preserve. */
 function recoveryValues(core: TodoSourceSdk, document: ItemDocument, settings: PmSettings, owned: boolean): string {
-  const canonical = core.canonicalDocument(document, { schema: settings.schema, extensionFieldNames: EXTENSIONS });
+  const canonical = core.canonicalDocument(document, { schema: settings.schema, extensionFieldNames: todoExtensionFieldNames(core) });
   const metadata = Object.fromEntries(Object.entries(canonical.metadata).filter(([field]) => field !== "updated_at" && field !== "item_format_version" && WRITE_FIELDS.has(field) === owned));
   return core.stableUpsertValue(owned ? { metadata } : { metadata, body: canonical.body });
 }
@@ -283,43 +283,46 @@ function proposals(manifest: TodoSourceManifest, files: TodoSourceFile[], curren
 export async function exportTodoSourceSelection(pmRoot: string, input: unknown, options: { sdk?: TodoSourceSdk } = {}): Promise<TodoSourceExport> {
   const parsed = request({ action: "export", selection: input });
   if (parsed.action !== "export") throw new Error("unreachable");
-  const core = sdk(options.sdk), settings = await core.readSettings(pmRoot);
-  const snapshots = new Map<string, Snapshot>();
-  const sources: TodoSourceManifest["sources"] = [];
-  const files: TodoSourceFile[] = [];
-  const registry = core.resolveRuntimeStatusRegistry(settings.schema);
-  let skipped = 0;
-  const refusals: TodoSourceRefusal[] = [];
-  for (const source of parsed.selection.sources) {
-    const rows: TodoSourceRow[] = [], texts: string[] = [];
-    for (const id of source.ids) {
-      try {
-      const current = await snapshot(core, pmRoot, settings, id);
-      if (current.document.metadata.id !== id) throw new TodoSourceError("invalid_input", "Select canonical complete item ids.");
-      const owner = current.document.metadata.todos_source_file ?? null;
-      if (owner !== null && owner !== source.file) throw new TodoSourceError("foreign_owner", "Select this row under its current owning file, then move its identified line.", id);
-      let exported: ReturnType<typeof createTodoEditingSession>;
-      try { exported = createTodoEditingSession([current.document.metadata as PmItem], registry); }
-      catch { throw new TodoSourceError("session_refused", "This row cannot round-trip through todo.txt. Exclude it and use JSONL for that row.", id); }
-      texts.push(exported.text); snapshots.set(id, current);
-      rows.push({ id, revision: current.revision, owner: owner as string | null });
-      } catch (error) {
-        if (!(error instanceof TodoSourceError)) throw error;
-        skipped++;
-        if (refusals.length < 20) refusals.push({ code: error.code, remedy: error.remedy, id });
+  const core = sdk(options.sdk);
+  return withTodoWorkspace(core, pmRoot, async () => {
+    const settings = await core.readSettings(pmRoot);
+    const snapshots = new Map<string, Snapshot>();
+    const sources: TodoSourceManifest["sources"] = [];
+    const files: TodoSourceFile[] = [];
+    const registry = core.resolveRuntimeStatusRegistry(settings.schema);
+    let skipped = 0;
+    const refusals: TodoSourceRefusal[] = [];
+    for (const source of parsed.selection.sources) {
+      const rows: TodoSourceRow[] = [], texts: string[] = [];
+      for (const id of source.ids) {
+        try {
+        const current = await snapshot(core, pmRoot, settings, id);
+        if (current.document.metadata.id !== id) throw new TodoSourceError("invalid_input", "Select canonical complete item ids.");
+        const owner = current.document.metadata.todos_source_file ?? null;
+        if (owner !== null && owner !== source.file) throw new TodoSourceError("foreign_owner", "Select this row under its current owning file, then move its identified line.", id);
+        let exported: ReturnType<typeof createTodoEditingSession>;
+        try { exported = createTodoEditingSession([current.document.metadata as PmItem], registry); }
+        catch { throw new TodoSourceError("session_refused", "This row cannot round-trip through todo.txt. Exclude it and use JSONL for that row.", id); }
+        texts.push(exported.text); snapshots.set(id, current);
+        rows.push({ id, revision: current.revision, owner: owner as string | null });
+        } catch (error) {
+          if (!(error instanceof TodoSourceError)) throw error;
+          skipped++;
+          if (refusals.length < 20) refusals.push({ code: error.code, remedy: error.remedy, id });
+        }
       }
+      sources.push({ file: source.file, rows }); files.push({ file: source.file, text: texts.join("") });
     }
-    sources.push({ file: source.file, rows }); files.push({ file: source.file, text: texts.join("") });
-  }
-  if (!snapshots.size) {
-    const first = refusals[0];
-    throw new TodoSourceError(first.code, first.remedy, first.id);
-  }
-  const session = createTodoEditingSession([...snapshots.values()].map(row => row.document.metadata as PmItem), registry).session;
-  const base = { version: 1 as const, sources, session };
-  const manifest = { ...base, digest: hash(base) };
-  request({ action: "apply", manifest, files });
-  return { manifest, files, skipped, refusals };
+    if (!snapshots.size) {
+      const first = refusals[0];
+      throw new TodoSourceError(first.code, first.remedy, first.id);
+    }
+    const session = createTodoEditingSession([...snapshots.values()].map(row => row.document.metadata as PmItem), registry).session;
+    const base = { version: 1 as const, sources, session };
+    const manifest = { ...base, digest: hash(base) };
+    request({ action: "apply", manifest, files });
+    return { manifest, files, skipped, refusals };
+  });
 }
 /** Validate numeric output as well as input; counts never depend on floating-point ratios. */
 function receipt(result: TodoSourceResult): TodoSourceResult {
@@ -341,101 +344,104 @@ export async function applyTodoSourceSelection(pmRoot: string, manifest: unknown
     const parsed = request({ action: "apply", manifest, files });
     if (parsed.action !== "apply") throw new Error("unreachable");
     if (typeof options.author !== "string" || !options.author.trim() || options.author.length > 160 || (options.dryRun !== undefined && typeof options.dryRun !== "boolean")) throw new TodoSourceError("invalid_input", "Supply a bounded nonempty author and an optional boolean dryRun.");
-    const core = sdk(options.sdk), settings = await core.readSettings(pmRoot);
-    const registry = core.resolveRuntimeStatusRegistry(settings.schema);
-    parsed.files = parsed.files.map(file => ({ file: file.file, text: normalizeTodoEditingText(file.text) }));
-    const rows = parsed.manifest.sources.flatMap(source => source.rows);
-    const transaction = core.deriveMutationTransactionId(JSON.stringify(["pm-todos-source-v1", parsed.manifest.digest, [...parsed.files].sort((a,b) => a.file < b.file ? -1 : a.file > b.file ? 1 : 0).map(file => [file.file, file.text.split("\n").filter(Boolean).sort()])]));
-    result = { ...result, files: parsed.files.length, selected: rows.length, transaction };
-    const baselines = new Map<string, Snapshot>();
-    for (const row of rows) baselines.set(row.id, revisionBaseline(core, await snapshot(core, pmRoot, settings, row.id), row, transaction));
-    const intent = new Map(proposals(parsed.manifest, parsed.files, [...baselines.values()], registry).patches.map(patch => [patch.id, patch.values]));
-    const intended = new Map([...baselines].map(([id, baseline]) => {
-      const document = structuredClone(baseline.document);
-      applyValues(document, intent.get(id) ?? {});
-      return [id, recoveryValues(core, document, settings, true)];
-    }));
-    /** Every use still reads and verifies the current target, including while its native write lock is held. */
-    const inspectRevision = (current: Snapshot, row: TodoSourceRow) => revisionState(core, current, row, transaction, settings, intended.get(row.id)!);
-    /** Revalidate every target, including unchanged targets and previously completed steps. */
-    let hasTransactionHistory = false;
-    const readAll = async (): Promise<Snapshot[]> => {
-      const current: Snapshot[] = [];
-      for (const row of rows) {
-        const value = await snapshot(core, pmRoot, settings, row.id);
-        const phase = inspectRevision(value, row); current.push(value);
-        if (phase !== "pending") hasTransactionHistory = true;
-      }
-      return current;
-    };
-    /** Same planner is called under the selection lease and each native mutation lock. */
-    const plan = async () => proposals(parsed.manifest, parsed.files, await readAll(), registry);
-    const initial = await plan();
-    result = { ...result, ok: true, changed: initial.patches.length, moved: initial.moved, unchanged: rows.length - initial.patches.length };
-    if (options.dryRun || (!initial.patches.length && !hasTransactionHistory)) return receipt(result);
-    const lease = await core.acquireLockLease(pmRoot, "pm-todos-source-selection", 120, options.author, false, false, settings.locks.wait_ms);
-    try {
-      return await lease.fence(async () => {
-        const locked = await plan();
-        result = { ...result, changed: locked.patches.length, moved: locked.moved, unchanged: rows.length - locked.patches.length };
-        if (!locked.patches.length && !hasTransactionHistory) return receipt(result);
-        const steps: WorkspaceTransactionStep[] = rows.map(row => ({
-          id: row.id,
-          async inspect() {
-            const current = await snapshot(core, pmRoot, settings, row.id);
-            return { state: inspectRevision(current, row), result: row.id };
-          },
-          async prepareCompensation() {
-            const current = await snapshot(core, pmRoot, settings, row.id);
-            inspectRevision(current, row);
-            return JSON.parse(JSON.stringify(current.document.metadata)) as WorkspaceTransactionJsonValue;
-          },
-          async apply() {
-            await plan();
-            const changed = await core.mutateItem({ pmRoot, settings, id: row.id, op: "update", author: options.author, message: marker(transaction, row.id), extensionFieldNames: EXTENSIONS, skipNoop: true,
-              async mutate(document) {
-                inspectRevision(await snapshot(core, pmRoot, settings, row.id, document), row);
-                const all = await readAll();
-                const index = rows.indexOf(row); all[index] = await snapshot(core, pmRoot, settings, row.id, document);
-                const patch = proposals(parsed.manifest, parsed.files, all, registry).patches.find(patch => patch.id === row.id);
-                return { changedFields: applyValues(document, patch?.values ?? {}) };
-              },
-            });
-            if (changed.changedFields.length) result.applied++;
-            return row.id;
-          },
-          async compensate(data) {
-            const compensated = await core.mutateItem({ pmRoot, settings, id: row.id, op: "update", author: options.author, message: marker(transaction, row.id, "compensate"), extensionFieldNames: EXTENSIONS, skipNoop: true,
-              async mutate(document) {
-                const current = await snapshot(core, pmRoot, settings, row.id, document);
-                try {
-                  if (inspectRevision(current, row) !== "applied") return { changedFields: [] };
-                } catch {
-                  if (!current.history.some(entry => entry.message === marker(transaction, row.id))) return { changedFields: [] };
-                  throw new TodoSourceError("superseded", "A peer changed an applied row. Preserve the journal and reconcile it; compensation will not overwrite the peer.", row.id);
-                }
-                if (data === null || typeof data !== "object" || Array.isArray(data)) throw new TodoSourceError("apply_failed", "Preserve and inspect the native transaction journal before retrying.", row.id);
-                const baseline = baselines.get(row.id)!.document;
-                const saved = { metadata: data as ItemDocument["metadata"], body: baseline.body };
-                if (recoveryValues(core, saved, settings, true) !== recoveryValues(core, baseline, settings, true)) throw new TodoSourceError("apply_failed", "Compensation data does not match the exported native revision. Preserve and inspect the transaction journal.", row.id);
-                return { changedFields: applyValues(document, Object.fromEntries([...WRITE_FIELDS].map(field => [field, baseline.metadata[field]]))) };
-              },
-            });
-            if (compensated.changedFields.length) result.applied = Math.max(0, result.applied - 1);
-          },
-        }));
-        const controls = { transactionId: transaction, author: options.author, steps, lockTtlSeconds: 120,
-          async onTransition(context: Parameters<NonNullable<CommitWorkspaceTransactionOptions["onTransition"]>>[0]) {
-            await options.onTransition?.(context);
-            if (["prepared", "step_applied", "step_recorded", "committing"].includes(context.transition)) await plan();
-          },
-        };
-        if (options.commit) await options.commit(controls);
-        else await core.commitWorkspaceTransaction({ ...controls, pmRoot });
-        if ((await plan()).patches.length) throw new TodoSourceError("apply_failed", "The native transaction did not complete every selected row. Preserve the journal and reconcile the remaining targets before retrying.");
-        return receipt(result);
-      });
-    } finally { await lease.release(); }
+    const core = sdk(options.sdk);
+    return await withTodoWorkspace(core, pmRoot, async () => {
+      const settings = await core.readSettings(pmRoot);
+      const registry = core.resolveRuntimeStatusRegistry(settings.schema);
+      parsed.files = parsed.files.map(file => ({ file: file.file, text: normalizeTodoEditingText(file.text) }));
+      const rows = parsed.manifest.sources.flatMap(source => source.rows);
+      const transaction = core.deriveMutationTransactionId(JSON.stringify(["pm-todos-source-v1", parsed.manifest.digest, [...parsed.files].sort((a,b) => a.file < b.file ? -1 : a.file > b.file ? 1 : 0).map(file => [file.file, file.text.split("\n").filter(Boolean).sort()])]));
+      result = { ...result, files: parsed.files.length, selected: rows.length, transaction };
+      const baselines = new Map<string, Snapshot>();
+      for (const row of rows) baselines.set(row.id, revisionBaseline(core, await snapshot(core, pmRoot, settings, row.id), row, transaction));
+      const intent = new Map(proposals(parsed.manifest, parsed.files, [...baselines.values()], registry).patches.map(patch => [patch.id, patch.values]));
+      const intended = new Map([...baselines].map(([id, baseline]) => {
+        const document = structuredClone(baseline.document);
+        applyValues(document, intent.get(id) ?? {});
+        return [id, recoveryValues(core, document, settings, true)];
+      }));
+      /** Every use still reads and verifies the current target, including while its native write lock is held. */
+      const inspectRevision = (current: Snapshot, row: TodoSourceRow) => revisionState(core, current, row, transaction, settings, intended.get(row.id)!);
+      /** Revalidate every target, including unchanged targets and previously completed steps. */
+      let hasTransactionHistory = false;
+      const readAll = async (): Promise<Snapshot[]> => {
+        const current: Snapshot[] = [];
+        for (const row of rows) {
+          const value = await snapshot(core, pmRoot, settings, row.id);
+          const phase = inspectRevision(value, row); current.push(value);
+          if (phase !== "pending") hasTransactionHistory = true;
+        }
+        return current;
+      };
+      /** Same planner is called under the selection lease and each native mutation lock. */
+      const plan = async () => proposals(parsed.manifest, parsed.files, await readAll(), registry);
+      const initial = await plan();
+      result = { ...result, ok: true, changed: initial.patches.length, moved: initial.moved, unchanged: rows.length - initial.patches.length };
+      if (options.dryRun || (!initial.patches.length && !hasTransactionHistory)) return receipt(result);
+      const lease = await core.acquireLockLease(pmRoot, "pm-todos-source-selection", 120, options.author, false, false, settings.locks.wait_ms);
+      try {
+        return await lease.fence(async () => {
+          const locked = await plan();
+          result = { ...result, changed: locked.patches.length, moved: locked.moved, unchanged: rows.length - locked.patches.length };
+          if (!locked.patches.length && !hasTransactionHistory) return receipt(result);
+          const steps: WorkspaceTransactionStep[] = rows.map(row => ({
+            id: row.id,
+            async inspect() {
+              const current = await snapshot(core, pmRoot, settings, row.id);
+              return { state: inspectRevision(current, row), result: row.id };
+            },
+            async prepareCompensation() {
+              const current = await snapshot(core, pmRoot, settings, row.id);
+              inspectRevision(current, row);
+              return JSON.parse(JSON.stringify(current.document.metadata)) as WorkspaceTransactionJsonValue;
+            },
+            async apply() {
+              await plan();
+              const changed = await core.mutateItem({ pmRoot, settings, id: row.id, op: "update", author: options.author, message: marker(transaction, row.id), extensionFieldNames: todoExtensionFieldNames(core), skipNoop: true,
+                async mutate(document) {
+                  inspectRevision(await snapshot(core, pmRoot, settings, row.id, document), row);
+                  const all = await readAll();
+                  const index = rows.indexOf(row); all[index] = await snapshot(core, pmRoot, settings, row.id, document);
+                  const patch = proposals(parsed.manifest, parsed.files, all, registry).patches.find(patch => patch.id === row.id);
+                  return { changedFields: applyValues(document, patch?.values ?? {}) };
+                },
+              });
+              if (changed.changedFields.length) result.applied++;
+              return row.id;
+            },
+            async compensate(data) {
+              const compensated = await core.mutateItem({ pmRoot, settings, id: row.id, op: "update", author: options.author, message: marker(transaction, row.id, "compensate"), extensionFieldNames: todoExtensionFieldNames(core), skipNoop: true,
+                async mutate(document) {
+                  const current = await snapshot(core, pmRoot, settings, row.id, document);
+                  try {
+                    if (inspectRevision(current, row) !== "applied") return { changedFields: [] };
+                  } catch {
+                    if (!current.history.some(entry => entry.message === marker(transaction, row.id))) return { changedFields: [] };
+                    throw new TodoSourceError("superseded", "A peer changed an applied row. Preserve the journal and reconcile it; compensation will not overwrite the peer.", row.id);
+                  }
+                  if (data === null || typeof data !== "object" || Array.isArray(data)) throw new TodoSourceError("apply_failed", "Preserve and inspect the native transaction journal before retrying.", row.id);
+                  const baseline = baselines.get(row.id)!.document;
+                  const saved = { metadata: data as ItemDocument["metadata"], body: baseline.body };
+                  if (recoveryValues(core, saved, settings, true) !== recoveryValues(core, baseline, settings, true)) throw new TodoSourceError("apply_failed", "Compensation data does not match the exported native revision. Preserve and inspect the transaction journal.", row.id);
+                  return { changedFields: applyValues(document, Object.fromEntries([...WRITE_FIELDS].map(field => [field, baseline.metadata[field]]))) };
+                },
+              });
+              if (compensated.changedFields.length) result.applied = Math.max(0, result.applied - 1);
+            },
+          }));
+          const controls = { transactionId: transaction, author: options.author, steps, lockTtlSeconds: 120,
+            async onTransition(context: Parameters<NonNullable<CommitWorkspaceTransactionOptions["onTransition"]>>[0]) {
+              await options.onTransition?.(context);
+              if (["prepared", "step_applied", "step_recorded", "committing"].includes(context.transition)) await plan();
+            },
+          };
+          if (options.commit) await options.commit(controls);
+          else await core.commitWorkspaceTransaction({ ...controls, pmRoot });
+          if ((await plan()).patches.length) throw new TodoSourceError("apply_failed", "The native transaction did not complete every selected row. Preserve the journal and reconcile the remaining targets before retrying.");
+          return receipt(result);
+        });
+      } finally { await lease.release(); }
+    });
   } catch (error) {
     const errors: unknown[] = [error];
     let refusal: TodoSourceError | undefined;

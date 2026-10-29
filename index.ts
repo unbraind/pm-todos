@@ -1,3 +1,4 @@
+import { TODO_ITEM_FIELDS } from "./workspace.ts";
 // pm-todos — Markdown TODO round-trip for pm-cli
 
 import type {
@@ -22,6 +23,8 @@ export * from "./recurrence.ts";
 import { previewTodoOccurrence, applyTodoOccurrence } from "./recurrence.ts";
 export * from "./sessions.ts";
 export * from "./source-sessions.ts";
+export * from "./hierarchy.ts";
+import { runTodoHierarchyCommand } from "./hierarchy-command.ts";
 import { runTodoSourceCommand } from "./source-session-command.ts";
 import { exportTodoEditingSession, applyTodoEditingSession } from "./sessions.ts";
 export * from "./watcher.ts";
@@ -2563,6 +2566,7 @@ async function runTodoImport(opts: TodoImportOptions): Promise<TodoImportResult>
             isTodojson ? todo.todoId : undefined,
           );
           const create: PmCreateActionOptions = {
+            parent: "none", blockedBy: "none", dep: [], sprint: "none", release: "none",
             title: todo.text,
             type: itemType,
             status,
@@ -2785,6 +2789,18 @@ export default defineExtension({
 
   activate(api: ExtensionApi) {
     api.registerCommand({
+      name: "todos hierarchy",
+      description: "Export, preview or apply reviewed native relations from marked checklist indentation.",
+      arguments: [{ name: "action", required: true, description: "export | preview | apply" }],
+      flags: [
+        { long: "--selection", value_name: "path", description: "JSON array of canonical item IDs (export only)" },
+        { long: "--file", value_name: "path", description: "Marked Markdown checklist" },
+        { long: "--session", value_name: "path", description: "Unchanged revision baseline JSON" },
+        { long: "--relation", value_name: "kind", description: "parent (default) | blocked_by (export only)" },
+      ],
+      run: runTodoHierarchyCommand,
+    });
+    api.registerCommand({
       name: "todos sources",
       description: "Export, preview or atomically apply row ownership across explicitly selected todo.txt files.",
       arguments: [{ name: "action", required: true, description: "export | preview | apply" }],
@@ -2881,15 +2897,7 @@ export default defineExtension({
       },
     });
 
-    api.registerItemFields([
-      { name: "todos_kv", type: "object", optional: true },
-      { name: "todos_todotxt", type: "string", optional: true },
-      { name: "todos_creation_date", type: "string", optional: true },
-      { name: "todos_completion_date", type: "string", optional: true },
-      { name: "todos_source_created_at", type: "string", optional: true },
-      { name: "todos_source_updated_at", type: "string", optional: true },
-      { name: "todos_source_file", type: "string", optional: true },
-    ]);
+    api.registerItemFields(TODO_ITEM_FIELDS);
 
     // -----------------------------------------------------------------------
     // Command: pm todos validate <file>

@@ -1,0 +1,17 @@
+id: pm-todos-hierarchy-readonly-preview
+title: Track native staged-preview refusals on immutable and installed trackers
+description: "Public-corpus hierarchy validation found previewItemMutations fails with EACCES for a changed relation when source tracker files are mode 0444 and directories 0555. Unchanged previews and native history verification succeed, and copied bytes remain unchanged. The public signature previewItemMutations({pmRoot, transactionId, author, mutations}) exposes no staging-permission control. Installed SDK declarations and open upstream issue searches for previewItemMutations readonly and preview EACCES were checked; no exact existing issue found. Do not bypass the native validator or claim changed-preview success. Upstream reporting is reserved to the orchestrator."
+type: Task
+status: open
+priority: 2
+tags[3]: readonly,sdk-gap,staged-preview
+created_at: "2026-10-29T00:53:42.795Z"
+updated_at: "2026-10-29T01:08:10.379Z"
+author: codex-agent
+comments[1]{created_at,author,text}:
+  "2026-10-29T01:08:10.374Z",codex-agent,"Installed-artifact state modeling also reproduced transaction_preview_non_regular_file after normal package installation introduces dependency symlinks. The same previewItemMutations signature has no exclusion or snapshot-permission option. The delivered hierarchy path instead uses public core graph validators and mutateItem, with one field producer shared by preview and the native locked mutation callback. This retains native history/ownership and avoids both staging limitations without modifying core or bypassing its input guards."
+files[1]{path,scope}:
+  scripts/validate-hierarchy.ts,project
+docs[1]{path,scope}:
+  docs/checklist-hierarchy.md,project
+body: ""
