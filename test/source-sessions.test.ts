@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import * as core from "@unbrained/pm-cli/sdk";
@@ -307,6 +309,45 @@ test("CLI export, preview, apply and typed refusals reuse the SDK selection cont
   }
   rmSync(join(directory, "one.txt")); symlinkSync(selection, join(directory, "one.txt"));
   await run("apply", { directory, manifest }); assert.equal(process.exitCode, 1); process.exitCode = 0;
+});
+
+test("source CLI keeps nested reads bound to their parent during ancestor ABA and replay", async t => {
+  const f = await fixture(t, 1), h = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
+  const directory = join(f.root, "editing"), nested = join(directory, "nested"), held = join(f.root, "held"), outside = join(f.root, "outside"), selection = join(f.root, "nested-selection.json"), manifest = join(f.root, "nested-manifest.json");
+  mkdirSync(nested, { recursive: true }); mkdirSync(outside);
+  writeFileSync(selection, JSON.stringify({ sources: [{ file: "nested/source.txt", ids: f.ids }] }));
+  /** Invoke the registered command in a real plain tracker, preserving host rendering behavior. */
+  const run = (action: string) => h.runCommand({ command: "todos sources", args: [action], options: { directory, manifest, ...(action === "export" ? { selection } : {}) }, pmRoot: f.pmRoot });
+  t.after(() => { process.exitCode = 0; });
+  await run("export");
+  const initial = (await f.client.get(f.ids[0], { depth: "deep" })).item;
+  const originalText = readFileSync(join(nested, "source.txt"), "utf8");
+  writeFileSync(join(outside, "source.txt"), originalText.replace(String(initial.title), "Injected outside title"));
+  const foreign = fs.statSync(join(outside, "source.txt")), outsideText = readFileSync(join(outside, "source.txt"), "utf8");
+  for (const action of ["preview", "apply", "apply"]) {
+    let swaps = 0, foreignRead = false;
+    const nativeOpen = fs.openSync, nativeRead = fs.readFileSync;
+    t.mock.method(fs, "openSync", ((...args: Parameters<typeof nativeOpen>) => {
+      if (String(args[0]).endsWith("/source.txt")) {
+        fs.renameSync(nested, held); fs.symlinkSync(outside, nested, "dir"); swaps++;
+        try { return nativeOpen(...args); }
+        finally { fs.unlinkSync(nested); fs.renameSync(held, nested); }
+      }
+      return nativeOpen(...args);
+    }) as typeof nativeOpen);
+    t.mock.method(fs, "readFileSync", ((...args: Parameters<typeof nativeRead>) => {
+      if (typeof args[0] === "number") { const stat = fs.fstatSync(args[0]); if (stat.dev === foreign.dev && stat.ino === foreign.ino) foreignRead = true; }
+      return Reflect.apply(nativeRead, fs, args);
+    }) as typeof nativeRead);
+    syncBuiltinESMExports();
+    try { await run(action); }
+    finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+    assert.ok(swaps > 0); assert.equal(foreignRead, false); assert.notEqual(process.exitCode, 1);
+    const current = (await f.client.get(f.ids[0], { depth: "deep" })).item;
+    assert.equal(current.title, initial.title);
+    for (const key of PRESERVED) assert.deepEqual(current[key], initial[key]);
+    assert.equal(readFileSync(join(outside, "source.txt"), "utf8"), outsideText);
+  }
 });
 
 test("500 seeded operation sequences compare every touched native field and preserved relationship through SDK read-back", { timeout: 1200000 }, async t => {

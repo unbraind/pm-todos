@@ -1,7 +1,7 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
 import { stripTypeScriptTypes } from "node:module";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { decodeToon } from "@unbrained/pm-cli/sdk/testing";
@@ -34,6 +34,7 @@ interface AcceptanceReceipt {
   readonly hierarchy_replay_changed: number;
   readonly hierarchy_prefix_safe: true;
   readonly extension_schema_safe: true;
+  readonly directory_scope_safe: true;
   readonly source_replay_changed: number;
   readonly rollback_recovered: true;
   readonly copied_apply_refused: true;
@@ -244,6 +245,30 @@ try {
     const selectionFile = join(scenarioRoot, "selection.json"), manifestFile = join(scenarioRoot, "sources.json");
     const edits = join(scenarioRoot, "edits"); mkdirSync(edits);
     const selectedIds = rows.map(row => String(row.id));
+    // The installed transport must preserve nested released manifests and refuse
+    // linked ancestors before either reading source text or creating review files.
+    const nestedEdits = join(scenarioRoot, "nested-edits"), nestedDirectory = join(nestedEdits, "nested"), outsideDirectory = join(scenarioRoot, "outside-scope"), heldDirectory = join(scenarioRoot, "held-nested");
+    mkdirSync(nestedDirectory, { recursive: true }); mkdirSync(outsideDirectory);
+    writeFileSync(join(outsideDirectory, "one.txt"), "Outside sentinel one"); writeFileSync(join(outsideDirectory, "two.txt"), "Outside sentinel two");
+    const nestedSelection = join(scenarioRoot, "nested-selection.json"), nestedManifest = join(scenarioRoot, "nested-manifest.json");
+    writeFileSync(nestedSelection, JSON.stringify({ sources: [{ file: "nested/one.txt", ids: selectedIds }, { file: "nested/two.txt", ids: [] }] }));
+    const nestedFormat = scenario.manager === "npm" ? ["--json"] : [];
+    /** Decode the installed host's JSON or TOON without a separate scope implementation. */
+    const nestedReceipt = (stdout: string) => requireJsonObject(nestedFormat.length ? stdout : JSON.stringify(decodeToon(stdout)), "directory scope");
+    const nestedArgs = ["--manifest", nestedManifest, "--directory", nestedEdits];
+    const nestedExport = nestedReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", nestedSelection, ...nestedArgs, ...nestedFormat]).stdout);
+    if (nestedExport.selected !== selectedIds.length) throw new Error("Packed nested source export omitted native rows");
+    const nestedPreview = nestedReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...nestedArgs, ...nestedFormat]).stdout);
+    if (nestedPreview.ok !== true || nestedPreview.applied !== 0) throw new Error("Packed nested source preview failed");
+    renameSync(nestedDirectory, heldDirectory); symlinkSync(outsideDirectory, nestedDirectory, "dir");
+    try {
+      const refused = nestedReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...nestedArgs, ...nestedFormat], 1).stdout);
+      if (refused.ok !== false || (refused.refusals as Record<string, unknown>[])[0]?.code !== "source_scope") throw new Error("Packed source preview followed a linked ancestor");
+      const refusedManifest = join(scenarioRoot, "refused-nested.json");
+      const refusedExport = nestedReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", nestedSelection, "--manifest", refusedManifest, "--directory", nestedEdits, ...nestedFormat], 1).stdout);
+      if (refusedExport.ok !== false || existsSync(refusedManifest)) throw new Error("Packed source export wrote before scope validation");
+      if (readFileSync(join(outsideDirectory, "one.txt"), "utf8") !== "Outside sentinel one" || readFileSync(join(outsideDirectory, "two.txt"), "utf8") !== "Outside sentinel two" || readdirSync(outsideDirectory).length !== 2) throw new Error("Packed transport changed outside scope data");
+    } finally { rmSync(nestedDirectory); renameSync(heldDirectory, nestedDirectory); }
     writeFileSync(selectionFile, JSON.stringify({ sources: [{ file: "one.txt", ids: selectedIds }, { file: "two.txt", ids: [] }] }));
     const sourceArgs = ["--manifest", manifestFile, "--directory", edits];
     const sourceExport = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", selectionFile, ...sourceArgs, "--json"]).stdout, "sources export");
@@ -342,6 +367,7 @@ try {
       hierarchy_replay_changed: hierarchyReplay.changed as number,
       hierarchy_prefix_safe: true,
       extension_schema_safe: true,
+      directory_scope_safe: true,
       source_replay_changed: sourceReplay.changed as number,
       rollback_recovered: true,
       copied_apply_refused: true,

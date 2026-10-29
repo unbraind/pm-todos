@@ -132,6 +132,14 @@ to report only heads, counts and byte sizes. Tests cover real non-git trackers,
 500 seeded operation sequences, custom status registries, ambient focus, older
 replays, extreme inputs and every native transaction transition.
 
+Scoped source files resolve each component through an open parent directory,
+including nested paths. Replacing an ancestor cannot redirect reads or output
+creation. Files and intermediate directories must be ordinary entries without
+symbolic links; files must have a single link. The CLI requires a kernel
+directory-descriptor view (Linux procfs is supported); unsupported hosts return
+`source_scope` with a remedy. The in-memory SDK operations remain independent of
+this filesystem transport requirement.
+
 The package now requires pm CLI 2026.10.23 for its public fenced lease API.
 The development SDK pin is unchanged. New `__proto__` todo.txt metadata tokens
 refuse before mutation because the supported native history codec cannot safely

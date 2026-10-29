@@ -560,6 +560,10 @@ moving it updates `todos_source_file` once. Duplicate ownership or a stale row i
 any selected file refuses the selection; unrelated files remain outside scope.
 The typed SDK reuses the editing-session planner and native SDK transactions.
 See the [cross-file example and concurrency contract](docs/source-editing-sessions.md).
+Scoped source-file IO uses kernel directory descriptors to prevent ancestor
+replacement from redirecting reads or creates. Linux procfs is supported; hosts
+without a descriptor-relative filesystem view receive a typed `source_scope`
+refusal. The in-memory SDK does not require this filesystem capability.
 
 Use `pm todos session export --file todo.txt --session baseline.json`, edit the
 text while retaining each `pm-session:<id>` token, then run `preview` and `apply`

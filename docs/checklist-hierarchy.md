@@ -132,7 +132,8 @@ back through the SDK. `node scripts/validate-hierarchy.ts <public-package-repo>`
 extracts committed public tracker data into a read-only non-git scratch copy,
 previews it and reports counts and byte preservation without changing the source.
 The public-corpus validators accept ordinary directories and single-link regular
-files only (at most 10,000 entries, on hosts supporting `O_NOFOLLOW`). Symbolic
+files only (at most 10,000 entries, on hosts supporting a kernel directory-descriptor
+view such as Linux procfs). Symbolic
 links, hard-linked files and special files refuse as `unsafe_validation_entry`;
 remove them from the validation corpus and retry. Permission setup preflights the
 complete copy, then uses verified open descriptors. Cleanup restores exact
@@ -141,6 +142,16 @@ never recursively changes permissions on newly discovered entries. The editing
 session validator retains its existing generated-cache exclusions for both copy
 and fingerprint operations. Normal SDK/CLI hierarchy operations and their
 JSON/TOON receipts do not change filesystem permissions.
+Child lookup and enumeration also use the open parent's kernel descriptor view;
+ordinary pathnames are retained only as fingerprint labels. Before/after inode
+checks alone cannot detect an ancestor directory/link/directory ABA swap. Hosts
+without descriptor-relative lookup refuse with a remedy; there is no pathname
+fallback. The scoped source-file CLI uses the same primitive for nested reads
+and exclusive output creation, and retains directory handles until completion.
+The supplied-copy session validator also copies bytes through retained source
+descriptors into descriptor-anchored destination directories, preserving owner
+execution permission in its private copy. It does not repeat a pathname-based
+copy after checking the source.
 
 The inspected SDK 2026.10.25 `previewItemMutations` cannot supply this preview
 contract: it returns `EACCES` on read-only copies and rejects symlinks introduced

@@ -1,6 +1,6 @@
-import { fingerprintValidationTree, VALIDATION_CACHE_NAMES } from "./validation-tree.ts";
+import { copyValidationTree, fingerprintValidationTree, VALIDATION_CACHE_NAMES } from "./validation-tree.ts";
 /** Validate public tracker data on a disposable copy; never mutate the source. */
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { listAllComplete, update } from "@unbrained/pm-cli/sdk";
@@ -14,7 +14,7 @@ const root = mkdtempSync(join(tmpdir(), "todos-public-session-"));
 const pmRoot = join(root, "tracker");
 process.env.GIT_CEILING_DIRECTORIES = dirname(root);
 try {
-  cpSync(source, pmRoot, { recursive: true, filter: path => !VALIDATION_CACHE_NAMES.includes(path.split(/[\\/]/).at(-1) ?? "") });
+  copyValidationTree(source, pmRoot, VALIDATION_CACHE_NAMES);
   const items = (await listAllComplete({}, { pmRoot })).items;
   const eligible = items.filter(item => typeof item.title === "string" && item.title.length > 0);
   const { session, text } = createTodoEditingSession(eligible);

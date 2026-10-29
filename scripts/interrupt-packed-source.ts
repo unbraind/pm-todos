@@ -1,10 +1,11 @@
 /** Seed an interrupted rollback through an installed artifact's public SDK, never a copied planner. */
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { closeSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type * as CoreSdk from "@unbrained/pm-cli/sdk";
 import type * as PackageSdk from "../index.ts";
+import type * as DirectorySdk from "../directory-scope.ts";
 import { interruptSourceRollback } from "./source-recovery-fixture.ts";
 
 const [pmRoot, manifestPath, editingDirectory, mode] = process.argv.slice(2);
@@ -14,7 +15,15 @@ const core = requireConsumer("@unbrained/pm-cli/sdk") as typeof CoreSdk;
 await core.runWithActiveExtensions({ path: pmRoot }, async () => {
 const api = requireConsumer("..") as Pick<typeof PackageSdk, "parseTodoSourceManifest" | "applyTodoSourceSelection">;
 const manifest = api.parseTodoSourceManifest(JSON.parse(readFileSync(manifestPath, "utf8")) as unknown);
-const files = manifest.sources.map(source => ({ file: source.file, text: readFileSync(join(editingDirectory, source.file), "utf8") }));
+const directoryApi = requireConsumer("../dist/directory-scope.js") as typeof DirectorySdk;
+const directory = directoryApi.openDirectoryScope(editingDirectory);
+const files = (() => {
+  try { return manifest.sources.map(source => {
+    const fd = directory.open(source.file);
+    try { return { file: source.file, text: readFileSync(fd, "utf8") }; }
+    finally { closeSync(fd); }
+  }); } finally { directory.close(); }
+})();
 const ids = manifest.sources.flatMap(source => source.rows.map(row => row.id));
 const extensionFieldNames = [...new Set([...Object.keys(manifest.session.entries[0].fieldDigests).filter(field => field.startsWith("todos_")), "todos_source_file", ...(core.getActiveExtensionRegistrations()?.item_fields ?? []).flatMap(entry => entry.fields.map(field => field.name))])];
 /** Compare full native values, bodies and history through the consumer SDK's own canonicalizer. */
