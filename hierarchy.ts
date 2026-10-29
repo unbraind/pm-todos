@@ -1,3 +1,4 @@
+import { todoExtensionFieldNames, withTodoWorkspace, type TodoWorkspaceSdk } from "./workspace.ts";
 /** Reviewed Markdown indentation interpreted through native relationship APIs. */
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
@@ -5,7 +6,7 @@ import type * as Core from "@unbrained/pm-cli/sdk";
 import type { ItemDocument, PmSettings } from "@unbrained/pm-cli/sdk";
 
 /** Public peer primitives, injectable by hosts without resolving executable paths. */
-export type TodoHierarchySdk = Pick<typeof Core, "listAllComplete" | "readSettings" | "locateItem" | "readLocatedItem" | "readHistoryEntries" | "getHistoryPath" | "verifyHistoryEntries" | "replayHistoryToTarget" | "canonicalDocument" | "stableUpsertValue" | "resolveItemTypeRegistry" | "resolveRuntimeStatusRegistry" | "statusIsTerminal" | "RelationshipGraph" | "hierarchyAncestors" | "hierarchyDescendants" | "orderingPredecessors" | "orderingSuccessors" | "assertHierarchyMutationAllowed" | "collectNewOrderingCycleWarnings" | "resolveCanonicalRelationshipKind" | "normalizeParentReferenceValue" | "isPlaceholderReferenceToken" | "mutateItem" | "nowIso" | "assertRelationshipEdgeAllowed" | "deriveMutationTransactionId">;
+export type TodoHierarchySdk = TodoWorkspaceSdk & Pick<typeof Core, "listAllComplete" | "readSettings" | "locateItem" | "readLocatedItem" | "readHistoryEntries" | "getHistoryPath" | "verifyHistoryEntries" | "replayHistoryToTarget" | "canonicalDocument" | "stableUpsertValue" | "resolveItemTypeRegistry" | "resolveRuntimeStatusRegistry" | "statusIsTerminal" | "RelationshipGraph" | "hierarchyAncestors" | "hierarchyDescendants" | "orderingPredecessors" | "orderingSuccessors" | "assertHierarchyMutationAllowed" | "collectNewOrderingCycleWarnings" | "resolveCanonicalRelationshipKind" | "normalizeParentReferenceValue" | "isPlaceholderReferenceToken" | "mutateItem" | "nowIso" | "assertRelationshipEdgeAllowed" | "deriveMutationTransactionId">;
 /** Indentation either manages a structural parent or one explicit legacy blocker. */
 export type TodoHierarchyRelation = "parent" | "blocked_by";
 /** Immutable, revision-bound baseline for the selected identities and their topology. */
@@ -48,7 +49,6 @@ export interface TodoHierarchyOptions {
 export interface TodoHierarchyExport { session: TodoHierarchySession; text: string; skipped: number; refusals: TodoHierarchyRefusal[] }
 interface Snapshot { document: ItemDocument; history: Awaited<ReturnType<TodoHierarchySdk["readHistoryEntries"]>>; revision: string }
 interface Row { id: string; target: string | null; line: number }
-const EXTENSIONS = ["todos_todotxt", "todos_kv", "todos_creation_date", "todos_completion_date", "todos_source_created_at", "todos_source_updated_at", "todos_source_file"];
 const MAX_ROWS = 1000, MAX_BYTES = 1024 * 1024, OUTPUT_ROWS = 40;
 
 /** Stable native revision includes the growing history length and its verified head. */
@@ -139,9 +139,9 @@ function rows(text: string, session: TodoHierarchySession): Row[] {
 /** History, not content equality or a cached event index, certifies a target revision. */
 async function snapshot(core: TodoHierarchySdk, pmRoot: string, settings: PmSettings, id: string): Promise<Snapshot> {
   try {
-    const located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings).type_to_folder);
+    const located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings, core.getActiveExtensionRegistrations()).type_to_folder);
     if (!located) refuse("missing_item", "A selected row or parent was deleted. Restore it or export and review a fresh selection.", id);
-    const { document } = await core.readLocatedItem(located, { schema: settings.schema, extensionFieldNames: EXTENSIONS });
+    const { document } = await core.readLocatedItem(located, { schema: settings.schema, extensionFieldNames: todoExtensionFieldNames(core) });
     const history = await core.readHistoryEntries(core.getHistoryPath(pmRoot, id), id);
     if (!history.length || !core.verifyHistoryEntries(history, document).ok) refuse("invalid_history", "Inspect pm health and preserve the damaged native history before retrying.", id);
     return { document, history, revision: hash([history.length, history.at(-1)?.record_hash, history]) };
@@ -179,7 +179,7 @@ function propose(core: TodoHierarchySdk, document: ItemDocument, relation: TodoH
 }
 /** Exclude only native fields a blocker/parent update is allowed to alter. */
 function preserved(core: TodoHierarchySdk, document: ItemDocument, relation: TodoHierarchyRelation): string {
-  const canonical = core.canonicalDocument(document);
+  const canonical = core.canonicalDocument(document, { extensionFieldNames: todoExtensionFieldNames(core) });
   const removed = new Set([relation, "updated_at", ...(relation === "blocked_by" ? ["dependencies"] : [])]);
   return core.stableUpsertValue({ body: canonical.body, metadata: Object.fromEntries(Object.entries(canonical.metadata).filter(([key]) => !removed.has(key))) });
 }
@@ -208,57 +208,60 @@ function receipt(result: TodoHierarchyResult): TodoHierarchyResult {
 export async function exportTodoHierarchy(pmRoot: string, ids: unknown, relation: TodoHierarchyRelation = "parent", injected?: TodoHierarchySdk): Promise<TodoHierarchyExport> {
   const parsed = request({ action: "export", ids, relation });
   if (parsed.action !== "export") throw new Error("unreachable");
-  const core = sdk(injected), settings = await core.readSettings(pmRoot), registry = core.resolveRuntimeStatusRegistry(settings.schema);
-  const selected: { row: TodoHierarchySession["rows"][number]; title: string; done: boolean }[] = [], refusals: TodoHierarchyRefusal[] = [];
-  let skipped = 0;
-  for (const id of parsed.ids) {
-    try {
-      const current = await snapshot(core, pmRoot, settings, id), title = current.document.metadata.title;
-      if (current.document.metadata.id !== id || typeof title !== "string" || !title.trim() || /[\r\n\u2028\u2029]|<!--\s*pm-session:/.test(title) || title.length > 4096) refuse("invalid_input", "Exclude this display row and use native JSON for it; other selected rows remain exportable.", id);
-      selected.push({ row: { id, revision: current.revision, target: target(core, current.document, relation) }, title, done: core.statusIsTerminal(current.document.metadata.status, registry) });
-    } catch (error) {
-      if (!(error instanceof TodoHierarchyError)) throw error;
-      skipped++; if (refusals.length < OUTPUT_ROWS) refusals.push(error.detail);
-    }
-  }
-  // A skipped/unselected prerequisite cannot authorize any dependent row.
-  // Prune only that dependent closure; independent selected records still export.
-  let pruned = true;
-  while (pruned) {
-    pruned = false;
-    for (let index = selected.length - 1; index >= 0; index--) {
-      const entry = selected[index];
-      if (entry.row.target && !selected.some(candidate => candidate.row.id === entry.row.target)) {
-        selected.splice(index, 1); skipped++; pruned = true;
-        if (refusals.length < OUTPUT_ROWS) refusals.push({ code: "orphan_row", id: entry.row.id, remedy: "Include the readable native parent/blocker before exporting this dependent row." });
+  const core = sdk(injected);
+  return withTodoWorkspace(core, pmRoot, async () => {
+    const settings = await core.readSettings(pmRoot), registry = core.resolveRuntimeStatusRegistry(settings.schema);
+    const selected: { row: TodoHierarchySession["rows"][number]; title: string; done: boolean }[] = [], refusals: TodoHierarchyRefusal[] = [];
+    let skipped = 0;
+    for (const id of parsed.ids) {
+      try {
+        const current = await snapshot(core, pmRoot, settings, id), title = current.document.metadata.title;
+        if (current.document.metadata.id !== id || typeof title !== "string" || !title.trim() || /[\r\n\u2028\u2029]|<!--\s*pm-session:/.test(title) || title.length > 4096) refuse("invalid_input", "Exclude this display row and use native JSON for it; other selected rows remain exportable.", id);
+        selected.push({ row: { id, revision: current.revision, target: target(core, current.document, relation) }, title, done: core.statusIsTerminal(current.document.metadata.status, registry) });
+      } catch (error) {
+        if (!(error instanceof TodoHierarchyError)) throw error;
+        skipped++; if (refusals.length < OUTPUT_ROWS) refusals.push(error.detail);
       }
     }
-  }
-  if (!selected.length) refuse("invalid_input", "Select at least one readable native item with a single-line title.");
-  const emitted = new Set<string>();
-  const lines: string[] = [];
-  /** Emit selected ancestors first while never inventing an unselected parent from a title. */
-  const emit = (entry: typeof selected[number], path: Set<string>): void => {
-    if (emitted.has(entry.row.id)) return;
-    if (path.has(entry.row.id)) refuse("cycle", "Repair the existing selected relationship cycle with native pm commands first.", entry.row.id);
-    path.add(entry.row.id);
-    const parent = selected.find(candidate => candidate.row.id === entry.row.target);
-    if (parent) emit(parent, path);
-    emitted.add(entry.row.id); path.delete(entry.row.id);
-  };
-  selected.forEach(entry => emit(entry, new Set()));
-  /** Stable DFS keeps siblings adjacent so indentation encodes the actual selected ancestry. */
-  const walk = (entry: typeof selected[number], depth: number): void => {
-    if (depth > 100) refuse("ambiguous_indent", "Export a shallower selection with at most 100 hierarchy levels.", entry.row.id);
-    lines.push(`${"  ".repeat(depth)}- [${entry.done ? "x" : " "}] ${entry.title} <!-- pm-session:${entry.row.id} -->`);
-    for (const child of selected) if (child.row.target === entry.row.id) walk(child, depth + 1);
-  };
-  for (const entry of selected) if (!entry.row.target || !selected.some(candidate => candidate.row.id === entry.row.target)) walk(entry, 0);
-  const session: TodoHierarchySession = { version: 1, relation, rows: selected.map(entry => entry.row), digest: "" };
-  session.digest = hash([session.version, session.relation, session.rows]);
-  const text = lines.join("\n") + "\n";
-  request({ action: "apply", session, text }); rows(text, session);
-  return { session, text, skipped, refusals };
+    // A skipped/unselected prerequisite cannot authorize any dependent row.
+    // Prune only that dependent closure; independent selected records still export.
+    let pruned = true;
+    while (pruned) {
+      pruned = false;
+      for (let index = selected.length - 1; index >= 0; index--) {
+        const entry = selected[index];
+        if (entry.row.target && !selected.some(candidate => candidate.row.id === entry.row.target)) {
+          selected.splice(index, 1); skipped++; pruned = true;
+          if (refusals.length < OUTPUT_ROWS) refusals.push({ code: "orphan_row", id: entry.row.id, remedy: "Include the readable native parent/blocker before exporting this dependent row." });
+        }
+      }
+    }
+    if (!selected.length) refuse("invalid_input", "Select at least one readable native item with a single-line title.");
+    const emitted = new Set<string>();
+    const lines: string[] = [];
+    /** Emit selected ancestors first while never inventing an unselected parent from a title. */
+    const emit = (entry: typeof selected[number], path: Set<string>): void => {
+      if (emitted.has(entry.row.id)) return;
+      if (path.has(entry.row.id)) refuse("cycle", "Repair the existing selected relationship cycle with native pm commands first.", entry.row.id);
+      path.add(entry.row.id);
+      const parent = selected.find(candidate => candidate.row.id === entry.row.target);
+      if (parent) emit(parent, path);
+      emitted.add(entry.row.id); path.delete(entry.row.id);
+    };
+    selected.forEach(entry => emit(entry, new Set()));
+    /** Stable DFS keeps siblings adjacent so indentation encodes the actual selected ancestry. */
+    const walk = (entry: typeof selected[number], depth: number): void => {
+      if (depth > 100) refuse("ambiguous_indent", "Export a shallower selection with at most 100 hierarchy levels.", entry.row.id);
+      lines.push(`${"  ".repeat(depth)}- [${entry.done ? "x" : " "}] ${entry.title} <!-- pm-session:${entry.row.id} -->`);
+      for (const child of selected) if (child.row.target === entry.row.id) walk(child, depth + 1);
+    };
+    for (const entry of selected) if (!entry.row.target || !selected.some(candidate => candidate.row.id === entry.row.target)) walk(entry, 0);
+    const session: TodoHierarchySession = { version: 1, relation, rows: selected.map(entry => entry.row), digest: "" };
+    session.digest = hash([session.version, session.relation, session.rows]);
+    const text = lines.join("\n") + "\n";
+    request({ action: "apply", session, text }); rows(text, session);
+    return { session, text, skipped, refusals };
+  });
 }
 /** Preview and apply share every parse, topology, revision and native validation decision. No frozen plan is replayed. */
 export async function applyTodoHierarchy(pmRoot: string, session: unknown, text: unknown, options: TodoHierarchyOptions): Promise<TodoHierarchyResult> {
@@ -267,98 +270,101 @@ export async function applyTodoHierarchy(pmRoot: string, session: unknown, text:
     const parsed = request({ action: "apply", session, text });
     if (parsed.action !== "apply") throw new Error("unreachable");
     if (typeof options.author !== "string" || !options.author.trim() || options.author.length > 160 || (options.dryRun !== undefined && typeof options.dryRun !== "boolean")) refuse("invalid_input", "Supply a nonempty author of at most 160 characters and an optional boolean dryRun.");
-    const core = sdk(options.sdk), settings = await core.readSettings(pmRoot), registry = core.resolveRuntimeStatusRegistry(settings.schema);
-    const intent = rows(parsed.text, parsed.session), relation = parsed.session.relation;
-    const transaction = core.deriveMutationTransactionId(JSON.stringify(["todos-hierarchy-v1", parsed.session.digest, intent.map(row => [row.id, row.target]).sort()]));
-    const marker = (id: string) => `pm-todos-hierarchy-v1:${transaction}:${id}`;
-    const baseline = new Map(parsed.session.rows.map(row => [row.id, row]));
-    result.selected = intent.length;
-    /** Validate the same native transition for the final graph, each scheduled prefix and the locked write. */
-    const validate = (before: ItemDocument["metadata"][], after: ItemDocument["metadata"][], id: string) => {
-      try { core.assertHierarchyMutationAllowed(before, after, id, status => core.statusIsTerminal(status, registry)); }
-      catch { refuse("cycle", "The proposal violates native hierarchy topology. Review parent/dependency edges and export again.", id); }
-      if (core.collectNewOrderingCycleWarnings(before, after, id).length) refuse("cycle", "The proposal creates a native dependency cycle. Remove the conflicting relation and preview again.", id);
-    };
-    /** Re-read all selected targets and relevant native topology before each decision/write. */
-    const plan = async () => {
-      const current = new Map<string, Snapshot>();
-      for (const row of intent) {
-        const value = await snapshot(core, pmRoot, settings, row.id);
-        checkRevision(core, value, baseline.get(row.id)!, relation, row.target, marker(row.id)); current.set(row.id, value);
-      }
-      const complete = options.read ? await options.read() : await core.listAllComplete({}, { pmRoot, noExtensions: true });
-      const before = complete.items.map(item => current.get(item.id)?.document.metadata ?? item);
-      const after = before.map(item => {
-        const row = intent.find(row => row.id === item.id);
-        if (!row) return item;
-        const document = structuredClone(current.get(row.id)!.document);
-        propose(core, document, relation, row.target, options.author, core.nowIso());
-        return document.metadata;
-      });
-      for (const row of intent) if (row.target && !current.has(row.target)) refuse("missing_item", "The proposed parent must be a selected, existing marked row.", row.id);
-      const changes = intent.filter(row => target(core, current.get(row.id)!.document, relation) !== row.target).map(row => ({ id: row.id, relation, before: target(core, current.get(row.id)!.document, relation), after: row.target }));
-      for (const row of changes) validate(before, after, row.id);
-      // A valid final graph is insufficient: ownership, storage or interruption
-      // can stop after any write. Find an order whose EVERY durable prefix is
-      // valid, without temporary detach writes or relying on later compensation.
-      const desired = new Map(after.map(item => [item.id, item]));
-      const pending = [...changes], writes: typeof changes = [];
-      let intermediate = before;
-      while (pending.length) {
-        let accepted = false;
-        for (const [index, change] of pending.entries()) {
-          const next = intermediate.map(item => item.id === change.id ? desired.get(item.id)! : item);
-          try { validate(intermediate, next, change.id); }
-          catch (error) {
-            if (!(error instanceof TodoHierarchyError) || error.detail.code !== "cycle") throw error;
-            continue;
+    const core = sdk(options.sdk);
+    return await withTodoWorkspace(core, pmRoot, async () => {
+      const settings = await core.readSettings(pmRoot), registry = core.resolveRuntimeStatusRegistry(settings.schema);
+      const intent = rows(parsed.text, parsed.session), relation = parsed.session.relation;
+      const transaction = core.deriveMutationTransactionId(JSON.stringify(["todos-hierarchy-v1", parsed.session.digest, intent.map(row => [row.id, row.target]).sort()]));
+      const marker = (id: string) => `pm-todos-hierarchy-v1:${transaction}:${id}`;
+      const baseline = new Map(parsed.session.rows.map(row => [row.id, row]));
+      result.selected = intent.length;
+      /** Validate the same native transition for the final graph, each scheduled prefix and the locked write. */
+      const validate = (before: ItemDocument["metadata"][], after: ItemDocument["metadata"][], id: string) => {
+        try { core.assertHierarchyMutationAllowed(before, after, id, status => core.statusIsTerminal(status, registry)); }
+        catch { refuse("cycle", "The proposal violates native hierarchy topology. Review parent/dependency edges and export again.", id); }
+        if (core.collectNewOrderingCycleWarnings(before, after, id).length) refuse("cycle", "The proposal creates a native dependency cycle. Remove the conflicting relation and preview again.", id);
+      };
+      /** Re-read all selected targets and relevant native topology before each decision/write. */
+      const plan = async () => {
+        const current = new Map<string, Snapshot>();
+        for (const row of intent) {
+          const value = await snapshot(core, pmRoot, settings, row.id);
+          checkRevision(core, value, baseline.get(row.id)!, relation, row.target, marker(row.id)); current.set(row.id, value);
+        }
+        const complete = options.read ? await options.read() : await core.listAllComplete({}, { pmRoot });
+        const before = complete.items.map(item => current.get(item.id)?.document.metadata ?? item);
+        const after = before.map(item => {
+          const row = intent.find(row => row.id === item.id);
+          if (!row) return item;
+          const document = structuredClone(current.get(row.id)!.document);
+          propose(core, document, relation, row.target, options.author, core.nowIso());
+          return document.metadata;
+        });
+        for (const row of intent) if (row.target && !current.has(row.target)) refuse("missing_item", "The proposed parent must be a selected, existing marked row.", row.id);
+        const changes = intent.filter(row => target(core, current.get(row.id)!.document, relation) !== row.target).map(row => ({ id: row.id, relation, before: target(core, current.get(row.id)!.document, relation), after: row.target }));
+        for (const row of changes) validate(before, after, row.id);
+        // A valid final graph is insufficient: ownership, storage or interruption
+        // can stop after any write. Find an order whose EVERY durable prefix is
+        // valid, without temporary detach writes or relying on later compensation.
+        const desired = new Map(after.map(item => [item.id, item]));
+        const pending = [...changes], writes: typeof changes = [];
+        let intermediate = before;
+        while (pending.length) {
+          let accepted = false;
+          for (const [index, change] of pending.entries()) {
+            const next = intermediate.map(item => item.id === change.id ? desired.get(item.id)! : item);
+            try { validate(intermediate, next, change.id); }
+            catch (error) {
+              if (!(error instanceof TodoHierarchyError) || error.detail.code !== "cycle") throw error;
+              continue;
+            }
+            writes.push(change); pending.splice(index, 1); intermediate = next; accepted = true; break;
           }
-          writes.push(change); pending.splice(index, 1); intermediate = next; accepted = true; break;
+          if (!accepted) refuse("cycle", "No fully validated sequence of native item writes was found. Review conflicting relations through native commands, then export again.", pending[0].id);
         }
-        if (!accepted) refuse("cycle", "No fully validated sequence of native item writes was found. Review conflicting relations through native commands, then export again.", pending[0].id);
-      }
-      const graphs = changes.length ? [core.RelationshipGraph.fromItems(before), core.RelationshipGraph.fromItems(after)] : [], affected = new Set<string>();
-      for (const change of changes) {
-        affected.add(change.id);
-        for (const id of [change.before, change.after]) if (id) affected.add(id);
-        // Include only ancestors and descendants of changed rows, never unrelated siblings.
-        for (const graph of graphs) for (const traversal of relation === "parent" ? [core.hierarchyAncestors, core.hierarchyDescendants] : [core.orderingPredecessors, core.orderingSuccessors]) {
-          const related = traversal(graph, change.id, { limit: MAX_ROWS });
-          if (related.meta.truncated) refuse("invalid_input", "Narrow the affected topology to at most 1000 nodes.", change.id);
-          related.value.forEach(id => affected.add(id));
+        const graphs = changes.length ? [core.RelationshipGraph.fromItems(before), core.RelationshipGraph.fromItems(after)] : [], affected = new Set<string>();
+        for (const change of changes) {
+          affected.add(change.id);
+          for (const id of [change.before, change.after]) if (id) affected.add(id);
+          // Include only ancestors and descendants of changed rows, never unrelated siblings.
+          for (const graph of graphs) for (const traversal of relation === "parent" ? [core.hierarchyAncestors, core.hierarchyDescendants] : [core.orderingPredecessors, core.orderingSuccessors]) {
+            const related = traversal(graph, change.id, { limit: MAX_ROWS });
+            if (related.meta.truncated) refuse("invalid_input", "Narrow the affected topology to at most 1000 nodes.", change.id);
+            related.value.forEach(id => affected.add(id));
+          }
         }
+        if (affected.size > MAX_ROWS) refuse("invalid_input", "Narrow the affected topology to at most 1000 nodes.");
+        return { current, changes, writes, before, desired, affected: [...affected].sort() };
+      };
+      const initial = await plan();
+      result = { ...result, ok: true, changed: initial.changes.length, unchanged: intent.length - initial.changes.length, changes: initial.changes.slice(0, OUTPUT_ROWS), omittedChanges: Math.max(0, initial.changes.length - OUTPUT_ROWS), affected: initial.affected.slice(0, OUTPUT_ROWS), omittedAffected: Math.max(0, initial.affected.length - OUTPUT_ROWS) };
+      await options.onBoundary?.("planned");
+      if (options.dryRun) return receipt(result);
+      for (const change of initial.writes) {
+        await options.onBoundary?.("before_write", change.id);
+        const fresh = await plan();
+        if (!fresh.changes.some(row => row.id === change.id)) continue;
+        // Ordinary writers share this native item lock. Other topology targets are
+        // re-read inside it; their last-read-to-write window remains documented.
+        const written = await core.mutateItem({ pmRoot, settings, id: change.id, op: "update", author: options.author, message: marker(change.id), skipNoop: true, extensionFieldNames: todoExtensionFieldNames(core),
+          async mutate(document) {
+            await options.onBoundary?.("locked", change.id);
+            const lockedPlan = await plan();
+            const locked = await snapshot(core, pmRoot, settings, change.id);
+            checkRevision(core, locked, baseline.get(change.id)!, relation, change.after, marker(change.id));
+            if (core.stableUpsertValue(core.canonicalDocument(document, { extensionFieldNames: todoExtensionFieldNames(core) })) !== core.stableUpsertValue(core.canonicalDocument(locked.document, { extensionFieldNames: todoExtensionFieldNames(core) }))) refuse("stale_revision", "The native locked document differs from the verified SDK revision. Preview again.", change.id);
+            // The live graph may now need a different order. Validate THIS write,
+            // rather than assuming the remaining final graph makes it safe.
+            validate(lockedPlan.before, lockedPlan.before.map(item => item.id === change.id ? lockedPlan.desired.get(item.id)! : item), change.id);
+            return { changedFields: propose(core, document, relation, change.after, options.author, core.nowIso()) };
+          },
+        });
+        if (written.changedFields.length) result.applied++;
+        await options.onBoundary?.("after_write", change.id);
       }
-      if (affected.size > MAX_ROWS) refuse("invalid_input", "Narrow the affected topology to at most 1000 nodes.");
-      return { current, changes, writes, before, desired, affected: [...affected].sort() };
-    };
-    const initial = await plan();
-    result = { ...result, ok: true, changed: initial.changes.length, unchanged: intent.length - initial.changes.length, changes: initial.changes.slice(0, OUTPUT_ROWS), omittedChanges: Math.max(0, initial.changes.length - OUTPUT_ROWS), affected: initial.affected.slice(0, OUTPUT_ROWS), omittedAffected: Math.max(0, initial.affected.length - OUTPUT_ROWS) };
-    await options.onBoundary?.("planned");
-    if (options.dryRun) return receipt(result);
-    for (const change of initial.writes) {
-      await options.onBoundary?.("before_write", change.id);
-      const fresh = await plan();
-      if (!fresh.changes.some(row => row.id === change.id)) continue;
-      // Ordinary writers share this native item lock. Other topology targets are
-      // re-read inside it; their last-read-to-write window remains documented.
-      const written = await core.mutateItem({ pmRoot, settings, id: change.id, op: "update", author: options.author, message: marker(change.id), skipNoop: true, extensionFieldNames: EXTENSIONS,
-        async mutate(document) {
-          await options.onBoundary?.("locked", change.id);
-          const lockedPlan = await plan();
-          const locked = await snapshot(core, pmRoot, settings, change.id);
-          checkRevision(core, locked, baseline.get(change.id)!, relation, change.after, marker(change.id));
-          if (core.stableUpsertValue(core.canonicalDocument(document)) !== core.stableUpsertValue(core.canonicalDocument(locked.document))) refuse("stale_revision", "The native locked document differs from the verified SDK revision. Preview again.", change.id);
-          // The live graph may now need a different order. Validate THIS write,
-          // rather than assuming the remaining final graph makes it safe.
-          validate(lockedPlan.before, lockedPlan.before.map(item => item.id === change.id ? lockedPlan.desired.get(item.id)! : item), change.id);
-          return { changedFields: propose(core, document, relation, change.after, options.author, core.nowIso()) };
-        },
-      });
-      if (written.changedFields.length) result.applied++;
-      await options.onBoundary?.("after_write", change.id);
-    }
-    await plan();
-    return receipt(result);
+      await plan();
+      return receipt(result);
+    });
   } catch (error) {
     return receipt({ ...result, ok: false, refusals: [error instanceof TodoHierarchyError ? error.detail : { code: "native_refusal", remedy: "Inspect native pm ownership, workflow and topology constraints. Preserve any applied rows and export a fresh preview before retrying." }] });
   }

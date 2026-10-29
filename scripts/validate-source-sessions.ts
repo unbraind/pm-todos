@@ -45,7 +45,7 @@ try {
   permissions(copied, true);
   process.env.GIT_CEILING_DIRECTORIES = dirname(copied);
   const before = fingerprint(copied), pmRoot = join(copied, ".agents", "pm");
-  const items = (await listAllComplete({}, { pmRoot, noExtensions: true })).items;
+  const items = (await listAllComplete({}, { pmRoot })).items;
   assert.ok(items.length && items.length <= 1000);
   const selection = { sources: ["one.txt", "two.txt"].map((file, index) => ({ file, ids: items.filter((_, n) => n % 2 === index).map(item => item.id) })) };
   const exported = await exportTodoSourceSelection(pmRoot, selection);

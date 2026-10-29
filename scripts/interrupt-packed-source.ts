@@ -11,17 +11,18 @@ const [pmRoot, manifestPath, editingDirectory, mode] = process.argv.slice(2);
 assert.ok(mode === undefined || mode === "poison" || mode === "verify-poison");
 const requireConsumer = createRequire(import.meta.url);
 const core = requireConsumer("@unbrained/pm-cli/sdk") as typeof CoreSdk;
+await core.runWithActiveExtensions({ path: pmRoot }, async () => {
 const api = requireConsumer("..") as Pick<typeof PackageSdk, "parseTodoSourceManifest" | "applyTodoSourceSelection">;
 const manifest = api.parseTodoSourceManifest(JSON.parse(readFileSync(manifestPath, "utf8")) as unknown);
 const files = manifest.sources.map(source => ({ file: source.file, text: readFileSync(join(editingDirectory, source.file), "utf8") }));
 const ids = manifest.sources.flatMap(source => source.rows.map(row => row.id));
-const extensionFieldNames = [...Object.keys(manifest.session.entries[0].fieldDigests).filter(field => field.startsWith("todos_")), "todos_source_file"];
+const extensionFieldNames = [...new Set([...Object.keys(manifest.session.entries[0].fieldDigests).filter(field => field.startsWith("todos_")), "todos_source_file", ...(core.getActiveExtensionRegistrations()?.item_fields ?? []).flatMap(entry => entry.fields.map(field => field.name))])];
 /** Compare full native values, bodies and history through the consumer SDK's own canonicalizer. */
 async function state(): Promise<string> {
   const settings = await core.readSettings(pmRoot);
   const documents = [];
   for (const id of ids) {
-    const located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings).type_to_folder);
+    const located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings, core.getActiveExtensionRegistrations()).type_to_folder);
     assert.ok(located);
     const { document } = await core.readLocatedItem(located, { schema: settings.schema, extensionFieldNames });
     documents.push({ document: core.canonicalDocument(document, { schema: settings.schema, extensionFieldNames }), history: await core.readHistoryEntries(core.getHistoryPath(pmRoot, id), id) });
@@ -49,3 +50,4 @@ if (mode === "poison") {
 }
 console.log(JSON.stringify({ interrupted: true, retained: result.applied, transaction: result.transaction, poisoned: mode === "poison" }));
 }
+});

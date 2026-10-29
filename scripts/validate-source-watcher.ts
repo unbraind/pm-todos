@@ -28,7 +28,7 @@ if (!source) throw new Error("Pass a read-only public tracker copy outside git."
 const before = fingerprint(source);
 const root = mkdtempSync(join(tmpdir(), "todos-public-watch-"));
 try {
-  const items = (await listAllComplete({}, { pmRoot: source, noExtensions: true })).items as PmItem[];
+  const items = (await listAllComplete({}, { pmRoot: source })).items as PmItem[];
   const eligible = items.filter(item => { try { createTodoEditingSession([item]); return true; } catch { return false; } });
   assert.ok(eligible.length > 0, "Public copy has no session-compatible items");
   const baseline = createTodoEditingSession(eligible);

@@ -2,13 +2,14 @@ id: pm-todos-checklist-hierarchy
 title: Preview marked checklist hierarchy repairs before applying relations
 description: "Acceptance: reindenting a marked child produces one native relation change; title similarity never chooses a parent; cycles and deleted parents refuse before writes; compact previews include affected ancestors and children only. Overlap rechecked: Markdown parsing and text/source sessions do not assign reviewed native hierarchy meaning. Reuse SDK graph topology validators, certified reads, verified native history and mutateItem; one field producer drives preview and locked writes. Native staged-copy preview limitations are tracked in pm-todos-hierarchy-readonly-preview. Selected targets are revalidated inside the native item lock; sibling targets retain a documented last-read window. No package journal or frozen recovery plan."
 type: Feature
+pm_format_version: 2
 status: in_progress
 priority: 2
 tags[4]: "gh:unbraind/pm-todos#168",hierarchy,markdown,sdk
 created_at: "2026-10-29T00:32:09.934Z"
-updated_at: "2026-10-29T03:30:34.199Z"
+updated_at: "2026-10-29T06:26:55.952Z"
 author: codex-agent
-comments[18]{created_at,author,text}:
+comments[26]{created_at,author,text}:
   "2026-10-29T00:32:34.510Z",codex-agent,"Overlap rechecked against current core public declarations and sibling graph, CSV and beads docs: no marked checklist repair contract exists. Reuse previewItemMutations for native validation and update for persistence, RelationshipGraph for affected topology, verified history for revision guards. Core transactions serialize transactions only (upstream #1620); re-read every guarded target immediately before writes and document the remaining ordinary-writer window. No SDK pin change, no git requirement."
   "2026-10-29T00:41:16.972Z",codex-agent,"Implemented the shared relation planner, strict revision sidecar schema, native staged validation/update path, bounded receipts and hierarchy CLI. Targeted non-git tests already verify single-child reparenting, exact-ID selection, orphan/jump refusals and ordinary-writer ABA boundaries. Apply is deliberately per-item with truthful partial-progress receipts; it has no frozen mutable journal or package-owned lease, and the final SDK read-to-update window remains documented."
   "2026-10-29T00:53:46.451Z",codex-agent,"Behavioral revert proof: in a disposable copy, reverting rows() to retain baseline targets made the one-child reindent regression fail (changed 0 instead of 1). Restoring the implementation passed the same regression; the package worktree was not mutated. Linked pm tests passed (typecheck and reindent regression). Real public-corpus reads exposed native previewItemMutations EACCES on immutable copied files; follow-up pm-todos-hierarchy-readonly-preview records the exact public signature and searches. No validator bypass or upstream write was made."
@@ -27,19 +28,67 @@ comments[18]{created_at,author,text}:
   "2026-10-29T03:27:11.173Z",codex-agent,"Packed npm-current acceptance passed on pm 2026.10.25 using the shipped artifact: hierarchy export/preview/apply/replay, strict foreign prerequisite ownership with applied=0 and unchanged full native histories, release/re-export and safe two-write completion. The receipt reports hierarchy_prefix_safe=true. Other existing source ownership, compensation recovery and foreign-marker checks passed in the same consumer. JSON/TOON and all six local/global npm/Bun scenarios will run in each CI release gate."
   "2026-10-29T03:28:45.363Z",codex-agent,"Fresh read-only public-data validation on committed pm-todos main input d1202cf41d538ea11dc9a8967c6aabe64a9cf002: 104 items, 104 exported, 0 skipped; Markdown 11189 bytes, sidecar 12293 bytes; unchanged preview 104 unchanged; changed preview 1 relation, 2 affected rows, 265 JSON bytes; no staged refusals. The scratch copy was non-git, read-only and had no git executable on PATH; all copied bytes and the source stayed unchanged. Final local typecheck, build:test, docstring gate (25 files, 152 declarations) and diff whitespace checks passed. Native state checks use readLocatedItem rather than lossy list/get projections."
   "2026-10-29T03:30:30.547Z",codex-agent,"Final local validation: node --test --test-concurrency=2 --test-name-pattern=\"500 seeded\" test/hierarchy.test.ts passed all 500 hierarchy sequences (1 test, 0 failures/cancellations, 387.7 seconds within the original timeout). Each actual persisted prefix is checked through native SDK reads; all original state/preservation assertions remain. Together with the earlier 16 passing focused tests, both 500-sequence models and all targeted scenarios are now complete. npm-current packed acceptance passed with hierarchy_prefix_safe=true; typecheck, build:test, docstring, changelog full/check, whitespace/privacy checks and all 3 linked pm tests passed. Re-review blocking class fixed across shared SDK/CLI/JSON/TOON paths; no other open non-blocking finding was supplied. Releasing only this agent claim. The final exact-head npm and Bun release gates (two workers, Node 22/26, six packed scenarios each) and run URLs/counts will be maintained on PR 168 after this final tracker commit; no merge or release."
-files[8]{path,scope}:
+  "2026-10-29T04:19:37.363Z",codex-agent,"Round 2 review: fixing two general rules: topology validation must use the complete registered workspace type universe, and native read/validation/history/write operations must retain the complete registered schema rather than a package-owned field allowlist. Branch is clean and includes origin/main. Auditing hierarchy, editing/source sessions, recurrence, imports/sync, CLI JSON/TOON and packed consumers for both classes. GitHub API review inspection is currently rate limited; the two supplied blockers are recorded here and any additional available findings will be checked after reset."
+  "2026-10-29T04:48:41.240Z",codex-agent,"Class audit implemented: all direct native workflows now run under SDK runWithActiveExtensions for their explicit tracker; resolveItemTypeRegistry receives active registrations; default topology reads no longer disable extensions. Shared workspace.ts derives own field names from the same declarations index.ts registers, and unions every active registered field for native read/canonicalization/mutation. Hierarchy, editing sessions, source selection including compensation/recovery, and recurrence read/reschedule paths use this context. Removed extension suppression from the public validation readers and updated packed proof readers to use full native registered schemas. Foreign metadata remains outside each workflow write set. Real non-git regressions now cover a hidden registered-type bridge, strict unknown-field rejection with opaque foreign values, source compensation/retry, recurrence creation/rescheduling, and CLI JSON/TOON with no git executable. The existing 500-sequence all-format state model now seeds foreign registered fields under reject policy and checks full SDK native documents."
+  "2026-10-29T05:01:17.783Z",codex-agent,"Both behavioral revert proofs completed in disposable copies, rebuilding dist after each mutation. Reverting only applyTodoHierarchy to the reviewed default-reader behavior makes the extension-defined bridge test fail because the cyclic proposal is accepted; restoring the function passes 1/1. Reverting only todoExtensionFieldNames to return package-owned names makes the registered-field regression fail with invalid_input after valid foreign-field rows are rejected; restoring the function passes 1/1. Commands: node --test --test-concurrency=2 --test-name-pattern=extension-defined test/extension-workspace.test.ts and the same command with --test-name-pattern=registered. The working implementation was never reverted. GitHub API access has recovered; inspection finds no additional non-blocking findings beyond the already-fixed regex thread."
+  "2026-10-29T05:27:14.058Z",codex-agent,"Validation so far: all 500 strict native-format import/export/sync sequences passed with registered foreign fields, preserved relationships and full SDK read-back (818.9 seconds). npm-current packed acceptance passed extension_schema_safe=true and all retained prefix/ownership/recovery checks. Five retained hierarchy race/retry/ownership tests passed; retained source recovery tests and the existing source model are still running. The newly linked four-case extension workspace command hit its default aggregate 120-second runner budget after its first two cases passed, with no assertion failure. Its new link budget is now 360 seconds; source assertions, four cases and all existing 20-minute model timeouts are unchanged. The first three linked commands passed. The minimum published SDK 2026.10.23 declaration archive confirms runWithActiveExtensions and getActiveExtensionRegistrations, so the peer floor remains unchanged. Native close/terminal-update strict-field behavior on SDK 2026.10.25 is recorded on existing follow-up pm-todos-sdk-adoption-1025; no core changes were made."
+  "2026-10-29T05:51:27.654Z",codex-agent,"Final local checks: the new four-case workspace suite passed via pm test --run --progress --only-last, including concurrent registry isolation, JSON/TOON no-git consumers, unselected registered descendants in affected scope, strict foreign-field preservation and recovery. The 500-sequence strict all-format model passed. Retained hierarchy tests passed 5/5; retained source files passed 60 assertions/tests with one existing 500-sequence model canceled by its unchanged 20-minute host timeout after 300 sequences; the targeted recurrence reschedule regression passed 1/1. No source assertion failed or existing timeout/assertion was weakened; full CI must finish the unchanged source model. npm-current and npm-minimum packed consumers passed both new extension_schema_safe=true and all earlier checks. Current import and recurrence create paths also explicitly unset parent/blocker/dependencies/sprint/release for independent births, and focused tests retain native independence under matching-author ambient focus. Fresh public immutable copy: 104/104 exported, 0 skipped, 11189 Markdown bytes, 12293 sidecar bytes, 1 change / 2 affected / 265 JSON bytes, all copied bytes and source unchanged; no git on PATH. Typecheck, build:test, docstrings and whitespace checks passed."
+  "2026-10-29T06:25:53.928Z",codex-agent,"Final audit correction and results: after the earlier four-case run, adding ambient-focus creation assertions exposed SDK explicit_unset annotations in native birth history. The producer now explicitly unsets scope fields, and occurrence provenance verifies the SDK annotation against SDK-normalized birth state. A counterfeit annotation refuses without state changes. Final four-case suite passes 4/4 directly and through pm test --run --only-last --progress (58.6 seconds). Typecheck, build, build:test and docstring gate pass (28 files, 158 declarations). Separate disposable behavioral revert: replacing only creationMessage with exact message equality makes the strict foreign-field/focus regression fail; restoration passes the same test. The two blocking class regressions already each fail with only their responsible reader/field helper reverted and pass restored. No existing tests or thresholds were weakened."
+  "2026-10-29T06:26:01.605Z",codex-agent,"Pre-push validation: strengthened seeded SDK-read-back model passes all 500 sequences with installed foreign types/fields, strict unknown-field rejection, old-input replays, all five formats, CRLF, custom statuses and ambient focus. Local npm-current and npm-minimum packed acceptance pass registered-schema and persisted-prefix receipts across supported SDK versions; final npm/Bun matrix will certify all six consumer scenarios. Retained hierarchy focused regressions pass 5/5. Retained source suite produced 60 passes and one cancellation when its original 500-sequence test reached the unchanged 20-minute saturated-host limit, with zero assertion failures; CI must supply full-gate evidence. Public immutable main tracker: 104 items, 104 exported, zero skipped; 11189 Markdown bytes, 12293 sidecar bytes, 104 unchanged, one proposed relation change affecting two rows, 265-byte receipt. Non-git read-only copy and source bytes unchanged. Strict tracker health: 10 checks pass, zero warnings; both touched histories preserve HEAD and main prefixes. No new non-blocking review finding was present in GitHub comments; prior CodeQL thread is resolved. Final exact-head gate URLs and counts will be maintained on PR 168 after this tracker snapshot, avoiding a metadata-only evidence loop."
+  "2026-10-29T06:26:53.447Z",codex-agent,"Final recurrence compatibility checks pass 4/4: weekly completion/retry/chaining, foreign provenance/history refusals, replayed imports, and stored schedule/reschedule preservation. Command: node --test --test-concurrency=1 --test-name-pattern=\"weekly completion|stored schedule receipts|bounded source metadata|replayed imports cannot\" test/recurrence.test.ts. Both review-blocking classes are fixed throughout the package. Remaining limitations are the documented cross-item last-read window and existing native SDK preview/lifecycle follow-ups. Releasing my claim with the feature in_progress for orchestrator verification; final-head CI results will be linked in PR 168."
+files[20]{path,scope}:
   hierarchy-command.ts,project
   hierarchy.ts,project
   index.ts,project
+  recurrence.ts,project
+  scripts/accept-canonical-reader.ts,project
+  scripts/accept-extension-schema.ts,project
   scripts/accept-hierarchy-prefix.ts,project
   scripts/accept-packed.ts,project
+  scripts/extension-schema-fixture.ts,project
+  scripts/interrupt-packed-source.ts,project
   scripts/validate-hierarchy.ts,project
+  scripts/validate-sessions.ts,project
+  scripts/validate-source-sessions.ts,project
+  scripts/validate-source-watcher.ts,project
+  sessions.ts,project
+  source-sessions.ts,project
+  test/extension-workspace.test.ts,project
   test/hierarchy-roundtrip-model.test.ts,project
   test/hierarchy.test.ts,project
-tests[3]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
-  npm run typecheck,project,codex-agent,"2026-10-29T00:51:08.496Z",local_mutation,feat/checklist-hierarchy-repair-previews
-  node --test --test-concurrency=2 --test-name-pattern=reindenting test/hierarchy.test.ts,project,codex-agent,"2026-10-29T00:51:15.752Z",local_mutation,feat/checklist-hierarchy-repair-previews
-  node --test --test-concurrency=2 --test-name-pattern=persisted test/hierarchy.test.ts,project,codex-agent,"2026-10-29T03:20:29.053Z",local_mutation,feat/checklist-hierarchy-repair-previews
+  workspace.ts,project
+tests[4]:
+  - command: npm run typecheck
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-29T00:51:08.496Z"
+      source_kind: local_mutation
+      source_ref: feat/checklist-hierarchy-repair-previews
+  - command: node --test --test-concurrency=2 --test-name-pattern=reindenting test/hierarchy.test.ts
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-29T00:51:15.752Z"
+      source_kind: local_mutation
+      source_ref: feat/checklist-hierarchy-repair-previews
+  - command: node --test --test-concurrency=2 --test-name-pattern=persisted test/hierarchy.test.ts
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-29T03:20:29.053Z"
+      source_kind: local_mutation
+      source_ref: feat/checklist-hierarchy-repair-previews
+  - command: node --test --test-concurrency=1 test/extension-workspace.test.ts
+    scope: project
+    timeout_seconds: 360
+    provenance:
+      author: codex-agent
+      created_at: "2026-10-29T05:14:49.194Z"
+      source_kind: local_mutation
+      source_ref: feat/checklist-hierarchy-repair-previews
+    updated_by: codex-agent
+    updated_at: "2026-10-29T05:27:10.423Z"
 docs[2]{path,scope}:
   docs/checklist-hierarchy.md,project
   README.md,project

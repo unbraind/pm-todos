@@ -54,6 +54,17 @@ if (preview.ok) {
 }
 ```
 
+Every direct SDK operation uses `runWithActiveExtensions({ path: pmRoot }, ...)`
+for the target workspace. Native folder lookup includes registered item types,
+and graph validation includes unselected extension-defined rows. For example,
+if A blocks an extension-defined B and B blocks C, indenting A under C in
+`blocked_by` mode refuses the cycle before writing, even when only A/C are selected.
+Native read, canonicalization, mutation and recovery field contexts include all
+registered extensions, including with `schema_unknown_field_policy=reject`.
+The pm-todos field declarations are shared by its producer and native adapters;
+foreign fields remain opaque and unchanged. The command updates and displays only
+its documented relationship fields.
+
 The optional SDK injection accepts public peer primitives. Otherwise the lazy
 supported module loader resolves `@unbrained/pm-cli/sdk`; it never inspects argv,
 `which`, global binary symlinks or private host internals. The same field-proposal function produces preview graphs and mutations inside

@@ -1,3 +1,4 @@
+import { TODO_ITEM_FIELDS } from "./workspace.ts";
 // pm-todos — Markdown TODO round-trip for pm-cli
 
 import type {
@@ -2565,6 +2566,7 @@ async function runTodoImport(opts: TodoImportOptions): Promise<TodoImportResult>
             isTodojson ? todo.todoId : undefined,
           );
           const create: PmCreateActionOptions = {
+            parent: "none", blockedBy: "none", dep: [], sprint: "none", release: "none",
             title: todo.text,
             type: itemType,
             status,
@@ -2895,15 +2897,7 @@ export default defineExtension({
       },
     });
 
-    api.registerItemFields([
-      { name: "todos_kv", type: "object", optional: true },
-      { name: "todos_todotxt", type: "string", optional: true },
-      { name: "todos_creation_date", type: "string", optional: true },
-      { name: "todos_completion_date", type: "string", optional: true },
-      { name: "todos_source_created_at", type: "string", optional: true },
-      { name: "todos_source_updated_at", type: "string", optional: true },
-      { name: "todos_source_file", type: "string", optional: true },
-    ]);
+    api.registerItemFields(TODO_ITEM_FIELDS);
 
     // -----------------------------------------------------------------------
     // Command: pm todos validate <file>

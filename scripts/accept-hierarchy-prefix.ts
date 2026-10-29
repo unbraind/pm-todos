@@ -8,6 +8,7 @@ import type * as Package from "../index.ts";
 const [pmRoot, file, sidecar, mode] = process.argv.slice(2);
 const consumer = createRequire(import.meta.url), core = consumer("@unbrained/pm-cli/sdk") as typeof Core;
 const api = consumer("..") as Pick<typeof Package, "exportTodoHierarchy">;
+await core.runWithActiveExtensions({ path: pmRoot }, async () => {
 const settings = await core.readSettings(pmRoot);
 const ids = ["prefix-x", "prefix-z", "prefix-y"].map(id => core.normalizeItemId(id, settings.id_prefix)), [x, z, y] = ids;
 const client = new core.PmClient({ pmRoot, author: "prefix-owner" });
@@ -15,9 +16,9 @@ const client = new core.PmClient({ pmRoot, author: "prefix-owner" });
 async function state(applied = false): Promise<string> {
   const documents = [];
   for (const id of ids) {
-    const located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings).type_to_folder);
+    const located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings, core.getActiveExtensionRegistrations()).type_to_folder);
     assert.ok(located);
-    const { document } = await core.readLocatedItem(located, { schema: settings.schema });
+    const { document } = await core.readLocatedItem(located, { schema: settings.schema, extensionFieldNames: core.getActiveExtensionRegistrations()?.item_fields.flatMap(entry => entry.fields.map(field => field.name)) });
     const history = await core.readHistoryEntries(core.getHistoryPath(pmRoot, id), id);
     assert.equal(core.verifyHistoryEntries(history, document).ok, true);
     documents.push({ document, history });
@@ -48,3 +49,4 @@ if (mode === "seed") {
   assert.equal(mode, "verify-applied");
   await state(true);
 }
+});

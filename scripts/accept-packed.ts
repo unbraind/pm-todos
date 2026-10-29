@@ -33,6 +33,7 @@ interface AcceptanceReceipt {
   readonly hierarchy_applied: number;
   readonly hierarchy_replay_changed: number;
   readonly hierarchy_prefix_safe: true;
+  readonly extension_schema_safe: true;
   readonly source_replay_changed: number;
   readonly rollback_recovered: true;
   readonly copied_apply_refused: true;
@@ -302,6 +303,32 @@ try {
       if (output.ok !== false || output.applied !== 0 || reason?.code !== "stale_revision" || typeof reason.remedy !== "string" || !reason.remedy) throw new Error("Packed consumer accepted foreign ownership under a copied apply marker");
     }
     run(process.execPath, [...foreignDriverArgs, "verify-poison"], scenarioRoot, scenarioEnvironment);
+    // The foreign bridge must remain in graph validation, and strict schema
+    // reads/writes must retain fields contributed by another installed package.
+    const schemaDriverDirectory = join(packageDirectory, ".accept-schema"); mkdirSync(schemaDriverDirectory);
+    for (const name of ["accept-extension-schema", "extension-schema-fixture"]) {
+      const source = readFileSync(join(repoRoot, "scripts", name + ".ts"), "utf8");
+      writeFileSync(join(schemaDriverDirectory, name + ".js"), stripTypeScriptTypes(source).replace('"./extension-schema-fixture.ts"', '"./extension-schema-fixture.js"'));
+    }
+    const schemaFile = join(scenarioRoot, "schema"), schemaDriver = [join(schemaDriverDirectory, "accept-extension-schema.js"), scenarioEnvironment.PM_PATH!, schemaFile];
+    run(process.execPath, [...schemaDriver, "seed"], scenarioRoot, scenarioEnvironment);
+    const schemaFormat = scenario.manager === "npm" ? ["--json"] : [];
+    /** Exercise the same strict-schema receipt in both installed output transports. */
+    const schemaReceipt = (stdout: string) => requireJsonObject(schemaFormat.length ? stdout : JSON.stringify(decodeToon(stdout)), "extension schema");
+    for (const action of ["preview", "apply"]) {
+      const refused = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", action, "--file", schemaFile + ".blocked.md", "--session", schemaFile + ".blocked.json", ...schemaFormat], 1).stdout);
+      if (refused.ok !== false || refused.applied !== 0 || (refused.refusals as Record<string, unknown>[])[0]?.code !== "cycle") throw new Error("Packed consumer omitted a registered bridge type from cycle validation");
+    }
+    run(process.execPath, [...schemaDriver, "verify-refused"], scenarioRoot, scenarioEnvironment);
+    const schemaArgs = ["--file", schemaFile + ".parent.md", "--session", schemaFile + ".parent.json"];
+    const schemaExport = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "export", "--selection", schemaFile + ".ids.json", ...schemaArgs, ...schemaFormat]).stdout);
+    if (schemaExport.selected !== 2 || schemaExport.skipped !== 0) throw new Error("Packed export refused valid registered foreign fields");
+    writeFileSync(schemaFile + ".parent.md", readFileSync(schemaFile + ".edited"));
+    const schemaPreview = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "preview", ...schemaArgs, ...schemaFormat]).stdout);
+    const schemaApply = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...schemaArgs, ...schemaFormat]).stdout);
+    const schemaReplay = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...schemaArgs, ...schemaFormat]).stdout);
+    if (schemaPreview.ok !== true || schemaPreview.changed !== 1 || schemaApply.ok !== true || schemaApply.applied !== 1 || schemaReplay.ok !== true || schemaReplay.changed !== 0) throw new Error("Packed strict-schema preview/apply/replay failed");
+    run(process.execPath, [...schemaDriver, "verify-applied"], scenarioRoot, scenarioEnvironment);
     receipts.push({
       scenario: scenario.name,
       host_version: actualVersion,
@@ -314,6 +341,7 @@ try {
       hierarchy_applied: hierarchyApply.applied as number,
       hierarchy_replay_changed: hierarchyReplay.changed as number,
       hierarchy_prefix_safe: true,
+      extension_schema_safe: true,
       source_replay_changed: sourceReplay.changed as number,
       rollback_recovered: true,
       copied_apply_refused: true,

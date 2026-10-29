@@ -8,12 +8,11 @@ import * as core from "@unbrained/pm-cli/sdk";
 import { createExtensionTestHarness } from "@unbrained/pm-cli/sdk/testing";
 import extension, { exportTodoHierarchy, applyTodoHierarchy } from "../index.ts";
 import { packExtension } from "./packed-fixture.ts";
+import { installSchemaFixture, readSchemaDocuments } from "../scripts/extension-schema-fixture.ts";
 
 /** Read the entire persisted document through the public SDK, including source metadata and native annotations. */
 async function native(pmRoot: string, id: string) {
-  const settings = await core.readSettings(pmRoot), located = await core.locateItem(pmRoot, id, settings.id_prefix, settings.item_format, core.resolveItemTypeRegistry(settings).type_to_folder);
-  assert.ok(located);
-  return (await core.readLocatedItem(located, { schema: settings.schema, extensionFieldNames: ["todos_todotxt", "todos_kv", "todos_creation_date", "todos_completion_date", "todos_source_created_at", "todos_source_updated_at"] })).document;
+  return (await readSchemaDocuments(core, pmRoot, [id]))[0];
 }
 
 test("500 seeded native import/export/sync sequences preserve hierarchy and every untouched native field through SDK read-back", { timeout: 1200000 }, async t => {
@@ -29,6 +28,8 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
     await core.init(undefined, {}, { pmRoot, noExtensions: true });
     const client = new core.PmClient({ pmRoot, author: "roundtrip-model" });
     await client.packageInstall(artifact, { project: true });
+    const foreign = await installSchemaFixture(core, root, pmRoot, format);
+    await client.config("project", "set", "schema_unknown_field_policy", "reject");
     const sdk = core.createExtensionCommandSdk(pmRoot, client, "roundtrip-model");
     const active = `custom-${random(10000000)}`;
     await client.schemaAddStatus(active, { role: [random(2) ? "active" : "blocked"] });
@@ -36,6 +37,7 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
     const peer = await client.create({ id: "model-peer", title: "Reference peer", type: "Feature", parent: "none", sprint: "none", release: "none", blockedBy: "none", dep: [] });
     const child = await client.create({ id: "model-child", title: "Stable native row", status: active, type: "Task", parent: parent.item.id, assignee: "roundtrip-model", sprint: "2026-W48", release: "2026.12", blockedBy: "none", dep: [`id=${peer.item.id},kind=related`], priority: 2, tags: "todo", deadline: "2026-12-01", description: "Preserved native description todo-id:1", body: "Preserved body", comment: ["text=Seeded comment"], note: ["text=Seeded note"], file: ["path=example.ts"], doc: ["path=README.md"], test: ["command=node --version"], acceptanceCriteria: "Retain repaired relations" });
     const id = child.item.id, ids = [parent.item.id, peer.item.id, id];
+    await client.update(id, { field: [`${foreign.note}=  Foreign whitespace CRLF value  `, `${foreign.payload}={"values":[1,true,"preserved"],"nested":{"keep":"all formats"}}`] });
     const baseline = await native(pmRoot, id), model = structuredClone(baseline);
     const unselected = await Promise.all(ids.slice(0, 2).map(parentId => native(pmRoot, parentId)));
     const file = join(root, format, "exchange"), output = join(root, format, "exported");

@@ -39,7 +39,7 @@ try {
   permissions(copy, true);
   const bin = join(scratch, "bin"); mkdirSync(bin); symlinkSync(process.execPath, join(bin, "node"));
   process.env.PATH = bin; process.env.GIT_CEILING_DIRECTORIES = dirname(copy);
-  const complete = await listAllComplete({}, { pmRoot, cwd: copy, noExtensions: true });
+  const complete = await listAllComplete({}, { pmRoot, cwd: copy });
   const exported = await exportTodoHierarchy(pmRoot, complete.items.map(item => item.id));
   const unchanged = await applyTodoHierarchy(pmRoot, exported.session, exported.text, { author: "validation-agent", dryRun: true });
   assert.equal(unchanged.ok, true, JSON.stringify(unchanged)); assert.equal(unchanged.changed, 0);

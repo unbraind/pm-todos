@@ -1,7 +1,8 @@
+import { todoExtensionFieldNames, withTodoWorkspace } from "./workspace.ts";
 /** Explicit todo.txt recurrence adaptation; core owns storage, locks and lifecycle. */
 import { createHash } from "node:crypto";
 import {
-  create, getHistoryPath, locateItem, mutateItem, normalizeItemId, readHistoryEntries,
+  canonicalDocument, stableUpsertValue, getActiveExtensionRegistrations, runWithActiveExtensions, resolveItemTypeRegistry, create, getHistoryPath, locateItem, mutateItem, normalizeItemId, readHistoryEntries,
   readLocatedItem, readSettings, replayHistoryToTarget, resolveRuntimeStatusRegistry, verifyHistoryEntries,
   type ItemDocument, type PmSettings, type RuntimeStatusRegistry,
 } from "@unbrained/pm-cli/sdk";
@@ -57,6 +58,25 @@ export interface TodoRecurrenceApplyOptions {
 const POLICY = "floating-date; weekly; explicit-only" as const;
 const MESSAGE = "pm-todos recurring occurrence v1";
 const RESCHEDULE_MESSAGE = "pm-todos reschedule occurrence v1";
+const CREATE_UNSETS = ["blocked_by", "parent", "release", "sprint"];
+/** Recognize SDK audit annotations only when SDK normalization proves the birth already has those fields unset. */
+function creationMessage(message: string | undefined, birth: ReturnType<typeof replayHistoryToTarget>): boolean {
+  if (message === MESSAGE) return true;
+  const prefix = MESSAGE + " | explicit_unset=";
+  if (!message?.startsWith(prefix)) return false;
+  const fields = message.slice(prefix.length).split(",");
+  if (fields.some(field => !/^[a-z_][a-z0-9_.-]*$/.test(field))) return false;
+  const cleared = structuredClone(birth);
+  for (const field of fields) {
+    if (field === "body") cleared.body = "";
+    else delete cleared.metadata[field];
+  }
+  // The same SDK normalizer handles absent values and empty native collections;
+  // no hand-written normalization or arbitrary message suffix is accepted.
+  const options = { extensionFieldNames: todoExtensionFieldNames({ getActiveExtensionRegistrations }) };
+  try { return stableUpsertValue(canonicalDocument(birth as ItemDocument, options)) === stableUpsertValue(canonicalDocument(cleared as ItemDocument, options)); }
+  catch { return false; }
+}
 const IDENTITY_KEYS = ["pmseries", "pmoccurrence", "pmprevious"] as const;
 const KEYS = ["pmseries", "pmoccurrence", "pmoriginaldue", "pmprevious", "pmrevision"] as const;
 
@@ -87,8 +107,8 @@ function hash(parts: readonly string[]): string {
 }
 /** Read authoritative item documents through the SDK, bypassing list projections. */
 async function read(pmRoot: string, id: string, settings: PmSettings): Promise<ItemDocument | undefined> {
-  const item = await locateItem(pmRoot, id, settings.id_prefix, settings.item_format);
-  return item ? (await readLocatedItem(item, { schema: settings.schema, extensionFieldNames: ["todos_kv", "todos_todotxt", "todos_completion_date", "todos_creation_date"] })).document : undefined;
+  const item = await locateItem(pmRoot, id, settings.id_prefix, settings.item_format, resolveItemTypeRegistry(settings, getActiveExtensionRegistrations()).type_to_folder);
+  return item ? (await readLocatedItem(item, { schema: settings.schema, extensionFieldNames: todoExtensionFieldNames({ getActiveExtensionRegistrations }) })).document : undefined;
 }
 /** Bind a preview to its immutable history tip, including replayed content revisions. */
 async function revision(pmRoot: string, document: ItemDocument): Promise<string | undefined> {
@@ -100,8 +120,10 @@ async function revision(pmRoot: string, document: ItemDocument): Promise<string 
 async function owned(pmRoot: string, document: ItemDocument, kv: Record<string, string>): Promise<boolean> {
   const actual = document.metadata.todos_kv as Record<string, string> | undefined;
   const history = await readHistoryEntries(getHistoryPath(pmRoot, document.metadata.id), document.metadata.id);
-  if (!actual || !IDENTITY_KEYS.every(key => actual[key] === kv[key]) || history[0]?.op !== "create" || history[0]?.message !== MESSAGE || !verifyHistoryEntries(history, document).ok) return false;
-  const initial = replayHistoryToTarget(history, 0).metadata.todos_kv as Record<string, string> | undefined;
+  if (!actual || !IDENTITY_KEYS.every(key => actual[key] === kv[key]) || history[0]?.op !== "create" || !verifyHistoryEntries(history, document).ok) return false;
+  const birth = replayHistoryToTarget(history, 0);
+  if (!creationMessage(history[0].message, birth)) return false;
+  const initial = birth.metadata.todos_kv as Record<string, string> | undefined;
   return Boolean(initial && IDENTITY_KEYS.every(key => initial[key] === actual[key]));
 }
 /** Internal preview includes validated native creation fields; callers only receive receipts. */
@@ -166,7 +188,7 @@ function rawSchedule(metadata: Record<string, unknown>): string | undefined {
 async function managedSchedule(pmRoot: string, document: ItemDocument): Promise<{ schedule: TodoOccurrenceSchedule; raw: string | undefined } | undefined> {
   const history = await readHistoryEntries(getHistoryPath(pmRoot, document.metadata.id), document.metadata.id);
   if (!verifyHistoryEntries(history, document).ok) return undefined;
-  const index = history.map(entry => (entry.op === "create" && entry.message === MESSAGE) || (entry.op === "update" && entry.message === RESCHEDULE_MESSAGE)).lastIndexOf(true);
+  const index = history.map(entry => (entry.op === "create" && creationMessage(entry.message, replayHistoryToTarget(history, history.indexOf(entry)))) || (entry.op === "update" && entry.message === RESCHEDULE_MESSAGE)).lastIndexOf(true);
   if (index < 0) return undefined;
   const metadata = replayHistoryToTarget(history, index).metadata;
   return { schedule: schedule(metadata), raw: rawSchedule(metadata) };
@@ -208,7 +230,7 @@ async function reschedule(pmRoot: string, input: TodoRecurrenceRequest, proposal
   if (!input.expectedTargetRevision) return { ...plan, ...refuse("target_conflict", "Preview the successor, then pass its targetRevision as expectedTargetRevision (CLI --expected-target-revision) to apply this reschedule.") };
   await options.onTransition?.("before_reschedule");
   let result = plan;
-  await mutateItem({ pmRoot, settings, id: proposal.item.id, op: "update", author: options.author, message: RESCHEDULE_MESSAGE, skipNoop: true, extensionFieldNames: ["todos_kv", "todos_todotxt"],
+  await mutateItem({ pmRoot, settings, id: proposal.item.id, op: "update", author: options.author, message: RESCHEDULE_MESSAGE, skipNoop: true, extensionFieldNames: todoExtensionFieldNames({ getActiveExtensionRegistrations }),
     async mutate(document) {
       await options.onTransition?.("target_locked");
       result = await storedReceipt(pmRoot, proposal, settings, source, "preview", 0, 0, document);
@@ -255,59 +277,61 @@ async function execute(pmRoot: string, value: unknown, options?: TodoRecurrenceA
   if (!input.dialect) return { ok: true, action: "disabled", created: 0, policy: POLICY };
   if (options && (!input.expectedRevision || typeof options.author !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(options.author))) return refuse("invalid_input", "Apply needs a preview expectedRevision and a bounded author id.");
   try {
-    const settings = await readSettings(pmRoot);
-    const registry = resolveRuntimeStatusRegistry(settings.schema);
-    const id = normalizeItemId(input.id, settings.id_prefix);
-    const source = await read(pmRoot, id, settings);
-    if (!source) return refuse("missing_item", "Select an existing source item in this tracker.");
-    if (!options) {
-      const proposal = await propose(pmRoot, input, source, settings, registry);
-      return "preview" in proposal ? await existing(pmRoot, proposal, settings, source) ?? proposal.preview : proposal;
-    }
-    let result = refuse("write_failed", "Inspect tracker health and ownership, then preview current state before retrying.");
-    await options.onTransition?.("before_lock");
-    await mutateItem({ pmRoot, settings, id, op: "update", author: options.author, skipNoop: true,
-      async mutate(document) {
-        let proposal: Proposal | undefined;
-        let published: "created" | "rescheduled" | undefined;
-        try {
-          await options.onTransition?.("source_locked");
-          const candidate = await propose(pmRoot, input, document, settings, resolveRuntimeStatusRegistry((await readSettings(pmRoot)).schema));
-          if (!("preview" in candidate)) { result = candidate; return { changedFields: [] }; }
-          proposal = candidate;
-          await options.onTransition?.("before_target_read");
-          result = await existing(pmRoot, proposal, settings, document) ?? proposal.preview;
-          if (result.ok && result.targetRevision && input.expectedTargetRevision && result.targetRevision !== input.expectedTargetRevision) {
-            result = { ...result, ...refuse("target_conflict", "The successor revision changed. Read the current target and preview again; saved plans are never replayed blindly.") };
-            return { changedFields: [] };
-          }
-          if (result.action === "reschedule") {
-            result = await reschedule(pmRoot, input, proposal, result, settings, document, options);
-            if (result.action === "rescheduled") published = "rescheduled";
-          } else if (result.action === "preview") {
-            if (input.expectedTargetRevision) { result = refuse("target_deleted", "The previewed successor is missing. Restore and review it explicitly; do not replay the old plan."); return { changedFields: [] }; }
-            await options.onTransition?.("before_create");
-            try {
-              await create({ allowDuplicate: true, id: proposal.item.id, type: "Task", title: proposal.item.title, status: proposal.item.status, priority: proposal.item.priority, tags: proposal.item.tags?.join(","), deadline: proposal.intended.deadline ?? undefined, author: options.author, message: MESSAGE, field: ["todos_kv=" + JSON.stringify(proposal.kv), "todos_todotxt=" + proposal.line] }, { pmRoot });
-              published = "created";
-              result = { ok: true, action: "created", created: 1, policy: POLICY };
-            } catch {
-              result = await existing(pmRoot, proposal, settings, document) ?? refuse("write_failed", "Ensure pm-todos is active and Task creation is permitted; inspect health, then preview again.");
+    return await withTodoWorkspace({ runWithActiveExtensions }, pmRoot, async () => {
+      const settings = await readSettings(pmRoot);
+      const registry = resolveRuntimeStatusRegistry(settings.schema);
+      const id = normalizeItemId(input.id, settings.id_prefix);
+      const source = await read(pmRoot, id, settings);
+      if (!source) return refuse("missing_item", "Select an existing source item in this tracker.");
+      if (!options) {
+        const proposal = await propose(pmRoot, input, source, settings, registry);
+        return "preview" in proposal ? await existing(pmRoot, proposal, settings, source) ?? proposal.preview : proposal;
+      }
+      let result = refuse("write_failed", "Inspect tracker health and ownership, then preview current state before retrying.");
+      await options.onTransition?.("before_lock");
+      await mutateItem({ pmRoot, settings, id, op: "update", author: options.author, skipNoop: true, extensionFieldNames: todoExtensionFieldNames({ getActiveExtensionRegistrations }),
+        async mutate(document) {
+          let proposal: Proposal | undefined;
+          let published: "created" | "rescheduled" | undefined;
+          try {
+            await options.onTransition?.("source_locked");
+            const candidate = await propose(pmRoot, input, document, settings, resolveRuntimeStatusRegistry((await readSettings(pmRoot)).schema));
+            if (!("preview" in candidate)) { result = candidate; return { changedFields: [] }; }
+            proposal = candidate;
+            await options.onTransition?.("before_target_read");
+            result = await existing(pmRoot, proposal, settings, document) ?? proposal.preview;
+            if (result.ok && result.targetRevision && input.expectedTargetRevision && result.targetRevision !== input.expectedTargetRevision) {
+              result = { ...result, ...refuse("target_conflict", "The successor revision changed. Read the current target and preview again; saved plans are never replayed blindly.") };
+              return { changedFields: [] };
             }
-            await options.onTransition?.("after_create");
+            if (result.action === "reschedule") {
+              result = await reschedule(pmRoot, input, proposal, result, settings, document, options);
+              if (result.action === "rescheduled") published = "rescheduled";
+            } else if (result.action === "preview") {
+              if (input.expectedTargetRevision) { result = refuse("target_deleted", "The previewed successor is missing. Restore and review it explicitly; do not replay the old plan."); return { changedFields: [] }; }
+              await options.onTransition?.("before_create");
+              try {
+                await create({ unset: [...CREATE_UNSETS], dep: [], allowDuplicate: true, id: proposal.item.id, type: "Task", title: proposal.item.title, status: proposal.item.status, priority: proposal.item.priority, tags: proposal.item.tags?.join(","), deadline: proposal.intended.deadline ?? undefined, author: options.author, message: MESSAGE, field: ["todos_kv=" + JSON.stringify(proposal.kv), "todos_todotxt=" + proposal.line] }, { pmRoot });
+                published = "created";
+                result = { ok: true, action: "created", created: 1, policy: POLICY };
+              } catch {
+                result = await existing(pmRoot, proposal, settings, document) ?? refuse("write_failed", "Ensure pm-todos is active and Task creation is permitted; inspect health, then preview again.");
+              }
+              await options.onTransition?.("after_create");
+            }
+            return { changedFields: [] };
+          } finally {
+            await options.onTransition?.("before_release");
+            // Read after every awaited transition, while the source lease is still owned.
+            if (proposal && (published || result.stored)) {
+              const previous = result;
+              result = await storedReceipt(pmRoot, proposal, settings, document, published ?? "preview", published === "created" ? 1 : 0, published === "rescheduled" ? 1 : 0);
+              if (!previous.ok && result.ok && !published) result = { ...result, ok: false, action: "skipped", code: previous.code, remedy: previous.remedy };
+            }
           }
-          return { changedFields: [] };
-        } finally {
-          await options.onTransition?.("before_release");
-          // Read after every awaited transition, while the source lease is still owned.
-          if (proposal && (published || result.stored)) {
-            const previous = result;
-            result = await storedReceipt(pmRoot, proposal, settings, document, published ?? "preview", published === "created" ? 1 : 0, published === "rescheduled" ? 1 : 0);
-            if (!previous.ok && result.ok && !published) result = { ...result, ok: false, action: "skipped", code: previous.code, remedy: previous.remedy };
-          }
-        }
-      },
+        },
+      });
+      return result;
     });
-    return result;
   } catch { return refuse("write_failed", "Inspect tracker history, claims and locks; enable pm-todos, then preview current state before retrying. An interrupted publication is recognized from live SDK reads."); }
 }

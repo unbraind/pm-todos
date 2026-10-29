@@ -30,7 +30,7 @@ const pmRoot = join(root, "tracker");
 process.env.GIT_CEILING_DIRECTORIES = dirname(root);
 try {
   cpSync(source, pmRoot, { recursive: true, filter: path => !["runtime", "locks", "search", "extensions"].includes(path.split(/[\\/]/).at(-1) ?? "") });
-  const items = (await listAllComplete({}, { pmRoot, noExtensions: true })).items;
+  const items = (await listAllComplete({}, { pmRoot })).items;
   const eligible = items.filter(item => typeof item.title === "string" && item.title.length > 0);
   const { session, text } = createTodoEditingSession(eligible);
   const initial = fingerprint(pmRoot);
