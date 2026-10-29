@@ -2,13 +2,16 @@ id: pm-todos-cross-file
 title: Coordinate row ownership across selected TODO files
 description: "Acceptance: moving one identified row between two selected files updates ownership once; duplicate source ownership refuses; a stale second file prevents an atomic selection from applying; unrelated files stay outside scope. Reuse the reviewed todo.txt session planner and core SDK transactions. Include typed SDK and CLI contracts, bounded TOON/JSON receipts, strict input schema, revision-bound recovery, seeded model tests, read-only public-data validation and packed installation coverage."
 type: Feature
-status: in_progress
+status: closed
 priority: 2
 tags[1]: "gh:unbraind/pm-todos#162"
 created_at: "2026-10-27T17:28:50.173Z"
-updated_at: "2026-10-28T19:06:32.446Z"
+updated_at: "2026-10-29T18:47:10.771Z"
+closed_at: "2026-10-29T18:47:09.821Z"
+completed_at: "2026-10-29T18:47:09.821Z"
 author: codex-agent
 acceptance_criteria: Moving one identified row between two selected files updates ownership once; duplicate source ownership refuses; a stale second file prevents an atomic selection from applying; unrelated files remain outside scope
+release: 2026.10.29
 comments[21]{created_at,author,text}:
   "2026-10-27T17:29:45.992Z",codex-agent,"Overlap recheck: core public workspace transactions and immutable item history already provide coordination and recovery; pm-todos glob import collects files and sessions reconcile one exchange; pm-csv roundtrip coordinates spreadsheet rows, and pm-memory owns memory projections. No existing cross-file TODO ownership selection was found. Reuse the todo.txt session planner, native SDK reads, mutations, locks and workspace transactions; no new import engine. The pinned SDK is 2026.10.23, retained per dependency policy; public registry currently reports 2026.10.27."
   "2026-10-27T17:45:03.000Z",codex-agent,"Implementation: explicit source manifest and per-row immutable history revisions; reuse fidelity/session normalization and the same planner for preview, apply and recovery. Public SDK owns fenced selection leases, native item locks, append-only item histories and workspace transaction journals. No additional import engine. Added CLI export/preview/apply and individually skipped export refusals. Read-only public validation at main 847bc287: 102 rows inspected, 101 selected, 1 unsupported row skipped, 2 files, 11413 text bytes and 106696 manifest bytes; duplicate ownership refused and complete copied-file fingerprint unchanged. Native race compensation retains peer success and reports superseded instead of overwriting an already touched row."
@@ -104,4 +107,5 @@ tests[7]:
 docs[2]{path,scope}:
   docs/source-editing-sessions.md,project
   README.md,project
+close_reason: Delivered by merged PR 162 with successful CI; authorized prepared-release notes recovery.
 body: ""
