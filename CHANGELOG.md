@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.10.30 - 2026-10-30
+
+### Fixed
+
+- Restore generated notes for prepared 2026.10.29 ([pm-todos-release-notes-1029](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-release-notes-1029.toon))
+
 ## 2026.10.29 - 2026-10-29
 
 ### Added
@@ -12,6 +18,12 @@
 ### Fixed
 
 - Release checks fail after the release version bump ([pm-todos-pack-name](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-pack-name.toon))
+
+## 2026.10.27 - 2026-10-27
+
+### Other
+
+- Point the npm homepage at the package catalog and link the author ([pm-todos-oet6](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-oet6.toon))
 
 ## 2026.10.25 - 2026-10-25
 
