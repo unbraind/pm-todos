@@ -1,0 +1,11 @@
+id: pm-todos-tnou
+title: Packed acceptance reports a bare timeout without scenario or subprocess diagnostics
+description: "Tracks gh:unbraind/pm-todos#165 (filed 2026-10-28, missed by the blind issue watch). scripts/accept-packed.ts on current main still throws only '<command> exceeded <deadline>ms and was terminated' in its ETIMEDOUT branch (line ~80): it drops the captured stdout/stderr and the scenario name, so a hung 'bun init -y' (observed once on release PR #164's Node 26 job, 2026-10-28) cannot be diagnosed — no scenario, no output, no environment hint. The releases themselves have since succeeded (v2026.10.29 through v2026.10.31 green), so this is the remaining diagnostic gap, not a release blocker: include the scenario name and captured output in timeout errors and fail closed with the scenario list when a scenario never starts."
+type: Issue
+status: open
+priority: 2
+tags[3]: ci,diagnostics,"gh:unbraind/pm-todos#165"
+created_at: "2026-11-02T09:18:44.778Z"
+updated_at: "2026-11-02T09:18:44.778Z"
+author: pi-glm
+body: ""
