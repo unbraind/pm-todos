@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+No changes.
+
+## 2026.11.3 - 2026-11-03
+
+No changes.
+
+## 2026.10.31 - 2026-10-31
+
+No changes.
+
 ## 2026.10.30 - 2026-10-30
 
 ### Fixed
@@ -38,6 +50,10 @@
 - Respect workspace terminal roles and use host-bound TODO operations ([pm-todos-sdk-status-host](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-sdk-status-host.toon))
 - Correct tracker comments from PR 140 review ([pm-todos-review140](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-review140.toon))
 
+## 2026.10.24 - 2026-10-24
+
+No changes.
+
 ## 2026.10.23 - 2026-10-23
 
 ### Changed
@@ -62,11 +78,47 @@
 - Enable GitHub CodeQL code scanning ([pm-todos-6g2c](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-6g2c.toon))
 - Certify pm-todos on PM CLI/SDK 2026.10.4 and consolidate pending dependency updates ([pm-todos-zpyc](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-zpyc.toon))
 
+## 2026.10.22 - 2026-10-22
+
+No changes.
+
+## 2026.10.20 - 2026-10-20
+
+No changes.
+
+## 2026.10.19 - 2026-10-19
+
+No changes.
+
+## 2026.10.17 - 2026-10-17
+
+No changes.
+
+## 2026.10.16 - 2026-10-16
+
+No changes.
+
+## 2026.10.15 - 2026-10-15
+
+No changes.
+
+## 2026.10.14 - 2026-10-14
+
+No changes.
+
 ## 2026.10.12 - 2026-10-12
 
 ### Fixed
 
 - Isolate concurrent packed fixtures from repository merge-driver configuration ([pm-todos-il19](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-il19.toon))
+
+## 2026.10.11 - 2026-10-11
+
+No changes.
+
+## 2026.10.9 - 2026-10-09
+
+No changes.
 
 ## 2026.10.8 - 2026-10-08
 
@@ -79,6 +131,10 @@
 ### Other
 
 - Auto-merge green Dependabot updates and group the pm toolchain into one daily PR ([pm-todos-jvp5](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-jvp5.toon))
+
+## 2026.10.3 - 2026-10-03
+
+No changes.
 
 ## 2026.9.26 - 2026-09-26
 
@@ -95,6 +151,10 @@
 ### Other
 
 - Certify pm CLI 2026.9.21 and install merge drivers through the canonical pm-ops launcher ([pm-todos-cmx2](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-cmx2.toon))
+
+## 2026.9.19 - 2026-09-19
+
+No changes.
 
 ## 2026.9.18 - 2026-09-18
 
@@ -121,6 +181,10 @@
 ### Fixed
 
 - Seven publish-attestation bypasses stayed open because the caret range floated and the lockfile did not ([pm-todos-zgwg](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-zgwg.toon))
+
+## 2026.9.9 - 2026-09-09
+
+No changes.
 
 ## 2026.9.8 - 2026-09-08
 
@@ -264,6 +328,10 @@
 
 - Closed: Recommend pm merge reconcile (2026.7.22) over raw history-repair in Multi-agent merge safety docs ([pm-todos-11hd](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-11hd.toon))
 
+## 2026.7.22 - 2026-07-22
+
+No changes.
+
 ## 2026.7.11 - 2026-07-11
 
 ### Added
@@ -301,12 +369,32 @@
 - Align Node engine with pm CLI runtime ([pm-todos-i0e1](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-i0e1.toon))
 - Regenerate CHANGELOG after pm close item ([pm-todos-7dm6](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-7dm6.toon))
 
+## 2026.6.14 - 2026-06-14
+
+No changes.
+
+## 2026.6.13 - 2026-06-13
+
+No changes.
+
+## 2026.6.10-1 - 2026-06-10
+
+No changes.
+
+## 2026.6.10 - 2026-06-09
+
+No changes.
+
 ## 2026.6.9 - 2026-06-09
 
 ### Added
 
 - Idempotent --upsert import (no duplicates on re-import) ([pm-todos-7l60](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-7l60.toon))
 - Add native todo-state import/export support ([pm-todos-auvq](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-auvq.toon))
+
+## 2026.6.8 - 2026-06-08
+
+No changes.
 
 ## 2026.6.7 - 2026-06-07
 
@@ -324,6 +412,10 @@
 ### Fixed
 
 - Round-trip import corrupts title + drops type (\[Type\] tag not parsed back) ([pm-todos-982k](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-982k.toon))
+
+## 2026.6.5 - 2026-06-05
+
+No changes.
 
 ## 2026.6.4-1 - 2026-06-04
 
@@ -363,6 +455,14 @@
 ### Fixed
 
 - Command handlers threw plain Error (no exitCode) → runtime double-invocation ([pm-todos-3nch](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-3nch.toon))
+
+## 2026.5.31 - 2026-05-31
+
+No changes.
+
+## 2026.5.30 - 2026-05-30
+
+No changes.
 
 ## 2026.5.29 - 2026-05-29
 

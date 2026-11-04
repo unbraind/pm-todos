@@ -228,7 +228,8 @@ test("packed CLI works without git or pm on PATH; compact JSON/TOON and concurre
 /** A deterministic semantic source, independent of package parsers and serializers. */
 interface ModelInput { priority: number; due: string; owner: string; description: string; sprint: string }
 /** Compare persisted SDK state with a separate SDK-normalized native reference tracker. */
-test("seed 0x72656375: 500 random import/export/sync sequences retain fields and relationships", { timeout: 600000 }, async t => {
+// Match the stored-schedule model timeout for two packed installs and all 500 correctness sequences.
+test("seed 0x72656375: 500 random import/export/sync sequences retain fields and relationships", { timeout: 1200000 }, async t => {
   const f = await fixture(t);
   const originalError = console.error;
   // Import/sync progress contains disposable filenames; keep tracked receipts public-safe.

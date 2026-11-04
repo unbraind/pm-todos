@@ -93,3 +93,14 @@ test("calendar versions compare numerically rather than lexicographically", () =
   assert.ok(!atOrAbove("2026.8.7", "2026.8.20"));
   assert.ok(atOrAbove("2027.1.1", "2026.12.31"));
 });
+
+/** Historical empty tags remain visible; new release notes still require real changes. */
+test("history regeneration explicitly includes empty tagged releases without weakening new notes", () => {
+  for (const name of ["changelog:full", "changelog:check"]) {
+    assert.match(packageJson.scripts?.[name] ?? "", /--all-release-tags --include-empty/u);
+    assert.doesNotMatch(packageJson.scripts?.[name] ?? "", /--no-pending-release/u);
+  }
+  for (const name of ["changelog", "release:notes"]) {
+    assert.doesNotMatch(packageJson.scripts?.[name] ?? "", /--include-empty/u);
+  }
+});

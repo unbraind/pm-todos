@@ -463,7 +463,9 @@ Independent honest all-source coverage and reachable-history privacy items
 remain authoritative readiness gates; passing the packed matrix alone is not
 publication approval. The daily release workflow runs only when commits
 exist after the latest release tag and generates both `CHANGELOG.md` and GitHub
-release notes with pm-changelog.
+release notes with pm-changelog. Full-history regeneration explicitly includes
+empty release windows as `No changes.` sections and retains pending windows
+for prepared releases. Fresh release-note generation still requires qualifying changes.
 
 ## Multi-agent merge safety
 

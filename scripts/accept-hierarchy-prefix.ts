@@ -32,7 +32,7 @@ async function state(applied = false): Promise<string> {
   return core.stableUpsertValue(documents);
 }
 if (mode === "seed") {
-  for (const id of ids) await client.create({ id, allowDuplicate: true, title: "Same label", type: "Task", parent: "none", blockedBy: "none", dep: [], sprint: "none", release: "none" });
+  for (const id of ids) await client.create({ id, allowDuplicate: true, title: "Same label", type: "Task", unset: ["parent", "blocked_by", "sprint", "release"], dep: [] });
   await client.update(z, { blockedBy: x, dep: [`id=${x},kind=blocked_by`, `id=${y},kind=blocks`] });
   await client.config("project", "set", "governance-ownership-enforcement", "strict");
   await client.claim(z);

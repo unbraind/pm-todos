@@ -1,0 +1,46 @@
+id: pm-todos-toolchain-1104
+title: Migrate PR183 to the November 4 pm toolchain
+description: "Migrate typed SDK scope clearing and update exact toolchain pins for https://github.com/unbraind/pm-todos/pull/183 and issue #184."
+type: Chore
+status: in_progress
+priority: 2
+tags[5]: dependencies,"gh:unbraind/pm-todos#183","gh:unbraind/pm-todos#184",migration,sdk
+created_at: "2026-11-04T19:07:28.965Z"
+updated_at: "2026-11-04T20:56:07.304Z"
+author: codex-toolchain-1104
+acceptance_criteria: "Imports on SDK 2026.11.4 preserve metadata, custom terminal roles and ambient-scope isolation; reproduce and fix each failure without weakening assertions or coverage; record upstream defects."
+comments[10]{created_at,author,text}:
+  "2026-11-04T19:11:43.056Z",codex-toolchain-1104,"Production: pm-cli 2026.10.30 GH-1614 preserves typed sentinel values literally. New-row imports generated parent:none, blockedBy:none, sprint:none and release:none, so ordinary rows are dropped on 2026.11.4. Replace with explicit unset for absent parent/blocker/scopes and preserve JSONL source sprint. SDK host reproduction passes 1/3 before migration, with both failed import cases showing the parent refusal."
+  "2026-11-04T19:11:46.370Z",codex-toolchain-1104,"Test: hierarchy, source-session/recovery, extension-workspace, validation-tree and packed acceptance fixtures also generated the old typed sentinel controls (GH-1614). Migrate them to explicit unset while retaining relationship-preservation and native metadata assertions. Hierarchy reproduction is 0/16 before migration. Global packed-host scenarios now derive their version from the exact development declaration instead of retaining a separate October pin."
+  "2026-11-04T19:15:48.160Z",codex-toolchain-1104,"Production release tooling: pm-changelog 2026.10.31 entry Fail closed when requested release notes have no matching section (upstream #302) now raises MISSING_REQUESTED_RELEASE for the already-tagged package version 2026.11.3, whose tracker has no qualifying changes. Full-history generation/check explicitly opt into include-empty so existing empty tags receive honest No changes sections. New release-note/prepend commands remain strict. Add a script-contract regression to preserve that distinction; do not close or relabel tracker items to invent release contents."
+  "2026-11-04T19:19:47.295Z",codex-toolchain-1104,"The four-format scope regression passes 4/4; reverting only index.ts fails 4/4 with the parent-placeholder refusal. The linked pm test run passes. Typecheck, build:test and docstrings pass. Historical changelog full/check now use no-pending-release plus include-empty; fresh release notes remain strict. Date and publish-attestation verifiers pass. Full coverage is queued behind the serial pm-linear run."
+  "2026-11-04T19:21:40.892Z",codex-toolchain-1104,The historical-generator script regression passes 7/7 and fails when only the include-empty/no-pending-release script fix is reverted. CHANGELOG.md now explicitly lists existing empty tagged releases; no release contents or tracker completion state were invented. Fresh notes retain strict missing-release validation.
+  "2026-11-04T19:34:08.918Z",codex-toolchain-1104,"Focused final-source run passes 23/23 in test/sdk-status-host.test.ts, test/hierarchy.test.ts and test/todotxt-fidelity.test.ts (serial, 1302.4 seconds). This includes real installed CLI fidelity, custom terminal-role/close evidence, host-bound author metadata, and hierarchy preservation. New scope regression passes 4/4; compatibility/release-script regression passes 7/7. Production audit reports 0 vulnerabilities and strict tracked health exits 0. Full coverage remains queued."
+  "2026-11-04T20:38:18.838Z",codex-toolchain-1104,"Release-tooling refinement: retain pending windows in full generation/check so future prepared releases remain visible to the release gate. Only include-empty is required to render existing empty releases honestly; remove blanket no-pending-release suppression. The regression now also forbids that suppression in full-history scripts, while fresh release notes/prepend still reject empty releases. Regeneration, check and date verification pass on the final scripts."
+  "2026-11-04T20:43:13.006Z",codex-toolchain-1104,"Test completion budget: on SDK 2026.11.4 after the GH-1614 producer migration, the previously blocked 500-operation recurrence import/export model reaches its hard 600-second timeout under coverage (600078 ms), without a semantic assertion failure. Align its guard to the existing 1200-second stored-schedule model in the same file; retain two packed tracker installs, all 500 sequences, every exact counter and every field/relationship assertion. This is a local timing failure, not an established upstream API regression. Attempt an isolated run within the remaining local budget; full completion remains a CI requirement if the budget expires."
+  "2026-11-04T20:53:30.559Z",codex-toolchain-1104,"Timebox results: the full coverage attempt and isolated seed 0x72656375 retry both reached their local wrapper deadlines (exit 124). The full attempt hit the original 600-second recurrence test guard before the draft guard adjustment; the isolated run with the 1200-second guard did not complete within the remaining approximately eight-minute budget. No old-pin timing baseline or causal upstream performance change is established. Keep this as an incomplete local verification result, not an upstream semantic regression or a passing full gate. Completed focused checks remain 23/23 SDK-host/hierarchy/fidelity, 4/4 scope regression, and 7/7 final release-script checks. Both other 500-sequence hierarchy/relationship models completed under coverage. Aggregate coverage and complete recurrence acceptance remain for CI; unchanged thresholds are 97/93/98."
+  "2026-11-04T20:56:07.304Z",codex-toolchain-1104,"Final-script revert proof passes: removing only include-empty makes the release-script regression fail; restoring it passes 7/7. Interrupted full-run summary reports 398 passed and 10 cancelled file placeholders; the earlier 600-second recurrence guard failure remains a separate finding. Isolated recurrence retry reports 0 passed, 1 cancelled. These partial summaries do not establish a complete suite result or aggregate coverage."
+files[16]{path,scope}:
+  CHANGELOG.md,project
+  index.ts,project
+  package-lock.json,project
+  package.json,project
+  scripts/accept-extension-schema.ts,project
+  scripts/accept-hierarchy-prefix.ts,project
+  scripts/accept-packed.ts,project
+  test/compatibility-floor.test.ts,project
+  test/extension-workspace.test.ts,project
+  test/hierarchy-roundtrip-model.test.ts,project
+  test/hierarchy.test.ts,project
+  test/recurrence.test.ts,project
+  test/source-recovery.test.ts,project
+  test/source-sessions.test.ts,project
+  test/typed-scope-clear.test.ts,project
+  test/validation-tree.test.ts,project
+tests[3]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+  nice -n 10 node --test test/typed-scope-clear.test.ts,project,codex-toolchain-1104,"2026-11-04T19:11:54.057Z",local_mutation,dependabot/npm_and_yarn/pm-toolchain-f7b0fd4832
+  nice -n 10 node --test test/compatibility-floor.test.ts,project,codex-toolchain-1104,"2026-11-04T19:34:11.823Z",local_mutation,dependabot/npm_and_yarn/pm-toolchain-f7b0fd4832
+  "nice -n 10 node --test --test-name-pattern=\"seed 0x72656375\" test/recurrence.test.ts",project,codex-toolchain-1104,"2026-11-04T20:45:30.034Z",local_mutation,dependabot/npm_and_yarn/pm-toolchain-f7b0fd4832
+docs[1]{path,scope}:
+  README.md,project
+body: ""

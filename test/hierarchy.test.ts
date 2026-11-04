@@ -19,7 +19,7 @@ async function fixture(t: test.TestContext, count = 5) {
   await core.init(undefined, {}, { pmRoot, cwd: root, noExtensions: true });
   const client = new core.PmClient({ pmRoot, cwd: root, author: "hierarchy-test" }), ids: string[] = [];
   for (let index = 0; index < count; index++) {
-    const result = await client.create({ id: `hierarchy-${index}`, title: index === 2 ? "Same title" : `Row ${index}`, type: "Task", parent: "none", sprint: "none", release: "none", blockedBy: "none", dep: [], priority: 2, tags: "fixture", description: "Retained description", body: "Retained body", comment: ["text=Original comment"], note: ["text=Original note"], file: ["path=example.ts"], doc: ["path=README.md"], test: ["command=node --version"], acceptanceCriteria: "Preserve relationships" });
+    const result = await client.create({ id: `hierarchy-${index}`, title: index === 2 ? "Same title" : `Row ${index}`, type: "Task", unset: ["parent", "sprint", "release", "blocked_by"], dep: [], priority: 2, tags: "fixture", description: "Retained description", body: "Retained body", comment: ["text=Original comment"], note: ["text=Original note"], file: ["path=example.ts"], doc: ["path=README.md"], test: ["command=node --version"], acceptanceCriteria: "Preserve relationships" });
     ids.push(result.item.id);
   }
   return { root, pmRoot, client, ids };

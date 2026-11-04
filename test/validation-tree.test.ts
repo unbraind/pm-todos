@@ -111,7 +111,7 @@ async function fixture(t: test.TestContext) {
   for (const key of Object.keys(environment)) if (/token|secret|password|credential|api.?key|private.?key|access.?key|^NPM_MEDIA_SERVER$/i.test(key)) delete environment[key];
   await init(undefined, {}, { pmRoot, cwd: root, noExtensions: true });
   const client = new PmClient({ pmRoot, author: "validation-agent" });
-  for (let index = 0; index < 3; index++) await client.create({ title: "Corpus task " + index, type: "Task", parent: "none", blockedBy: "none", dep: [], sprint: "none", release: "none" });
+  for (let index = 0; index < 3; index++) await client.create({ title: "Corpus task " + index, type: "Task", unset: ["parent", "blocked_by", "sprint", "release"], dep: [] });
   /** Execute only fixture git operations; never discover or modify an enclosing checkout. */
   function git(args: string[]) {
     const result = spawnSync("git", ["-C", repo, ...args], { env: environment, encoding: "utf8" });
