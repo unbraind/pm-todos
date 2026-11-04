@@ -26,8 +26,8 @@ async function fixture(t: test.TestContext, count: number) {
   const ids: string[] = [];
   for (let index = 0; index <= count; index++) {
     const created = await client.create({ id: `rollback-row-${index}`, title: `Original ${index}`, type: "Task", priority: index % 5,
-      description: "Preserved native description", body: "Preserved native body", tags: "baseline", parent: index ? ids[0] : "none",
-      sprint: "none", release: "none", dep: index ? [`id=${ids[index - 1]},kind=related`] : [],
+      description: "Preserved native description", body: "Preserved native body", tags: "baseline", ...(index ? { parent: ids[0] } : {}),
+      unset: [...(index ? [] : ["parent"]), "sprint", "release"], dep: index ? [`id=${ids[index - 1]},kind=related`] : [],
       ...(count === 3 ? { status: statuses[index], ...(index > 1 ? { closeReason: "Seeded lifecycle evidence" } : {}) } : {}) });
     ids.push(created.item.id);
   }

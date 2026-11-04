@@ -24,7 +24,7 @@ async function fixture(t: test.TestContext, strict = false, suffix = "one") {
   if (strict) await client.config("project", "set", "schema_unknown_field_policy", "reject");
   const ids: string[] = [];
   for (let index = 0; index < 3; index++) {
-    const { item } = await client.create({ id: "schema-" + index, title: "Schema row " + index, ...(strict && index === 2 ? { status: "closed", closeReason: "Completed schema fixture" } : {}), type: index === 1 ? shape.type : "Task", parent: "none", blockedBy: "none", dep: [], sprint: "none", release: "none", field: [`${shape.note}=  opaque value  `, `${shape.payload}=${JSON.stringify({ values: [index, true, "CRLF\r\nvalue"], nested: { keep: "unchanged" } })}`] });
+    const { item } = await client.create({ id: "schema-" + index, title: "Schema row " + index, ...(strict && index === 2 ? { status: "closed", closeReason: "Completed schema fixture" } : {}), type: index === 1 ? shape.type : "Task", unset: ["parent", "blocked_by", "sprint", "release"], dep: [], field: [`${shape.note}=  opaque value  `, `${shape.payload}=${JSON.stringify({ values: [index, true, "CRLF\r\nvalue"], nested: { keep: "unchanged" } })}`] });
     ids.push(item.id);
   }
   return { root, pmRoot, client, ids, shape };
@@ -46,7 +46,7 @@ test("extension-defined intermediate types participate in SDK cycle validation a
   }
   // A valid move includes the unselected registered bridge and its child.
   await f.client.update(b, { parent: a });
-  const child = await f.client.create({ title: "Bridge descendant", type: "Task", parent: b, blockedBy: "none", dep: [], sprint: "none", release: "none" });
+  const child = await f.client.create({ title: "Bridge descendant", type: "Task", parent: b, unset: ["blocked_by", "sprint", "release"], dep: [] });
   f.ids.push(child.item.id);
   const scoped = await exportTodoHierarchy(f.pmRoot, [a, c]);
   const moved = await applyTodoHierarchy(f.pmRoot, scoped.session, text, { author: "schema-test" });
@@ -124,7 +124,7 @@ test("registered foreign fields survive strict native hierarchy, editing session
   const targetAfter = (await readSchemaDocuments(core, f.pmRoot, [target]))[0];
   for (const name of [f.shape.note, f.shape.payload]) assert.deepEqual(targetAfter.metadata[name], targetBefore.metadata[name]);
   await preserved();
-  const counterfeit = await f.client.create({ title: "Counterfeit receipt", type: "Task", status: "closed", closeReason: "Closed foreign fixture", deadline: targetAfter.metadata.deadline, parent: "none", blockedBy: "none", dep: [], sprint: "none", release: "none", message: "pm-todos recurring occurrence v1 | explicit_unset=title", field: ["todos_kv=" + JSON.stringify(targetAfter.metadata.todos_kv), "todos_todotxt=x " + String(targetAfter.metadata.todos_todotxt), "todos_completion_date=2026-10-25"] });
+  const counterfeit = await f.client.create({ title: "Counterfeit receipt", type: "Task", status: "closed", closeReason: "Closed foreign fixture", deadline: targetAfter.metadata.deadline, unset: ["parent", "blocked_by", "sprint", "release"], dep: [], message: "pm-todos recurring occurrence v1 | explicit_unset=title", field: ["todos_kv=" + JSON.stringify(targetAfter.metadata.todos_kv), "todos_todotxt=x " + String(targetAfter.metadata.todos_todotxt), "todos_completion_date=2026-10-25"] });
   const foreignBefore = (await readSchemaDocuments(core, f.pmRoot, [counterfeit.item.id]))[0];
   assert.equal((await previewTodoOccurrence(f.pmRoot, { id: counterfeit.item.id, dialect: "todotxt-weekly-v1" })).code, "foreign_target");
   assert.deepEqual((await readSchemaDocuments(core, f.pmRoot, [counterfeit.item.id]))[0], foreignBefore);

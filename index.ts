@@ -2566,7 +2566,7 @@ async function runTodoImport(opts: TodoImportOptions): Promise<TodoImportResult>
             isTodojson ? todo.todoId : undefined,
           );
           const create: PmCreateActionOptions = {
-            parent: "none", blockedBy: "none", dep: [], sprint: "none", release: "none",
+            unset: ["parent", "blocked_by", "goal", "objective", "release", ...(opts.format === "jsonl" && todo.sprint ? [] : ["sprint"])], dep: [],
             title: todo.text,
             type: itemType,
             status,

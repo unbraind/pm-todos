@@ -23,7 +23,7 @@ async function state() {
 if (mode === "seed") {
   const shape = await installSchemaFixture(core, dirname(file), pmRoot, "packed");
   await client.config("project", "set", "schema_unknown_field_policy", "reject");
-  for (const [index, id] of ids.entries()) await client.create({ id, allowDuplicate: true, title: "Same title", type: index === 1 ? shape.type : "Task", parent: "none", blockedBy: "none", dep: [], sprint: "none", release: "none", field: [`${shape.note}=  opaque field  `, `${shape.payload}=${JSON.stringify({ nested: { values: [index, true, "CRLF\r\nvalue"] } })}`] });
+  for (const [index, id] of ids.entries()) await client.create({ id, allowDuplicate: true, title: "Same title", type: index === 1 ? shape.type : "Task", unset: ["parent", "blocked_by", "sprint", "release"], dep: [], field: [`${shape.note}=  opaque field  `, `${shape.payload}=${JSON.stringify({ nested: { values: [index, true, "CRLF\r\nvalue"] } })}`] });
   await client.update(b, { dep: [`id=${a},kind=blocked_by`, `id=${c},kind=blocks`] });
   const exported = await api.exportTodoHierarchy(pmRoot, [a, c], "blocked_by");
   const edited = `- [ ] Same title <!-- pm-session:${c} -->\r\n  - [ ] Same title <!-- pm-session:${a} -->\r\n`;

@@ -125,8 +125,8 @@ try {
     { name: "bun-current", manager: "bun", hostVersion: developmentVersion },
     { name: "npm-minimum", manager: "npm", hostVersion: minimumVersion },
     { name: "bun-minimum", manager: "bun", hostVersion: minimumVersion },
-    { name: "npm-global", manager: "npm", hostVersion: "2026.10.28", global: true },
-    { name: "bun-global", manager: "bun", hostVersion: "2026.10.28", global: true },
+    { name: "npm-global", manager: "npm", hostVersion: developmentVersion, global: true },
+    { name: "bun-global", manager: "bun", hostVersion: developmentVersion, global: true },
   ];
   const receipts: AcceptanceReceipt[] = [];
 

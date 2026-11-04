@@ -33,9 +33,9 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
     const sdk = core.createExtensionCommandSdk(pmRoot, client, "roundtrip-model");
     const active = `custom-${random(10000000)}`;
     await client.schemaAddStatus(active, { role: [random(2) ? "active" : "blocked"] });
-    const parent = await client.create({ id: "model-parent", title: "Reference parent", type: "Feature", parent: "none", sprint: "none", release: "none", blockedBy: "none", dep: [] });
-    const peer = await client.create({ id: "model-peer", title: "Reference peer", type: "Feature", parent: "none", sprint: "none", release: "none", blockedBy: "none", dep: [] });
-    const child = await client.create({ id: "model-child", title: "Stable native row", status: active, type: "Task", parent: parent.item.id, assignee: "roundtrip-model", sprint: "2026-W48", release: "2026.12", blockedBy: "none", dep: [`id=${peer.item.id},kind=related`], priority: 2, tags: "todo", deadline: "2026-12-01", description: "Preserved native description todo-id:1", body: "Preserved body", comment: ["text=Seeded comment"], note: ["text=Seeded note"], file: ["path=example.ts"], doc: ["path=README.md"], test: ["command=node --version"], acceptanceCriteria: "Retain repaired relations" });
+    const parent = await client.create({ id: "model-parent", title: "Reference parent", type: "Feature", unset: ["parent", "sprint", "release", "blocked_by"], dep: [] });
+    const peer = await client.create({ id: "model-peer", title: "Reference peer", type: "Feature", unset: ["parent", "sprint", "release", "blocked_by"], dep: [] });
+    const child = await client.create({ id: "model-child", title: "Stable native row", status: active, type: "Task", parent: parent.item.id, assignee: "roundtrip-model", sprint: "2026-W48", release: "2026.12", unset: ["blocked_by"], dep: [`id=${peer.item.id},kind=related`], priority: 2, tags: "todo", deadline: "2026-12-01", description: "Preserved native description todo-id:1", body: "Preserved body", comment: ["text=Seeded comment"], note: ["text=Seeded note"], file: ["path=example.ts"], doc: ["path=README.md"], test: ["command=node --version"], acceptanceCriteria: "Retain repaired relations" });
     const id = child.item.id, ids = [parent.item.id, peer.item.id, id];
     await client.update(id, { field: [`${foreign.note}=  Foreign whitespace CRLF value  `, `${foreign.payload}={"values":[1,true,"preserved"],"nested":{"keep":"all formats"}}`] });
     const baseline = await native(pmRoot, id), model = structuredClone(baseline);
