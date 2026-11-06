@@ -58,6 +58,30 @@ test("nonzero exit, missing executable and expected refusal share the same fail-
   assert.equal(runPackedCommand(state, process.execPath, ["-e", "process.stdout.write('success')"], root, {}).stdout, "success");
 });
 
+test("real startup failures retain only allowlisted error codes without private exception context", async t => {
+  const { root, state, item } = await fixture(t);
+  const denied = join(root, "private-not-executable");
+  writeFileSync(denied, "#!/bin/sh\nexit 0\n", { mode: 0o600 });
+  const cases = [
+    { command: join(root, "private-missing-program"), cwd: root, reason: "ENOENT" },
+    { command: denied, cwd: root, reason: "EACCES" },
+    { command: process.execPath, cwd: denied, reason: "subprocess_failed" },
+  ];
+  for (const entry of cases) {
+    assert.throws(() => runPackedCommand(state, entry.command, [String(item.title)], entry.cwd, {}), error => {
+      assert.ok(error instanceof PackedCommandError);
+      assert.equal(error.report.reason, entry.reason);
+      assert.equal(error.report.status, null);
+      assert.equal(error.report.matrix_complete, false);
+      assert.deepEqual(error.report.receipts, [{ scenario: "npm-current" }]);
+      for (const privateValue of [root, "private-not-executable", "private-missing-program", String(item.title)]) {
+        assert.ok(!error.message.includes(privateValue));
+      }
+      return true;
+    });
+  }
+});
+
 test("stream previews are bounded, allowlisted and omit credentials, paths and fixture content", () => {
   const privateText = "synthetic-secret Private fixture body " + join(tmpdir(), "private-fixture");
   const summary = summarizePackedOutput("Resolving dependencies\n" + privateText.repeat(20000) + "\nSaved lockfile\n");

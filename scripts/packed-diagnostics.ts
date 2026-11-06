@@ -51,7 +51,7 @@ export class PackedCommandError extends Error {
   /** Snapshot completed receipts and bounded stream context before cleanup. */
   constructor(state: PackedAcceptanceState, result: SpawnSyncReturns<string>, timeoutMs: number) {
     const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
-    const reason = code === "ETIMEDOUT" ? "ETIMEDOUT" : code === "ENOBUFS" ? "ENOBUFS" : "subprocess_failed";
+    const reason = code === "ETIMEDOUT" || code === "ENOBUFS" || code === "ENOENT" || code === "EACCES" ? code : "subprocess_failed";
     const report = { ...packedMatrixReport(state, false), reason, timeout_ms: timeoutMs, status: result.status,
       signal: result.signal, stdout: summarizePackedOutput(result.stdout), stderr: summarizePackedOutput(result.stderr) };
     super(JSON.stringify(report));
