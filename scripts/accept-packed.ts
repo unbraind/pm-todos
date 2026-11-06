@@ -1,4 +1,5 @@
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import type { SpawnSyncReturns } from "node:child_process";
+import { PackedCommandError, packedMatrixReport, runPackedCommand, type PackedAcceptanceState } from "./packed-diagnostics.ts";
 import { createHash } from "node:crypto";
 import { stripTypeScriptTypes } from "node:module";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -64,29 +65,19 @@ const cleanEnvironment: NodeJS.ProcessEnv = {
 for (const key of Object.keys(cleanEnvironment)) {
   if (key.toLowerCase() === "npm_config_allow_scripts" || /token|secret|password|credential|api.?key|private.?key|access.?key|^NPM_MEDIA_SERVER$/i.test(key)) delete cleanEnvironment[key];
 }
-/** Maximum time allowed for one install, pack, or pm subprocess. */
-const commandTimeoutMs = 5 * 60 * 1000;
+const diagnostics: PackedAcceptanceState = {
+  scenario: "matrix", phase: "pack", selected_scenarios: [], runtimes: { node: process.version }, receipts: [],
+};
 
-/** Run one shell-free command and fail with bounded diagnostics. */
+/** Run every subprocess through the same fail-closed diagnostic boundary. */
 function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = cleanEnvironment, expectedStatus = 0): SpawnSyncReturns<string> {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    env,
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: commandTimeoutMs,
-  });
-  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") {
-    throw new Error(`${command} ${args.join(" ")} exceeded ${String(commandTimeoutMs)}ms and was terminated`);
-  }
-  if (result.status !== expectedStatus) {
-    throw new Error(`${command} ${args.join(" ")} failed with status ${String(result.status)}: ${(result.stderr || result.error?.message || result.stdout).trim()}`);
-  }
-  return result;
+  return runPackedCommand(diagnostics, command, args, cwd, env, expectedStatus);
 }
 
 /** Invoke the scenario-local pm host through its user-facing launcher. */
 function runPm(scenario: AcceptanceScenario, cwd: string, env: NodeJS.ProcessEnv, args: string[], expectedStatus = 0): SpawnSyncReturns<string> {
+  const verbs = new Set(["init", "create", "install", "import", "export", "hierarchy", "sources", "preview", "apply", "get", "--version"]);
+  diagnostics.phase = "pm:" + args.filter(arg => verbs.has(arg)).join(":");
   if (scenario.global) return run(join(env.PM_ACCEPT_PREFIX!, "bin", process.platform === "win32" ? "pm.cmd" : "pm"), args, cwd, env, expectedStatus);
   return scenario.manager === "npm"
     ? run(npxCommand, ["--no-install", "pm", ...args], cwd, env, expectedStatus)
@@ -104,6 +95,32 @@ function requireJsonObject(stdout: string, label: string): Record<string, unknow
 
 const temporaryRoot = mkdtempSync(join(tmpdir(), "pm-todos-packed-acceptance-"));
 try {
+  const scenarios: AcceptanceScenario[] = [
+    { name: "npm-current", manager: "npm", hostVersion: developmentVersion },
+    { name: "bun-current", manager: "bun", hostVersion: developmentVersion },
+    { name: "npm-minimum", manager: "npm", hostVersion: minimumVersion },
+    { name: "bun-minimum", manager: "bun", hostVersion: minimumVersion },
+    { name: "npm-global", manager: "npm", hostVersion: developmentVersion, global: true },
+    { name: "bun-global", manager: "bun", hostVersion: developmentVersion, global: true },
+  ];
+  const receipts: AcceptanceReceipt[] = [];
+  diagnostics.receipts = receipts;
+
+  const requested = process.argv[2];
+  const selectedScenarios = requested ? scenarios.filter(scenario => scenario.name === requested) : scenarios;
+  if (!selectedScenarios.length) throw new Error("Unknown packed acceptance scenario");
+  diagnostics.selected_scenarios = selectedScenarios.map(scenario => scenario.name);
+  diagnostics.phase = "runtime:npm";
+  const npmVersion = run(npmCommand, ["--version"], repoRoot).stdout.trim();
+  if (!/^\d+\.\d+\.\d+$/u.test(npmVersion)) throw new Error("Unexpected npm version");
+  diagnostics.runtimes.npm = npmVersion;
+  if (selectedScenarios.some(scenario => scenario.manager === "bun")) {
+    diagnostics.phase = "runtime:bun";
+    const bunVersion = run(bunCommand, ["--version"], repoRoot).stdout.trim();
+    if (!/^\d+\.\d+\.\d+(?:\+[a-f0-9]+)?$/u.test(bunVersion)) throw new Error("Unexpected Bun version");
+    diagnostics.runtimes.bun = bunVersion;
+  }
+  diagnostics.phase = "pack";
   const packRoot = join(temporaryRoot, "pack");
   mkdirSync(packRoot);
   // npm 10 can emit lifecycle output on stdout during pack even when its
@@ -120,20 +137,10 @@ try {
     throw new Error(`npm pack must create exactly one tarball, got ${String(packedNames.length)}`);
   }
   const tarball = join(packRoot, packedNames[0]!);
-  const scenarios: AcceptanceScenario[] = [
-    { name: "npm-current", manager: "npm", hostVersion: developmentVersion },
-    { name: "bun-current", manager: "bun", hostVersion: developmentVersion },
-    { name: "npm-minimum", manager: "npm", hostVersion: minimumVersion },
-    { name: "bun-minimum", manager: "bun", hostVersion: minimumVersion },
-    { name: "npm-global", manager: "npm", hostVersion: developmentVersion, global: true },
-    { name: "bun-global", manager: "bun", hostVersion: developmentVersion, global: true },
-  ];
-  const receipts: AcceptanceReceipt[] = [];
-
-  const requested = process.argv[2];
-  const selectedScenarios = requested ? scenarios.filter(scenario => scenario.name === requested) : scenarios;
-  if (!selectedScenarios.length) throw new Error("Unknown packed acceptance scenario");
   for (const scenario of selectedScenarios) {
+    diagnostics.scenario = scenario.name;
+    diagnostics.phase = "initialize";
+    diagnostics.host_version = scenario.hostVersion;
     const scenarioRoot = join(temporaryRoot, scenario.name);
     const isolatedConfig = join(scenarioRoot, "xdg-config");
     const isolatedData = join(scenarioRoot, "xdg-data");
@@ -162,11 +169,13 @@ try {
     };
     if (scenario.manager === "npm") {
       run(npmCommand, ["init", "-y"], scenarioRoot, scenarioEnvironment);
+      diagnostics.phase = "install";
       run(npmCommand, ["install", "--ignore-scripts", ...(scenario.global ? ["--global", "--prefix", scenarioEnvironment.PM_ACCEPT_PREFIX!] : []), `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
     } else {
       const bunConfig = join(scenarioRoot, "accept-bunfig.toml");
       writeFileSync(bunConfig, `[install]\nglobalDir = ${JSON.stringify(scenarioEnvironment.BUN_INSTALL_GLOBAL_DIR)}\nglobalBinDir = ${JSON.stringify(scenarioEnvironment.BUN_INSTALL_BIN)}\n`);
       run(bunCommand, ["init", "-y"], scenarioRoot, scenarioEnvironment);
+      diagnostics.phase = "install";
       run(bunCommand, ["add", `--config=${bunConfig}`, "--ignore-scripts", ...(scenario.global ? ["--global"] : []), `${cliPackage}@${scenario.hostVersion}`, tarball], scenarioRoot, scenarioEnvironment);
     }
     const actualVersion = runPm(scenario, scenarioRoot, scenarioEnvironment, ["--version"]).stdout.trim();
@@ -229,6 +238,7 @@ try {
     writeFileSync(prefixDriver, stripTypeScriptTypes(readFileSync(join(repoRoot, "scripts", "accept-hierarchy-prefix.ts"), "utf8")));
     const prefixFile = join(scenarioRoot, "prefix.md"), prefixSession = join(scenarioRoot, "prefix.json");
     const prefixDriverArgs = [prefixDriver, scenarioEnvironment.PM_PATH!, prefixFile, prefixSession];
+    diagnostics.phase = "fixture:hierarchy-seed";
     run(process.execPath, [...prefixDriverArgs, "seed"], scenarioRoot, scenarioEnvironment);
     const prefixArgs = ["--file", prefixFile, "--session", prefixSession];
     const prefixFormat = scenario.manager === "npm" ? ["--json"] : [];
@@ -238,9 +248,11 @@ try {
     if (prefixPreview.ok !== true || prefixPreview.changed !== 2) throw new Error("Packed prefix preview failed");
     const prefixRefused = prefixReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...prefixArgs, ...prefixFormat], 1).stdout);
     if (prefixRefused.ok !== false || prefixRefused.applied !== 0 || (prefixRefused.refusals as Record<string, unknown>[])[0]?.code !== "native_refusal") throw new Error("Packed hierarchy persisted an unsafe prefix before ownership refusal");
+    diagnostics.phase = "fixture:hierarchy-verify-refused";
     run(process.execPath, [...prefixDriverArgs, "verify-refused"], scenarioRoot, scenarioEnvironment);
     const prefixApplied = prefixReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...prefixArgs, ...prefixFormat]).stdout);
     if (prefixApplied.ok !== true || prefixApplied.applied !== 2) throw new Error("Packed safe prefix ordering failed");
+    diagnostics.phase = "fixture:hierarchy-verify-applied";
     run(process.execPath, [...prefixDriverArgs, "verify-applied"], scenarioRoot, scenarioEnvironment);
     const selectionFile = join(scenarioRoot, "selection.json"), manifestFile = join(scenarioRoot, "sources.json");
     const edits = join(scenarioRoot, "edits"); mkdirSync(edits);
@@ -301,6 +313,7 @@ try {
       const javascript = stripTypeScriptTypes(source).replace('"./source-recovery-fixture.ts"', '"./source-recovery-fixture.js"');
       writeFileSync(join(driverDirectory, name + ".js"), javascript);
     }
+    diagnostics.phase = "fixture:source-interrupt";
     run(process.execPath, [join(driverDirectory, "interrupt-packed-source.js"), scenarioEnvironment.PM_PATH!, recoveryManifest, recoveryDirectory], scenarioRoot, scenarioEnvironment);
     const recoveryPreview = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...recoveryArgs, "--json"]).stdout, "sources recovery preview");
     if (recoveryPreview.ok !== true || recoveryPreview.changed !== 1 || recoveryPreview.applied !== 0) throw new Error("Packed recovery preview rejected the native rollback lineage");
@@ -320,6 +333,7 @@ try {
     writeFileSync(join(poisonedDirectory, "two.txt"), readFileSync(join(poisonedDirectory, "one.txt")));
     writeFileSync(join(poisonedDirectory, "one.txt"), "");
     const foreignDriverArgs = [join(driverDirectory, "interrupt-packed-source.js"), scenarioEnvironment.PM_PATH!, poisonedManifest, poisonedDirectory];
+    diagnostics.phase = "fixture:source-poison";
     run(process.execPath, [...foreignDriverArgs, "poison"], scenarioRoot, scenarioEnvironment);
     for (const action of ["preview", "apply"]) {
       const refused = runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", action, ...poisonedArgs, ...(recoveryFormat === "json" ? ["--json"] : [])], 1);
@@ -327,6 +341,7 @@ try {
       const reason = (output.refusals as Record<string, unknown>[] | undefined)?.[0];
       if (output.ok !== false || output.applied !== 0 || reason?.code !== "stale_revision" || typeof reason.remedy !== "string" || !reason.remedy) throw new Error("Packed consumer accepted foreign ownership under a copied apply marker");
     }
+    diagnostics.phase = "fixture:source-verify-poison";
     run(process.execPath, [...foreignDriverArgs, "verify-poison"], scenarioRoot, scenarioEnvironment);
     // The foreign bridge must remain in graph validation, and strict schema
     // reads/writes must retain fields contributed by another installed package.
@@ -336,6 +351,7 @@ try {
       writeFileSync(join(schemaDriverDirectory, name + ".js"), stripTypeScriptTypes(source).replace('"./extension-schema-fixture.ts"', '"./extension-schema-fixture.js"'));
     }
     const schemaFile = join(scenarioRoot, "schema"), schemaDriver = [join(schemaDriverDirectory, "accept-extension-schema.js"), scenarioEnvironment.PM_PATH!, schemaFile];
+    diagnostics.phase = "fixture:schema-seed";
     run(process.execPath, [...schemaDriver, "seed"], scenarioRoot, scenarioEnvironment);
     const schemaFormat = scenario.manager === "npm" ? ["--json"] : [];
     /** Exercise the same strict-schema receipt in both installed output transports. */
@@ -344,6 +360,7 @@ try {
       const refused = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", action, "--file", schemaFile + ".blocked.md", "--session", schemaFile + ".blocked.json", ...schemaFormat], 1).stdout);
       if (refused.ok !== false || refused.applied !== 0 || (refused.refusals as Record<string, unknown>[])[0]?.code !== "cycle") throw new Error("Packed consumer omitted a registered bridge type from cycle validation");
     }
+    diagnostics.phase = "fixture:schema-verify-refused";
     run(process.execPath, [...schemaDriver, "verify-refused"], scenarioRoot, scenarioEnvironment);
     const schemaArgs = ["--file", schemaFile + ".parent.md", "--session", schemaFile + ".parent.json"];
     const schemaExport = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "export", "--selection", schemaFile + ".ids.json", ...schemaArgs, ...schemaFormat]).stdout);
@@ -353,6 +370,7 @@ try {
     const schemaApply = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...schemaArgs, ...schemaFormat]).stdout);
     const schemaReplay = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...schemaArgs, ...schemaFormat]).stdout);
     if (schemaPreview.ok !== true || schemaPreview.changed !== 1 || schemaApply.ok !== true || schemaApply.applied !== 1 || schemaReplay.ok !== true || schemaReplay.changed !== 0) throw new Error("Packed strict-schema preview/apply/replay failed");
+    diagnostics.phase = "fixture:schema-verify-applied";
     run(process.execPath, [...schemaDriver, "verify-applied"], scenarioRoot, scenarioEnvironment);
     receipts.push({
       scenario: scenario.name,
@@ -375,7 +393,11 @@ try {
     });
   }
 
-  process.stdout.write(`${JSON.stringify({ ok: true, artifact_sha256: createHash("sha256").update(readFileSync(tarball)).digest("hex"), receipts })}\n`);
+  process.stdout.write(`${JSON.stringify({ ...packedMatrixReport(diagnostics, true), artifact_sha256: createHash("sha256").update(readFileSync(tarball)).digest("hex"), receipts })}\n`);
+} catch (error) {
+  const report = error instanceof PackedCommandError ? error.report : { ...packedMatrixReport(diagnostics, false), reason: "acceptance_validation_failed" };
+  process.stderr.write(`${JSON.stringify(report)}\n`);
+  process.exitCode = 1;
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
 }
