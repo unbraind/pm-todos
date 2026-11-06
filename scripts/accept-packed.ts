@@ -1,5 +1,5 @@
 import type { SpawnSyncReturns } from "node:child_process";
-import { PackedCommandError, packedMatrixReport, runPackedCommand, type PackedAcceptanceState } from "./packed-diagnostics.ts";
+import { PackedValidationError, packedFailureReport, packedMatrixReport, runPackedCommand, type PackedAcceptanceState } from "./packed-diagnostics.ts";
 import { createHash } from "node:crypto";
 import { stripTypeScriptTypes } from "node:module";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -88,7 +88,7 @@ function runPm(scenario: AcceptanceScenario, cwd: string, env: NodeJS.ProcessEnv
 function requireJsonObject(stdout: string, label: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(stdout);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${label} stdout was not a JSON object`);
+    throw new PackedValidationError("json_object");
   }
   return parsed as Record<string, unknown>;
 }
@@ -108,16 +108,16 @@ try {
 
   const requested = process.argv[2];
   const selectedScenarios = requested ? scenarios.filter(scenario => scenario.name === requested) : scenarios;
-  if (!selectedScenarios.length) throw new Error("Unknown packed acceptance scenario");
+  if (!selectedScenarios.length) throw new PackedValidationError("unknown_scenario");
   diagnostics.selected_scenarios = selectedScenarios.map(scenario => scenario.name);
   diagnostics.phase = "runtime:npm";
   const npmVersion = run(npmCommand, ["--version"], repoRoot).stdout.trim();
-  if (!/^\d+\.\d+\.\d+$/u.test(npmVersion)) throw new Error("Unexpected npm version");
+  if (!/^\d+\.\d+\.\d+$/u.test(npmVersion)) throw new PackedValidationError("npm_version");
   diagnostics.runtimes.npm = npmVersion;
   if (selectedScenarios.some(scenario => scenario.manager === "bun")) {
     diagnostics.phase = "runtime:bun";
     const bunVersion = run(bunCommand, ["--version"], repoRoot).stdout.trim();
-    if (!/^\d+\.\d+\.\d+(?:\+[a-f0-9]+)?$/u.test(bunVersion)) throw new Error("Unexpected Bun version");
+    if (!/^\d+\.\d+\.\d+(?:\+[a-f0-9]+)?$/u.test(bunVersion)) throw new PackedValidationError("bun_version");
     diagnostics.runtimes.bun = bunVersion;
   }
   diagnostics.phase = "pack";
@@ -134,7 +134,7 @@ try {
   );
   const packedNames = readdirSync(packRoot).filter((name) => name.endsWith(".tgz"));
   if (packedNames.length !== 1) {
-    throw new Error(`npm pack must create exactly one tarball, got ${String(packedNames.length)}`);
+    throw new PackedValidationError("pack_artifact_count");
   }
   const tarball = join(packRoot, packedNames[0]!);
   for (const scenario of selectedScenarios) {
@@ -180,7 +180,7 @@ try {
     }
     const actualVersion = runPm(scenario, scenarioRoot, scenarioEnvironment, ["--version"]).stdout.trim();
     if (actualVersion !== scenario.hostVersion) {
-      throw new Error(`${scenario.name} resolved pm ${actualVersion}, expected ${scenario.hostVersion}`);
+      throw new PackedValidationError("host_version");
     }
 
     runPm(scenario, scenarioRoot, scenarioEnvironment, ["init", "--defaults", "--agent-guidance", "skip", "--prefix", "accept"]);
@@ -194,25 +194,25 @@ try {
     const imported = runPm(scenario, scenarioRoot, scenarioEnvironment, ["--json", "todos", "import", input, "--upsert"]);
     const importReceipt = requireJsonObject(imported.stdout, `${scenario.name} todos import`);
     if (importReceipt.imported !== 1 || importReceipt.updated !== 0 || importReceipt.skipped !== 0) {
-      throw new Error(`${scenario.name} import receipt was unexpected: ${imported.stdout.trim()}`);
+      throw new PackedValidationError("import_receipt");
     }
     const exported = runPm(scenario, scenarioRoot, scenarioEnvironment, ["--json", "todos", "export", "--format", "jsonl", "--output", output]);
     const exportReceipt = requireJsonObject(exported.stdout, `${scenario.name} todos export`);
     if (exportReceipt.exported !== 2) {
-      throw new Error(`${scenario.name} export receipt was unexpected: ${exported.stdout.trim()}`);
+      throw new PackedValidationError("export_receipt");
     }
     const rows = readFileSync(output, "utf8").split(/\r?\n/u).filter((line) => line.length > 0)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
     if (rows.length !== exportReceipt.exported) {
-      throw new Error(`${scenario.name} export file has ${String(rows.length)} rows but the receipt reports ${String(exportReceipt.exported)}`);
+      throw new PackedValidationError("export_row_count");
     }
     const titles = new Set(rows.map((row) => row.title));
     if (!titles.has(existingTitle) || !titles.has(importedTitle)) {
-      throw new Error(`${scenario.name} complete export omitted a real tracker fixture`);
+      throw new PackedValidationError("export_fixtures");
     }
     const stderr = `${imported.stderr}\n${exported.stderr}`;
     if (/deprecated|list-all/iu.test(stderr)) {
-      throw new Error(`${scenario.name} emitted a deprecated-command diagnostic: ${stderr.trim()}`);
+      throw new PackedValidationError("deprecated_command");
     }
     // Exercise the shipped hierarchy module through every global/local launcher.
     const hierarchySelection = join(scenarioRoot, "hierarchy-ids.json"), hierarchyFile = join(scenarioRoot, "hierarchy.md"), hierarchySession = join(scenarioRoot, "hierarchy.json");
@@ -220,16 +220,16 @@ try {
     writeFileSync(hierarchySelection, JSON.stringify(hierarchyIds));
     const hierarchyArgs = ["--file", hierarchyFile, "--session", hierarchySession];
     const hierarchyExport = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "export", "--selection", hierarchySelection, ...hierarchyArgs, "--json"]).stdout, "hierarchy export");
-    if (hierarchyExport.selected !== 2) throw new Error("Packed hierarchy selection omitted an identity");
+    if (hierarchyExport.selected !== 2) throw new PackedValidationError("Packed hierarchy selection omitted an identity");
     const hierarchyLines = readFileSync(hierarchyFile, "utf8").trimEnd().split("\n");
     hierarchyLines[1] = "  " + hierarchyLines[1];
     writeFileSync(hierarchyFile, hierarchyLines.join("\r\n") + "\r\n");
     const hierarchyPreview = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "preview", ...hierarchyArgs, "--json"]).stdout, "hierarchy preview");
     const hierarchyApply = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...hierarchyArgs, "--json"]).stdout, "hierarchy apply");
     const hierarchyReplay = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...hierarchyArgs, "--json"]).stdout, "hierarchy replay");
-    if (hierarchyPreview.changed !== 1 || hierarchyApply.applied !== 1 || hierarchyReplay.changed !== 0) throw new Error("Packed hierarchy preview/apply/replay mismatch");
+    if (hierarchyPreview.changed !== 1 || hierarchyApply.applied !== 1 || hierarchyReplay.changed !== 0) throw new PackedValidationError("Packed hierarchy preview/apply/replay mismatch");
     const hierarchyChild = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", hierarchyIds[1]!, "--full", "--json"]).stdout, "hierarchy native read-back");
-    if ((hierarchyChild.item as Record<string, unknown>).parent !== hierarchyIds[0]) throw new Error("Packed hierarchy relation did not persist");
+    if ((hierarchyChild.item as Record<string, unknown>).parent !== hierarchyIds[0]) throw new PackedValidationError("Packed hierarchy relation did not persist");
     // A claimed prerequisite must stop the entire unsafe prefix, in JSON and
     // TOON, under every supported local/global package-manager consumer.
     const prefixDriverDirectory = join(scenarioEnvironment.PM_PATH!, "extensions", "pm-todos", ".accept-hierarchy");
@@ -245,13 +245,13 @@ try {
     /** Decode either public output transport without a separate graph oracle. */
     const prefixReceipt = (stdout: string) => requireJsonObject(prefixFormat.length ? stdout : JSON.stringify(decodeToon(stdout)), "hierarchy prefix");
     const prefixPreview = prefixReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "preview", ...prefixArgs, ...prefixFormat]).stdout);
-    if (prefixPreview.ok !== true || prefixPreview.changed !== 2) throw new Error("Packed prefix preview failed");
+    if (prefixPreview.ok !== true || prefixPreview.changed !== 2) throw new PackedValidationError("Packed prefix preview failed");
     const prefixRefused = prefixReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...prefixArgs, ...prefixFormat], 1).stdout);
-    if (prefixRefused.ok !== false || prefixRefused.applied !== 0 || (prefixRefused.refusals as Record<string, unknown>[])[0]?.code !== "native_refusal") throw new Error("Packed hierarchy persisted an unsafe prefix before ownership refusal");
+    if (prefixRefused.ok !== false || prefixRefused.applied !== 0 || (prefixRefused.refusals as Record<string, unknown>[])[0]?.code !== "native_refusal") throw new PackedValidationError("Packed hierarchy persisted an unsafe prefix before ownership refusal");
     diagnostics.phase = "fixture:hierarchy-verify-refused";
     run(process.execPath, [...prefixDriverArgs, "verify-refused"], scenarioRoot, scenarioEnvironment);
     const prefixApplied = prefixReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...prefixArgs, ...prefixFormat]).stdout);
-    if (prefixApplied.ok !== true || prefixApplied.applied !== 2) throw new Error("Packed safe prefix ordering failed");
+    if (prefixApplied.ok !== true || prefixApplied.applied !== 2) throw new PackedValidationError("Packed safe prefix ordering failed");
     diagnostics.phase = "fixture:hierarchy-verify-applied";
     run(process.execPath, [...prefixDriverArgs, "verify-applied"], scenarioRoot, scenarioEnvironment);
     const selectionFile = join(scenarioRoot, "selection.json"), manifestFile = join(scenarioRoot, "sources.json");
@@ -269,31 +269,31 @@ try {
     const nestedReceipt = (stdout: string) => requireJsonObject(nestedFormat.length ? stdout : JSON.stringify(decodeToon(stdout)), "directory scope");
     const nestedArgs = ["--manifest", nestedManifest, "--directory", nestedEdits];
     const nestedExport = nestedReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", nestedSelection, ...nestedArgs, ...nestedFormat]).stdout);
-    if (nestedExport.selected !== selectedIds.length) throw new Error("Packed nested source export omitted native rows");
+    if (nestedExport.selected !== selectedIds.length) throw new PackedValidationError("Packed nested source export omitted native rows");
     const nestedPreview = nestedReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...nestedArgs, ...nestedFormat]).stdout);
-    if (nestedPreview.ok !== true || nestedPreview.applied !== 0) throw new Error("Packed nested source preview failed");
+    if (nestedPreview.ok !== true || nestedPreview.applied !== 0) throw new PackedValidationError("Packed nested source preview failed");
     renameSync(nestedDirectory, heldDirectory); symlinkSync(outsideDirectory, nestedDirectory, "dir");
     try {
       const refused = nestedReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...nestedArgs, ...nestedFormat], 1).stdout);
-      if (refused.ok !== false || (refused.refusals as Record<string, unknown>[])[0]?.code !== "source_scope") throw new Error("Packed source preview followed a linked ancestor");
+      if (refused.ok !== false || (refused.refusals as Record<string, unknown>[])[0]?.code !== "source_scope") throw new PackedValidationError("Packed source preview followed a linked ancestor");
       const refusedManifest = join(scenarioRoot, "refused-nested.json");
       const refusedExport = nestedReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", nestedSelection, "--manifest", refusedManifest, "--directory", nestedEdits, ...nestedFormat], 1).stdout);
-      if (refusedExport.ok !== false || existsSync(refusedManifest)) throw new Error("Packed source export wrote before scope validation");
-      if (readFileSync(join(outsideDirectory, "one.txt"), "utf8") !== "Outside sentinel one" || readFileSync(join(outsideDirectory, "two.txt"), "utf8") !== "Outside sentinel two" || readdirSync(outsideDirectory).length !== 2) throw new Error("Packed transport changed outside scope data");
+      if (refusedExport.ok !== false || existsSync(refusedManifest)) throw new PackedValidationError("Packed source export wrote before scope validation");
+      if (readFileSync(join(outsideDirectory, "one.txt"), "utf8") !== "Outside sentinel one" || readFileSync(join(outsideDirectory, "two.txt"), "utf8") !== "Outside sentinel two" || readdirSync(outsideDirectory).length !== 2) throw new PackedValidationError("Packed transport changed outside scope data");
     } finally { rmSync(nestedDirectory); renameSync(heldDirectory, nestedDirectory); }
     writeFileSync(selectionFile, JSON.stringify({ sources: [{ file: "one.txt", ids: selectedIds }, { file: "two.txt", ids: [] }] }));
     const sourceArgs = ["--manifest", manifestFile, "--directory", edits];
     const sourceExport = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "export", "--selection", selectionFile, ...sourceArgs, "--json"]).stdout, "sources export");
-    if (sourceExport.selected !== 2) throw new Error("Packed source export omitted selected rows");
+    if (sourceExport.selected !== 2) throw new PackedValidationError("Packed source export omitted selected rows");
     writeFileSync(join(edits, "two.txt"), readFileSync(join(edits, "one.txt")));
     writeFileSync(join(edits, "one.txt"), "");
     const sourcePreview = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...sourceArgs, "--json"]).stdout, "sources preview");
     const sourceApply = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "apply", ...sourceArgs, "--json"]).stdout, "sources apply");
     const sourceReplay = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "apply", ...sourceArgs, "--json"]).stdout, "sources replay");
-    if (sourcePreview.changed !== 2 || sourceApply.applied !== 2 || sourceReplay.changed !== 0) throw new Error("Packed cross-file move or replay failed");
+    if (sourcePreview.changed !== 2 || sourceApply.applied !== 2 || sourceReplay.changed !== 0) throw new PackedValidationError("Packed cross-file move or replay failed");
     for (const id of selectedIds) {
       const read = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", id, "--full", "--json"]).stdout, "source SDK read-back");
-      if ((read.item as Record<string, unknown>).todos_source_file !== "two.txt") throw new Error("Packed row ownership was not persisted");
+      if ((read.item as Record<string, unknown>).todos_source_file !== "two.txt") throw new PackedValidationError("Packed row ownership was not persisted");
     }
     // Interrupt the installed artifact after one native compensation, then
     // recover via the actual consumer CLI in both supported output formats.
@@ -316,14 +316,14 @@ try {
     diagnostics.phase = "fixture:source-interrupt";
     run(process.execPath, [join(driverDirectory, "interrupt-packed-source.js"), scenarioEnvironment.PM_PATH!, recoveryManifest, recoveryDirectory], scenarioRoot, scenarioEnvironment);
     const recoveryPreview = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "preview", ...recoveryArgs, "--json"]).stdout, "sources recovery preview");
-    if (recoveryPreview.ok !== true || recoveryPreview.changed !== 1 || recoveryPreview.applied !== 0) throw new Error("Packed recovery preview rejected the native rollback lineage");
+    if (recoveryPreview.ok !== true || recoveryPreview.changed !== 1 || recoveryPreview.applied !== 0) throw new PackedValidationError("Packed recovery preview rejected the native rollback lineage");
     const recoveryFormat = scenario.manager === "npm" ? "json" : "toon";
     const rawRecovery = runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", "apply", ...recoveryArgs, ...(recoveryFormat === "json" ? ["--json"] : [])]);
     const recovered = requireJsonObject(recoveryFormat === "json" ? rawRecovery.stdout : JSON.stringify(decodeToon(rawRecovery.stdout)), "sources rollback recovery");
-    if (recovered.ok !== true || recovered.applied !== 2 || recovered.changed !== recoveryPreview.changed) throw new Error("Packed consumer could not finish rollback and retry its selection");
+    if (recovered.ok !== true || recovered.applied !== 2 || recovered.changed !== recoveryPreview.changed) throw new PackedValidationError("Packed consumer could not finish rollback and retry its selection");
     for (const id of selectedIds) {
       const read = requireJsonObject(runPm(scenario, scenarioRoot, scenarioEnvironment, ["get", id, "--full", "--json"]).stdout, "recovered ownership read-back");
-      if ((read.item as Record<string, unknown>).todos_source_file !== "one.txt") throw new Error("Recovered packed ownership was not persisted");
+      if ((read.item as Record<string, unknown>).todos_source_file !== "one.txt") throw new PackedValidationError("Recovered packed ownership was not persisted");
     }
     const poisonedDirectory = join(scenarioRoot, "foreign-edits"), poisonedManifest = join(scenarioRoot, "foreign-manifest.json");
     mkdirSync(poisonedDirectory);
@@ -339,7 +339,7 @@ try {
       const refused = runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "sources", action, ...poisonedArgs, ...(recoveryFormat === "json" ? ["--json"] : [])], 1);
       const output = requireJsonObject(recoveryFormat === "json" ? refused.stdout : JSON.stringify(decodeToon(refused.stdout)), "copied apply refusal");
       const reason = (output.refusals as Record<string, unknown>[] | undefined)?.[0];
-      if (output.ok !== false || output.applied !== 0 || reason?.code !== "stale_revision" || typeof reason.remedy !== "string" || !reason.remedy) throw new Error("Packed consumer accepted foreign ownership under a copied apply marker");
+      if (output.ok !== false || output.applied !== 0 || reason?.code !== "stale_revision" || typeof reason.remedy !== "string" || !reason.remedy) throw new PackedValidationError("Packed consumer accepted foreign ownership under a copied apply marker");
     }
     diagnostics.phase = "fixture:source-verify-poison";
     run(process.execPath, [...foreignDriverArgs, "verify-poison"], scenarioRoot, scenarioEnvironment);
@@ -358,18 +358,18 @@ try {
     const schemaReceipt = (stdout: string) => requireJsonObject(schemaFormat.length ? stdout : JSON.stringify(decodeToon(stdout)), "extension schema");
     for (const action of ["preview", "apply"]) {
       const refused = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", action, "--file", schemaFile + ".blocked.md", "--session", schemaFile + ".blocked.json", ...schemaFormat], 1).stdout);
-      if (refused.ok !== false || refused.applied !== 0 || (refused.refusals as Record<string, unknown>[])[0]?.code !== "cycle") throw new Error("Packed consumer omitted a registered bridge type from cycle validation");
+      if (refused.ok !== false || refused.applied !== 0 || (refused.refusals as Record<string, unknown>[])[0]?.code !== "cycle") throw new PackedValidationError("Packed consumer omitted a registered bridge type from cycle validation");
     }
     diagnostics.phase = "fixture:schema-verify-refused";
     run(process.execPath, [...schemaDriver, "verify-refused"], scenarioRoot, scenarioEnvironment);
     const schemaArgs = ["--file", schemaFile + ".parent.md", "--session", schemaFile + ".parent.json"];
     const schemaExport = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "export", "--selection", schemaFile + ".ids.json", ...schemaArgs, ...schemaFormat]).stdout);
-    if (schemaExport.selected !== 2 || schemaExport.skipped !== 0) throw new Error("Packed export refused valid registered foreign fields");
+    if (schemaExport.selected !== 2 || schemaExport.skipped !== 0) throw new PackedValidationError("Packed export refused valid registered foreign fields");
     writeFileSync(schemaFile + ".parent.md", readFileSync(schemaFile + ".edited"));
     const schemaPreview = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "preview", ...schemaArgs, ...schemaFormat]).stdout);
     const schemaApply = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...schemaArgs, ...schemaFormat]).stdout);
     const schemaReplay = schemaReceipt(runPm(scenario, scenarioRoot, scenarioEnvironment, ["todos", "hierarchy", "apply", ...schemaArgs, ...schemaFormat]).stdout);
-    if (schemaPreview.ok !== true || schemaPreview.changed !== 1 || schemaApply.ok !== true || schemaApply.applied !== 1 || schemaReplay.ok !== true || schemaReplay.changed !== 0) throw new Error("Packed strict-schema preview/apply/replay failed");
+    if (schemaPreview.ok !== true || schemaPreview.changed !== 1 || schemaApply.ok !== true || schemaApply.applied !== 1 || schemaReplay.ok !== true || schemaReplay.changed !== 0) throw new PackedValidationError("Packed strict-schema preview/apply/replay failed");
     diagnostics.phase = "fixture:schema-verify-applied";
     run(process.execPath, [...schemaDriver, "verify-applied"], scenarioRoot, scenarioEnvironment);
     receipts.push({
@@ -395,7 +395,7 @@ try {
 
   process.stdout.write(`${JSON.stringify({ ...packedMatrixReport(diagnostics, true), artifact_sha256: createHash("sha256").update(readFileSync(tarball)).digest("hex"), receipts })}\n`);
 } catch (error) {
-  const report = error instanceof PackedCommandError ? error.report : { ...packedMatrixReport(diagnostics, false), reason: "acceptance_validation_failed" };
+  const report = packedFailureReport(diagnostics, error);
   process.stderr.write(`${JSON.stringify(report)}\n`);
   process.exitCode = 1;
 } finally {

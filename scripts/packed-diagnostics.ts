@@ -24,10 +24,21 @@ export function summarizePackedOutput(output: string | null) {
 export function packedMatrixReport(state: PackedAcceptanceState, complete: boolean) {
   if (complete && (!state.selected_scenarios.length || state.receipts.length !== state.selected_scenarios.length ||
     state.receipts.some((receipt, index) => receipt.scenario !== state.selected_scenarios[index]))) {
-    throw new Error("Packed matrix has incomplete or misordered receipts");
+    throw new PackedValidationError("matrix_receipts_incomplete_or_misordered");
   }
   return { ok: complete, matrix_complete: complete, scenario: state.scenario, phase: state.phase, host_version: state.host_version,
     selected_scenarios: [...state.selected_scenarios], runtimes: { ...state.runtimes }, receipts: [...state.receipts] };
+}
+
+/** A trusted assertion identifier, kept separate from arbitrary exception messages. */
+export class PackedValidationError extends Error {
+  readonly validation: string;
+
+  /** Store an identifier supplied by the acceptance script's own assertions. */
+  constructor(validation: string) {
+    super(validation);
+    this.validation = validation;
+  }
 }
 
 /** Structured failures avoid printing command arguments or raw subprocess output. */
@@ -46,6 +57,13 @@ export class PackedCommandError extends Error {
     super(JSON.stringify(report));
     this.report = report;
   }
+}
+
+/** Preserve trusted validation reasons while hiding parser, filesystem and fixture text. */
+export function packedFailureReport(state: PackedAcceptanceState, error: unknown) {
+  if (error instanceof PackedCommandError) return error.report;
+  return { ...packedMatrixReport(state, false), reason: "acceptance_validation_failed",
+    validation: error instanceof PackedValidationError ? error.validation : error instanceof SyntaxError ? "invalid_json" : "unexpected_error" };
 }
 
 /** Run one shell-free command with the unchanged five-minute production bound. */

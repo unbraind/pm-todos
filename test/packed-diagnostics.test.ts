@@ -5,7 +5,7 @@ import { devNull, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { create, get, init } from "@unbrained/pm-cli/sdk";
-import { PackedCommandError, packedMatrixReport, runPackedCommand, summarizePackedOutput, type PackedAcceptanceState } from "../scripts/packed-diagnostics.ts";
+import { PackedCommandError, PackedValidationError, packedFailureReport, packedMatrixReport, runPackedCommand, summarizePackedOutput, type PackedAcceptanceState } from "../scripts/packed-diagnostics.ts";
 
 /** Make a real non-git tracker and a partial matrix without SDK substitution. */
 async function fixture(t: test.TestContext) {
@@ -84,6 +84,20 @@ test("only a complete ordered selected matrix can produce a success receipt", as
   assert.throws(() => packedMatrixReport(state, true), /incomplete/);
 });
 
+test("validation diagnostics retain fixed assertions while parser and unexpected errors remain private", async t => {
+  const { state, root, item } = await fixture(t);
+  const assertion = packedFailureReport(state, new PackedValidationError("host_version"));
+  assert.equal("validation" in assertion ? assertion.validation : undefined, "host_version");
+  for (const error of [new SyntaxError(String(item.title)), new Error(root)]) {
+    const report = packedFailureReport(state, error);
+    assert.equal("validation" in report ? report.validation : undefined, error instanceof SyntaxError ? "invalid_json" : "unexpected_error");
+    assert.equal(report.matrix_complete, false);
+    assert.deepEqual(report.receipts, state.receipts);
+    assert.ok(!JSON.stringify(report).includes(root));
+    assert.ok(!JSON.stringify(report).includes(String(item.title)));
+  }
+});
+
 test("the actual acceptance entrypoint emits incomplete JSON and exits nonzero on setup failure", async t => {
   const { root } = await fixture(t);
   const scripts = join(root, "scripts");
@@ -114,4 +128,13 @@ test("the actual acceptance entrypoint emits incomplete JSON and exits nonzero o
     assert.ok(!result.stderr.includes(root));
     assert.ok(!result.stderr.includes("synthetic-secret"));
   }
+  const invalid = spawnSync(process.execPath, [join(scripts, "accept-packed.ts"), "synthetic-private-scenario"], {
+    cwd: root, encoding: "utf8", timeout: 15000, env: { NPM_CONFIG_USERCONFIG: devNull },
+  });
+  assert.equal(invalid.status, 1);
+  assert.equal(invalid.stdout, "");
+  const refusal = JSON.parse(invalid.stderr.trim().split("\n").find(line => line.startsWith("{"))!);
+  assert.equal(refusal.validation, "unknown_scenario");
+  assert.equal(refusal.matrix_complete, false);
+  assert.ok(!invalid.stderr.includes("synthetic-private-scenario"));
 });
