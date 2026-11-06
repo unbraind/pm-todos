@@ -459,6 +459,16 @@ export each issue one exact complete-corpus read. The packed matrix uses
 npm/npx and Bun/bunx against both the current development pm host and the
 declared minimum host, creates real tracker data, exercises upsert
 import and complete JSONL export, and rejects deprecated-command diagnostics.
+The matrix also exercises global npm and Bun launchers. Each subprocess retains
+the five-minute deadline. Failures exit nonzero and emit an incomplete JSON
+report on stderr with scenario, phase, runtime versions, completed receipts,
+fixed validation reasons, stream byte counts and bounded recognized
+package-manager progress. Missing-file (`ENOENT`) and permissions (`EACCES`)
+startup failures retain their safe error codes. Arbitrary output and command
+arguments are omitted to protect credentials, paths and
+fixture content. Only a complete selected matrix emits a success receipt on
+stdout; a partial report does not certify uncompleted consumers or explain the
+underlying cause of a hung package manager.
 Independent honest all-source coverage and reachable-history privacy items
 remain authoritative readiness gates; passing the packed matrix alone is not
 publication approval. The daily release workflow runs only when commits
