@@ -27,7 +27,7 @@ test("real subprocess timeout retains safe progress, runtime and partial coverag
   const body = String((await get(String(item.id), {}, { pmRoot })).item.title);
   let failure: unknown;
   try {
-    runPackedCommand(state, process.execPath, ["-e", `process.stdout.write('Resolving dependencies\\n'); process.stderr.write(${JSON.stringify(root + " token=synthetic-secret " + body + "\n")}); setInterval(() => {}, 1000);`], root, { GIT_CEILING_DIRECTORIES: dirname(root) }, 0, 3000);
+    runPackedCommand(state, process.execPath, ["-e", "process.stdout.write('Resolving dependencies\\n'); process.stderr.write(process.argv[1]); setInterval(() => {}, 1000);", root + " token=synthetic-secret " + body + "\n"], root, { GIT_CEILING_DIRECTORIES: dirname(root) }, 0, 3000);
   } catch (error) { failure = error; }
   assert.ok(failure instanceof Error);
   assert.match(failure.message, /bun-current/);
@@ -96,7 +96,7 @@ test("the actual acceptance entrypoint emits incomplete JSON and exits nonzero o
   const launcher = join(root, "fail-pack.cjs");
   writeFileSync(launcher, "if (process.argv.includes('--version')) console.log('11.0.0'); else { console.log('Resolving dependencies'); console.error('synthetic-secret Private fixture body'); process.exit(23); }\n");
   const loader = join(root, "inject.cjs");
-  writeFileSync(loader, `const cp = require('node:child_process'); const original = cp.spawnSync; cp.spawnSync = (command, args, options) => original(process.execPath, [${JSON.stringify(launcher)}, ...args], options); require('node:module').syncBuiltinESMExports();\n`);
+  writeFileSync(loader, "const cp = require('node:child_process'); const { dirname, join } = require('node:path'); const launcher = join(dirname(dirname(process.argv[1])), 'fail-pack.cjs'); const original = cp.spawnSync; cp.spawnSync = (command, args, options) => original(process.execPath, [launcher, ...args], options); require('node:module').syncBuiltinESMExports();\n");
   for (const selection of [[], ["npm-current"]]) {
     const result = spawnSync(process.execPath, ["--require", loader, join(scripts, "accept-packed.ts"), ...selection], { cwd: root, encoding: "utf8", timeout: 15000,
       env: { NPM_CONFIG_USERCONFIG: devNull, GIT_CEILING_DIRECTORIES: dirname(root) } });
