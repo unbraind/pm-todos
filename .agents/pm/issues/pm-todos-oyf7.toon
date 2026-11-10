@@ -6,12 +6,13 @@ status: in_progress
 priority: 1
 tags[3]: changelog,ci,release
 created_at: "2026-11-10T16:07:17.560Z"
-updated_at: "2026-11-10T16:07:27.040Z"
+updated_at: "2026-11-10T17:19:56.266Z"
 author: claude-orchestrator
 acceptance_criteria: "The release generates CHANGELOG.md with exactly the section-selection flags changelog:check verifies; A contract test fails when the two drift apart again, and fails on revert"
 actual_result: "Run release checks: Changelog is out of date; the generated file lacks 'No changes.' sections for older tags."
-comments[1]{created_at,author,text}:
+comments[2]{created_at,author,text}:
   "2026-11-10T16:07:25.163Z",claude-orchestrator,"Fix: --include-empty added to the release's CHANGELOG.md generation, matching changelog:check. A new contract test in test/release-workflow.test.ts compares the flags. Revert proof: with the workflow change reverted the test fails, and with it the test passes. pm-todos: typecheck clean, full npm test 475 tests / 470 pass / 0 fail (5 existing skips); new contract test 1/0 with the fix, 0/1 without it."
+  "2026-11-10T17:19:56.265Z",claude-orchestrator,"CodeRabbit PRRT_kwDOSZpews61zLjn: the contract test now also requires at least one real writer (a pm-changelog CHANGELOG.md invocation without --check). A paired --check alone would have satisfied the filter. Revert proof: making every writer line a --check fails the test (0/1); unchanged 1/0."
 files[2]{path,scope}:
   .github/workflows/release.yml,project
   test/release-workflow.test.ts,project
