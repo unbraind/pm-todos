@@ -278,8 +278,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx pm-changelog --pm-root .agents/pm --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded --mode replace --output CHANGELOG.md --all-release-tags --release-version-from-package --date-from-version --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm --github-step-summary
-          npx pm-changelog --pm-root .agents/pm --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded --mode replace --output CHANGELOG.md --all-release-tags --release-version-from-package --date-from-version --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm --check
+          npx pm-changelog --pm-root .agents/pm --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded --mode replace --output CHANGELOG.md --all-release-tags --include-empty --release-version-from-package --date-from-version --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm --github-step-summary
+          npx pm-changelog --pm-root .agents/pm --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded --mode replace --output CHANGELOG.md --all-release-tags --include-empty --release-version-from-package --date-from-version --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm --check
           npx pm-changelog --pm-root .agents/pm --pm-arg=--output-budget --pm-arg=unbounded --pm-arg=--output-limit --pm-arg=unbounded --stdout --all-release-tags --release-version-from-package --date-from-version --item-url-base https://github.com/unbraind/pm-todos/blob/main/.agents/pm --respect-item-release --pm-bin ./node_modules/.bin/pm > RELEASE_NOTES.md
 
       - name: Run release checks
