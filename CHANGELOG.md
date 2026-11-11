@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No changes.
+### Fixed
+
+- Daily release fails its own release:check: the release regenerates CHANGELOG.md without --include-empty ([pm-todos-oyf7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-oyf7.toon))
 
 ## 2026.11.3 - 2026-11-03
 

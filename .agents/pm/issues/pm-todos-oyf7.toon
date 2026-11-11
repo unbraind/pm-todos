@@ -2,14 +2,18 @@ id: pm-todos-oyf7
 title: "Daily release fails its own release:check: the release regenerates CHANGELOG.md without --include-empty"
 description: "The release step Generate changelog and release notes rendered CHANGELOG.md without --include-empty, but changelog:check (run by release:check) renders with it. The release therefore dropped the empty tag sections the check expects, and every daily release since the pm-changelog 2026.11.6 bump failed at Run release checks with 'Changelog is out of date' (reproduced on 2026-11-10 run logs)."
 type: Issue
-status: in_progress
+status: closed
 priority: 1
 tags[3]: changelog,ci,release
 created_at: "2026-11-10T16:07:17.560Z"
-updated_at: "2026-11-10T17:19:56.266Z"
+updated_at: "2026-11-11T12:42:03.653Z"
+closed_at: "2026-11-11T12:42:03.648Z"
+completed_at: "2026-11-10T18:39:03.000Z"
 author: claude-orchestrator
 acceptance_criteria: "The release generates CHANGELOG.md with exactly the section-selection flags changelog:check verifies; A contract test fails when the two drift apart again, and fails on revert"
-actual_result: "Run release checks: Changelog is out of date; the generated file lacks 'No changes.' sections for older tags."
+resolution: "Delivered by https://github.com/unbraind/pm-todos/pull/190 (merge ab5260f25762, head fb77b25c367f)"
+expected_result: "The release generates CHANGELOG.md with exactly the section-selection flags changelog:check verifies; A contract test fails when the two drift apart again, and fails on revert"
+actual_result: "Merged at 2026-11-10T18:39:03Z; required checks satisfied; successful head checks: CodeQL, CodeRabbit, Greptile Review, Hound, codeql, test (22.18.0), test (26)"
 comments[2]{created_at,author,text}:
   "2026-11-10T16:07:25.163Z",claude-orchestrator,"Fix: --include-empty added to the release's CHANGELOG.md generation, matching changelog:check. A new contract test in test/release-workflow.test.ts compares the flags. Revert proof: with the workflow change reverted the test fails, and with it the test passes. pm-todos: typecheck clean, full npm test 475 tests / 470 pass / 0 fail (5 existing skips); new contract test 1/0 with the fix, 0/1 without it."
   "2026-11-10T17:19:56.265Z",claude-orchestrator,"CodeRabbit PRRT_kwDOSZpews61zLjn: the contract test now also requires at least one real writer (a pm-changelog CHANGELOG.md invocation without --check). A paired --check alone would have satisfied the filter. Revert proof: making every writer line a --check fails the test (0/1); unchanged 1/0."
@@ -18,4 +22,5 @@ files[2]{path,scope}:
   test/release-workflow.test.ts,project
 tests[1]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
   node --test test/release-workflow.test.ts,project,claude-orchestrator,"2026-11-10T16:07:23.279Z",local_mutation,fix/release-changelog-include-empty
+close_reason: "{\"pr\":190,\"url\":\"https://github.com/unbraind/pm-todos/pull/190\",\"merge_commit_sha\":\"ab5260f2576257eb7a9fae6aeeb52389967793dc\",\"head_sha\":\"fb77b25c367fad3871c10882e2faf4f2b3edd03e\",\"merged_at\":\"2026-11-10T18:39:03Z\",\"checks\":[\"CodeQL\",\"CodeRabbit\",\"Greptile Review\",\"Hound\",\"codeql\",\"test (22.18.0)\",\"test (26)\"]}"
 body: ""
