@@ -389,8 +389,8 @@ No changes.
 
 ### Added
 
-- Idempotent --upsert import (no duplicates on re-import) ([pm-todos-7l60](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-7l60.toon))
 - Add native todo-state import/export support ([pm-todos-auvq](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-auvq.toon))
+- Idempotent --upsert import (no duplicates on re-import) ([pm-todos-7l60](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-7l60.toon))
 
 ## 2026.6.8 - 2026-06-08
 
@@ -437,12 +437,12 @@ No changes.
 
 ### Other
 
-- Full field round-trip in markdown (type/priority/tags/deadline/status/assignee) ([pm-todos-i8qd](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-i8qd.toon))
+- Decision: priority-letter<-\>number mapping ([pm-todos-c710](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-c710.toon))
 - --group-by status\|sprint\|type sectioning on export ([pm-todos-oqcd](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-oqcd.toon))
 - todos validate <file\> command ([pm-todos-q1v5](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-q1v5.toon))
+- Full field round-trip in markdown (type/priority/tags/deadline/status/assignee) ([pm-todos-i8qd](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-i8qd.toon))
 - GitHub-flavored task-list export (--format tasklist) ([pm-todos-hiry](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-hiry.toon))
 - todo.txt format import + export (--format todotxt) ([pm-todos-1q04](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-1q04.toon))
-- Decision: priority-letter<-\>number mapping ([pm-todos-c710](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-c710.toon))
 
 ## 2026.6.2 - 2026-06-02
 
