@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Packed acceptance reports a bare timeout without scenario or subprocess diagnostics ([pm-todos-tnou](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-tnou.toon))
+
+### Other
+
+- Migrate PR183 to the November 4 pm toolchain ([pm-todos-toolchain-1104](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-toolchain-1104.toon))
+
 ## 2026.11.13 - 2026-11-13
 
 ### Dependencies

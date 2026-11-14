@@ -2,11 +2,13 @@ id: pm-todos-toolchain-1104
 title: Migrate PR183 to the November 4 pm toolchain
 description: "Migrate typed SDK scope clearing and update exact toolchain pins for https://github.com/unbraind/pm-todos/pull/183 and issue #184."
 type: Chore
-status: in_progress
+status: closed
 priority: 2
 tags[5]: dependencies,"gh:unbraind/pm-todos#183","gh:unbraind/pm-todos#184",migration,sdk
 created_at: "2026-11-04T19:07:28.965Z"
-updated_at: "2026-11-04T20:56:07.304Z"
+updated_at: "2026-11-14T09:02:09.847Z"
+closed_at: "2026-11-14T09:02:09.824Z"
+completed_at: "2026-11-14T09:02:09.824Z"
 author: codex-toolchain-1104
 acceptance_criteria: "Imports on SDK 2026.11.4 preserve metadata, custom terminal roles and ambient-scope isolation; reproduce and fix each failure without weakening assertions or coverage; record upstream defects."
 comments[10]{created_at,author,text}:
@@ -43,4 +45,5 @@ tests[3]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
   "nice -n 10 node --test --test-name-pattern=\"seed 0x72656375\" test/recurrence.test.ts",project,codex-toolchain-1104,"2026-11-04T20:45:30.034Z",local_mutation,dependabot/npm_and_yarn/pm-toolchain-f7b0fd4832
 docs[1]{path,scope}:
   README.md,project
+close_reason: "https://github.com/unbraind/pm-todos/pull/183 merged 2026-11-04T22:15:41Z; merge SHA 1cd1e02dae8a1f277209812dd264c29ecf938e16; PR head 39a260fa769baffef6a93b25c902b807c57611cd. Delivered: Typed SDK scope clearing and toolchain migration preserve metadata, custom terminal roles and ambient-scope isolation at unchanged coverage requirements. Green at that head: test (22.18.0), codeql, enable-auto-merge, test (26), CodeQL, Hound, Sourcery review. Other check outcomes: CodeRabbit: SKIPPED (not counted as green)."
 body: ""
