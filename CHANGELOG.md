@@ -8,6 +8,7 @@
 
 ### Other
 
+- Close delivered pm items and reserve in progress for active work (2026-10-24) ([pm-todos-rbm5](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-rbm5.toon))
 - Migrate PR183 to the November 4 pm toolchain ([pm-todos-toolchain-1104](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-toolchain-1104.toon))
 
 ## 2026.11.13 - 2026-11-13
