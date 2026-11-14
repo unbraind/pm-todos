@@ -68,13 +68,7 @@ test("every whole-tracker changelog read disables both universal output bounds",
     assert.match(script, /--pm-arg=--output-limit\s+--pm-arg=unbounded/u, `${name} must disable the row limit`);
     assert.match(script, /--pm-bin\s+\.\/node_modules\/\.bin\/pm/u, `${name} must use the pinned project host`);
   }
-  const directCalls = releaseWorkflow.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("npx pm-changelog "));
-  assert.equal(directCalls.length, 3);
-  for (const invocation of directCalls) {
-    assert.match(invocation, /--pm-arg=--output-budget\s+--pm-arg=unbounded/u);
-    assert.match(invocation, /--pm-arg=--output-limit\s+--pm-arg=unbounded/u);
-    assert.match(invocation, /--pm-bin\s+\.\/node_modules\/\.bin\/pm/u);
-  }
+  assert.match(releaseWorkflow, /uses: unbraind\/pm-ops\/\.github\/workflows\/daily-release\.yml@[a-f0-9]{40}/u);
 });
 
 test("the mandatory release gate includes canonical-reader and packed-host acceptance", () => {
@@ -94,13 +88,13 @@ test("calendar versions compare numerically rather than lexicographically", () =
   assert.ok(atOrAbove("2027.1.1", "2026.12.31"));
 });
 
-/** Historical empty tags remain visible; new release notes still require real changes. */
-test("history regeneration explicitly includes empty tagged releases without weakening new notes", () => {
+/** Historical and item-less changed windows retain valid empty release sections. */
+test("all changelog hooks explicitly allow empty sections for changed release windows", () => {
   for (const name of ["changelog:full", "changelog:check"]) {
     assert.match(packageJson.scripts?.[name] ?? "", /--all-release-tags --include-empty/u);
     assert.doesNotMatch(packageJson.scripts?.[name] ?? "", /--no-pending-release/u);
   }
   for (const name of ["changelog", "release:notes"]) {
-    assert.doesNotMatch(packageJson.scripts?.[name] ?? "", /--include-empty/u);
+    assert.match(packageJson.scripts?.[name] ?? "", /--include-empty/u);
   }
 });
