@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.11.15 - 2026-11-15
+
+No changes.
+
 ## 2026.11.14 - 2026-11-14
 
 ### Dependencies
