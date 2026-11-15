@@ -113,6 +113,7 @@ jobs:
           node --test test/identity-audit.test.ts
           npm run pack:dry-run
           npm run verify:release-changelog-date
+          npm run verify:release-publish-attestation
 
       - name: Engines floor tests
         if: steps.changes.outputs.code == 'true' && matrix.node-version == '22.18.0'

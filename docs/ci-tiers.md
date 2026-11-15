@@ -14,7 +14,7 @@ the quick tier; pushes to main start deep validation instead.
 | Production audit | — | yes | — | full npm + Bun |
 | Package dry-run (README and CHANGELOG included), changelog/date | — | yes | yes | full npm + Bun |
 | Six packed npm/npx and Bun/bunx consumers, minimum/current SDK | — | yes | — | full npm + Bun |
-| Publish attestation verification | — | yes | — | full npm + Bun |
+| Publish attestation verification (all tracked shebangs) | — | yes | yes | full npm + Bun |
 | Bun package graph install smoke | — | yes | — | yes |
 | CodeQL, separate workflow | matching paths | matching paths | filtered | main matching paths + Monday 04:31 UTC |
 
@@ -53,3 +53,7 @@ Node 26 execution 22m04s; creation-to-completion 105m36s and 117m32s. Full seede
 recurrence took 161.85s, stored schedules 105.57s, source sessions 93.53s and
 hierarchy 93.04s. Quick PR wall time is pending CI. Full depth is deferred to
 the deep workflow rather than rerun on an overloaded shared host.
+
+Publish-attestation discovery examines the first line of every tracked file,
+including documentation and tracker data, for a shell shebang. The existing
+verifier therefore also runs on the docs path; its implementation is unchanged.
