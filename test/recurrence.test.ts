@@ -1,3 +1,4 @@
+import { testDepth, testTime } from "./support/depth.ts";
 /** Real SDK recurrence, replay and deterministic competing-writer regressions. */
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
@@ -113,7 +114,7 @@ test("strict boundary, disabled bytes, dates, timezone and configured status rol
   const id = await f.source("policy");
   const snapshot = (await f.client.get(id)).item;
   const invalid: unknown[] = [null, [], Array(3), "text", 1, Infinity, { id, dialect, extra: [] }, { id: "x".repeat(161) }, { id, dialect: "weekly" }, { id, expectedRevision: "old" }, { id: NaN }, { id, expectedTargetRevision: Infinity }, { id, expectedTargetRevision: Array(3) }, { id, expectedTargetRevision: "old" }];
-  for (let n = 0; n < 200; n++) invalid.push({ id, expectedRevision: [NaN, -Infinity, Infinity, -1, Number.MAX_VALUE, [], Array(10), {}, "x".repeat(n)][n % 9] });
+  for (let n = 0; n < testDepth(200); n++) invalid.push({ id, expectedRevision: [NaN, -Infinity, Infinity, -1, Number.MAX_VALUE, [], Array(10), {}, "x".repeat(n)][n % 9] });
   for (const value of invalid) { const result = await previewTodoOccurrence(f.pmRoot, value); assert.equal(result.ok, false); receipt(result); }
   for (const timezone of ["Europe/Vienna", "UTC", "+02:00", Infinity, Array(5)]) assert.equal((await previewTodoOccurrence(f.pmRoot, { id, dialect, timezone })).code, "unsupported_timezone");
   assert.equal((await previewTodoOccurrence("missing-tracker", { id })).action, "disabled");
@@ -229,7 +230,7 @@ test("packed CLI works without git or pm on PATH; compact JSON/TOON and concurre
 interface ModelInput { priority: number; due: string; owner: string; description: string; sprint: string }
 /** Compare persisted SDK state with a separate SDK-normalized native reference tracker. */
 // Match the stored-schedule model timeout for two packed installs and all 500 correctness sequences.
-test("seed 0x72656375: 500 random import/export/sync sequences retain fields and relationships", { timeout: 1200000 }, async t => {
+test("seed 0x72656375: 500 random import/export/sync sequences retain fields and relationships", { timeout: testTime(1200000) }, async t => {
   const f = await fixture(t);
   const originalError = console.error;
   // Import/sync progress contains disposable filenames; keep tracked receipts public-safe.
@@ -276,7 +277,7 @@ test("seed 0x72656375: 500 random import/export/sync sequences retain fields and
   const file = join(f.root, "model-input.txt");
   const counts = { sequences: 0, imports: 0, exports: 0, syncs: 0, olderReplays: 0, crlf: 0 };
   const formats = ["jsonl", "todotxt", "markdown", "checkbox", "todojson"] as const;
-  for (let sequence = 0; sequence < 500; sequence++) {
+  for (let sequence = 0; sequence < testDepth(500); sequence++) {
     const tracker = join(f.root, "sequence-current");
     const oracle = join(f.root, "oracle-current");
     cpSync(f.pmRoot, tracker, { recursive: true });
@@ -356,8 +357,8 @@ test("seed 0x72656375: 500 random import/export/sync sequences retain fields and
     counts.sequences++;
     if (sequence % 100 === 99) t.diagnostic(JSON.stringify(counts));
   }
-  assert.equal(counts.sequences, 500);
-  assert.ok(counts.olderReplays > 500 && counts.syncs > 300 && counts.crlf > 500);
+  assert.equal(counts.sequences, testDepth(500));
+  assert.ok(counts.olderReplays > counts.sequences && counts.syncs > Math.floor(counts.sequences * 0.6) && counts.crlf > counts.sequences);
   t.diagnostic(JSON.stringify(counts));
 });
 
@@ -481,7 +482,7 @@ function modelSame(a: TodoOccurrenceSchedule, b: TodoOccurrenceSchedule): boolea
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-test("stored schedule model: 500 random source/successor edit, lifecycle, deletion and replay sequences", { timeout: 1200000 }, async t => {
+test("stored schedule model: 500 random source/successor edit, lifecycle, deletion and replay sequences", { timeout: testTime(1200000) }, async t => {
   const f = await fixture(t);
   const sourceId = await f.source("schedule-model");
   const first = await previewTodoOccurrence(f.pmRoot, { id: sourceId, dialect });
@@ -494,7 +495,7 @@ test("stored schedule model: 500 random source/successor edit, lifecycle, deleti
     let seed = initialSeed;
     /** Select operations using high bits so consecutive branch choices remain varied. */
     const random = (max: number): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return Math.floor(seed / 4294967296 * max); };
-    for (let sequence = 0; sequence < 250; sequence++) {
+    for (let sequence = 0; sequence < testDepth(250); sequence++) {
       const root = join(f.root, "schedule-current");
       cpSync(f.pmRoot, root, { recursive: true });
       const client = new PmClient({ pmRoot: root, cwd: f.root, author: "test-agent" });
@@ -635,9 +636,9 @@ test("stored schedule model: 500 random source/successor edit, lifecycle, deleti
     }
     t.diagnostic(JSON.stringify({ seed: initialSeed, ...totals }));
   }
-  assert.equal(totals.sequences, 500);
-  assert.ok(totals.rescheduled >= 500 && totals.manualPreserved > 0 && totals.replays > 100);
-  for (let choice = 0; choice < 13; choice++) assert.ok(totals["op" + choice] > 100, "operation class " + choice);
+  assert.equal(totals.sequences, 2 * testDepth(250));
+  assert.ok(totals.rescheduled >= totals.sequences && totals.manualPreserved > 0 && totals.replays > Math.floor(totals.sequences / 5));
+  for (let choice = 0; choice < 13; choice++) assert.ok(totals["op" + choice] > Math.floor(totals.sequences / 5), "operation class " + choice);
 });
 
 test("stored schedule CAS and read-back revalidate every reschedule boundary", async t => {
