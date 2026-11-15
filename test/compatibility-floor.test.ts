@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import { parseDocument } from "yaml";
 
 import { checkExtensionManifestCompatibility } from "@unbrained/pm-cli/sdk/authoring";
 
@@ -96,5 +97,18 @@ test("all changelog hooks explicitly allow empty sections for changed release wi
   }
   for (const name of ["changelog", "release:notes"]) {
     assert.match(packageJson.scripts?.[name] ?? "", /--include-empty/u);
+  }
+});
+
+/** Bound each exhaustive job to one runtime gate while retaining both package managers. */
+test("deep CI gives each Node and package-manager pair one release gate", () => {
+  const document = parseDocument(readFileSync(resolve(repoRoot, ".github/workflows/ci-deep.yml"), "utf8"), { uniqueKeys: true });
+  assert.deepEqual(document.errors, []);
+  const job = document.toJS().jobs.deep;
+  assert.deepEqual(job.strategy.matrix["node-version"], ["22.18.0", 26]);
+  assert.deepEqual(job.strategy.matrix["package-manager"], ["npm", "bun"]);
+  for (const manager of ["npm", "bun"]) {
+    const gate = job.steps.find((step: { run?: string }) => step.run === `${manager} run release:check`);
+    assert.equal(gate.if, `matrix.package-manager == '${manager}'`);
   }
 });

@@ -30,7 +30,8 @@ path proof, so only a graph install smoke follows the npm gate.
 
 Deep runs main pushes, dispatch and daily 02:47 UTC, away from release 03:23
 and hourly reconciliation :41. Distinct `deep` checks have a 120-minute timeout,
-per-ref concurrency, full depth and time scale 3. The runner expression uses
+per-ref concurrency, full depth and time scale 3. A Node × npm/Bun matrix
+runs four jobs, each with exactly one full release gate. The runner expression uses
 persistent local runners unless `PM_LOCAL_DEEP=off`. npm cache restoration and
 Bun setup only happen on hosted runners; preinstalled local Bun is logged.
 
@@ -57,3 +58,8 @@ the deep workflow rather than rerun on an overloaded shared host.
 Publish-attestation discovery examines the first line of every tracked file,
 including documentation and tracker data, for a shell shebang. The existing
 verifier therefore also runs on the docs path; its implementation is unchanged.
+
+The Bun release command launches the same npm/Node test and coverage scripts.
+It validates launcher compatibility; the packed acceptance consumers separately
+exercise Bun installs and CLI execution. It does not certify the full suite
+running on the Bun runtime.
