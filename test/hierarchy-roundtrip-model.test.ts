@@ -24,10 +24,7 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
   process.env.GIT_CEILING_DIRECTORIES = dirname(root);
   t.after(() => { if (previousCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = previousCeiling; process.exitCode = 0; rmSync(root, { recursive: true, force: true }); });
   const covered = new Set<string>(), artifact = packExtension(root);
-  const formats = ["markdown", "todotxt", "todojson", "jsonl", "checkbox"] as const;
-  for (const format of formats) {
-    // Independent streams keep each format prefix identical at quick and full depth.
-    seed = 0x1029abcf + formats.indexOf(format);
+  for (const format of ["markdown", "todotxt", "todojson", "jsonl", "checkbox"] as const) {
     const pmRoot = join(root, format, "tracker");
     await core.init(undefined, {}, { pmRoot, noExtensions: true });
     const client = new core.PmClient({ pmRoot, author: "roundtrip-model" });
@@ -106,6 +103,14 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
       for (const key of new Set([...Object.keys(read.metadata), ...Object.keys(roundtrip.metadata)])) if (key !== "updated_at") assert.deepEqual((roundtrip.metadata as unknown as Record<string, unknown>)[key], (read.metadata as unknown as Record<string, unknown>)[key], `${format}/${sequence}: producer ${key}`);
       assert.equal(roundtrip.body, model.body);
       for (const [index, parentId] of ids.slice(0, 2).entries()) assert.deepEqual(await native(pmRoot, parentId), unselected[index], "Unselected native parents must stay unchanged");
+    }
+    // Advance only the RNG for omitted cases, retaining the original full corpus
+    // and the exact per-format prefix without running omitted SDK operations.
+    for (let sequence = testDepth(100); sequence < 100; sequence++) {
+      if (format !== "todojson") { random(5); random(28); }
+      const op = (random(4) + sequence) % 4;
+      if (op === 3) random(1); // Input history is nonempty after the quick prefix.
+      if (sequence % 10 === 0) random(2);
     }
     assert.equal((await core.readSettings(pmRoot)).item_format, settings.item_format);
     t.diagnostic(`${format}: ${testDepth(100)} model sequences`);

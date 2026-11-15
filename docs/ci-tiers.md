@@ -36,8 +36,8 @@ Bun setup only happen on hosted runners; preinstalled local Bun is logged.
 
 Unset depth is full. Quick uses a deterministic prefix: 50/500 model cases,
 25/250 per stored-schedule seed, 25/100 per native format, and 25/200 watcher
-cycles. Native-format streams are independent so shortening one format never
-changes the next format's inputs. Cohorted 500-case models keep their first
+cycles. Omitted native-format cases advance only the RNG so shortening one format
+never changes the next format's original inputs or the full corpus. Cohorted 500-case models keep their first
 complete 50-case cohort. Per-case assertions and operation-class checks remain;
 aggregate thresholds use the generated sequence totals. No coverage threshold
 or product size bound changes.
