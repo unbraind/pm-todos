@@ -1,3 +1,4 @@
+import { testDepth, testTime } from "./support/depth.ts";
 /** Validation corpus boundaries must never read or chmod outside their disposable trees. */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -22,7 +23,7 @@ test("seed 0x73616665: 500 validation-tree link variants refuse before permissio
   const before = [state(outside), state(join(outside, "executable"))];
   let seed = 0x73616665;
   try {
-    for (let index = 0; index < 500; index++) {
+    for (let index = 0; index < testDepth(500); index++) {
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
       const tree = join(root, "tree"); mkdirSync(tree); writeFileSync(join(tree, "ordinary"), "Regular corpus control");
       const nested = join(tree, "nested"); mkdirSync(nested);
@@ -130,7 +131,7 @@ async function fixture(t: test.TestContext) {
     const copy = join(root, "supplied"); rmSync(copy, { recursive: true, force: true });
     if (supplied) cpSync(pmRoot, copy, { recursive: true, verbatimSymlinks: true });
     const restore = ordinary && script === "validate-source-watcher.ts" ? readonlyValidationTree(copy) : undefined;
-    try { return spawnSync(runtime, [resolve("scripts", script), supplied ? copy : repo], { cwd: root, env: environment, encoding: "utf8", timeout: 120000 }); }
+    try { return spawnSync(runtime, [resolve("scripts", script), supplied ? copy : repo], { cwd: root, env: environment, encoding: "utf8", timeout: testTime(120000) }); }
     finally { restore?.(); }
   }
   return { root, pmRoot, runtime, commit, run };
@@ -138,7 +139,7 @@ async function fixture(t: test.TestContext) {
 
 const VALIDATORS = readdirSync(resolve("scripts")).filter(name => name.startsWith("validate-") || name === "compare-sdk-sessions.ts").sort();
 
-test("every public-corpus validator rejects archived and supplied links without changing an outside executable", { timeout: 360000 }, async t => {
+test("every public-corpus validator rejects archived and supplied links without changing an outside executable", { timeout: testTime(360000) }, async t => {
   const f = await fixture(t), original = statSync(f.runtime).mode & 0o7777;
   // proc/self resolves to the cloned executable, never the host's Node executable.
   const targets = [...(process.platform === "linux" ? ["/proc/self/exe"] : []), f.runtime];
@@ -155,7 +156,7 @@ test("every public-corpus validator rejects archived and supplied links without 
   }
 });
 
-test("all public-corpus validators retain ordinary native tracker behavior", { timeout: 240000 }, async t => {
+test("all public-corpus validators retain ordinary native tracker behavior", { timeout: testTime(240000) }, async t => {
   const f = await fixture(t); f.commit();
   const before = fingerprintValidationTree(f.pmRoot), executable = state(f.runtime);
   for (const script of VALIDATORS) {

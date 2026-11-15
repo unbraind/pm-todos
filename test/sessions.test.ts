@@ -1,3 +1,4 @@
+import { testTime } from "./support/depth.ts";
 /** Sessions use real SDK trackers and compare under core item locks. */
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
@@ -18,13 +19,14 @@ const item: PmItem = { id: "task-one", title: "Original", status: "open", priori
 
 /** Give child imports a separate budget, then bound parsing in a killable child. */
 function assertBoundedParsing(source: string): Promise<void> {
+  const parseBudget = testTime(2_000), startupBudget = testTime(60_000), watchdogBudget = testTime(15_000);
   const script = `import assert from 'node:assert/strict';
     import { createTodoEditingSession, reconcileTodoEditingSession, parseTodoTxtLine } from ${JSON.stringify(new URL("../index.ts", import.meta.url).href)};
     const spaces = ' '.repeat(100_000);
     process.send('ready');
     const started = performance.now();
     ${source}
-    assert.ok(performance.now() - started < 2_000, 'parsing 100k spaces exceeded two seconds');
+    assert.ok(performance.now() - started < ${parseBudget}, 'parsing 100k spaces exceeded the harness budget');
     process.send('done');
     process.disconnect();`;
   return new Promise((resolve, reject) => {
@@ -34,7 +36,7 @@ function assertBoundedParsing(source: string): Promise<void> {
     let timer = setTimeout(() => {
       child.kill();
       reject(new Error("Parser child imports exceeded the startup budget"));
-    }, 60_000);
+    }, startupBudget);
     child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
     child.on("message", (message: unknown) => {
       if (message === "done") { finished = true; return; }
@@ -44,7 +46,7 @@ function assertBoundedParsing(source: string): Promise<void> {
       timer = setTimeout(() => {
         child.kill();
         reject(new Error("Parser exceeded its watchdog after imports completed"));
-      }, 15_000);
+      }, watchdogBudget);
     });
     child.on("error", error => { clearTimeout(timer); reject(error); });
     child.on("close", (code, signal) => {

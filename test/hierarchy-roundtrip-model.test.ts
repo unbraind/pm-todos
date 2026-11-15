@@ -1,3 +1,4 @@
+import { testDepth, testTime } from "./support/depth.ts";
 /** Seeded native-format state model: every existing transport must preserve repaired relations. */
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -15,7 +16,7 @@ async function native(pmRoot: string, id: string) {
   return (await readSchemaDocuments(core, pmRoot, [id]))[0];
 }
 
-test("500 seeded native import/export/sync sequences preserve hierarchy and every untouched native field through SDK read-back", { timeout: 1200000 }, async t => {
+test("500 seeded native import/export/sync sequences preserve hierarchy and every untouched native field through SDK read-back", { timeout: testTime(1200000) }, async t => {
   let seed = 0x1029abcf;
   const random = (limit: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % limit; };
   const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
@@ -23,7 +24,10 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
   process.env.GIT_CEILING_DIRECTORIES = dirname(root);
   t.after(() => { if (previousCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = previousCeiling; process.exitCode = 0; rmSync(root, { recursive: true, force: true }); });
   const covered = new Set<string>(), artifact = packExtension(root);
-  for (const format of ["markdown", "todotxt", "todojson", "jsonl", "checkbox"] as const) {
+  const formats = ["markdown", "todotxt", "todojson", "jsonl", "checkbox"] as const;
+  for (const format of formats) {
+    // Independent streams keep each format prefix identical at quick and full depth.
+    seed = 0x1029abcf + formats.indexOf(format);
     const pmRoot = join(root, format, "tracker");
     await core.init(undefined, {}, { pmRoot, noExtensions: true });
     const client = new core.PmClient({ pmRoot, author: "roundtrip-model" });
@@ -43,7 +47,7 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
     const file = join(root, format, "exchange"), output = join(root, format, "exported");
     const settings = await core.readSettings(pmRoot);
     const inputVersions: { text: string; priority: number; deadline: string }[] = [];
-    for (let sequence = 0; sequence < 100; sequence++) {
+    for (let sequence = 0; sequence < testDepth(100); sequence++) {
       const priority = format === "todojson" ? 2 : random(5), deadline = format === "todojson" ? "2026-12-01" : `2026-12-${String(1 + random(28)).padStart(2, "0")}`;
       const line = `(p${priority}) Stable native row due:${deadline}`;
       let text: string;
@@ -104,7 +108,7 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
       for (const [index, parentId] of ids.slice(0, 2).entries()) assert.deepEqual(await native(pmRoot, parentId), unselected[index], "Unselected native parents must stay unchanged");
     }
     assert.equal((await core.readSettings(pmRoot)).item_format, settings.item_format);
-    t.diagnostic(`${format}: 100 model sequences`);
+    t.diagnostic(`${format}: ${testDepth(100)} model sequences`);
   }
   assert.equal(covered.size, 15);
 });

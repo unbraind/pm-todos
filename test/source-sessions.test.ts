@@ -1,3 +1,4 @@
+import { testDepth, testTime } from "./support/depth.ts";
 /** Real, non-git SDK acceptance plus a seeded independent state machine. */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
@@ -350,9 +351,9 @@ test("source CLI keeps nested reads bound to their parent during ancestor ABA an
   }
 });
 
-test("500 seeded operation sequences compare every touched native field and preserved relationship through SDK read-back", { timeout: 1200000 }, async t => {
+test("500 seeded operation sequences compare every touched native field and preserved relationship through SDK read-back", { timeout: testTime(1200000) }, async t => {
   const covered = new Set<number>();
-  for (let cohort = 0; cohort < 10; cohort++) {
+  for (let cohort = 0; cohort < Math.ceil(testDepth(500) / 50); cohort++) {
   const f = await fixture(t, 4);
   let seed = 0x1a2b3c4d + cohort;
   const random = (max: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % max; };

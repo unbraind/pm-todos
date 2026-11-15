@@ -4,11 +4,11 @@ description: "Tracks gh:unbraind/pm-todos#165 (filed 2026-10-28, missed by the b
 type: Issue
 status: in_progress
 priority: 2
-tags[3]: ci,diagnostics,"gh:unbraind/pm-todos#165"
+tags[4]: ci,diagnostics,"gh:unbraind/pm-todos#165",performance
 created_at: "2026-11-02T09:18:44.778Z"
-updated_at: "2026-11-06T19:17:38.358Z"
+updated_at: "2026-11-15T15:48:15.128Z"
 author: pi-glm
-comments[12]{created_at,author,text}:
+comments[13]{created_at,author,text}:
   "2026-11-06T15:12:19.018Z",codex-sol,"Issue 165 remains reproducible on main: the subprocess timeout branch drops captured output and scenario context, and receipts appear only after all scenarios succeed. Reuse this tagged item. Plan: deterministic real-process timeout regression in a non-git SDK tracker, shared bounded sanitized diagnostics for every subprocess, partial receipts and runtime context, unchanged five-minute production timeout and all six current scenarios. Historical Bun hang cause and repeatability remain unknown."
   "2026-11-06T15:15:59.004Z",codex-sol,"Failing-first proof: the original timeout behavior fails the real subprocess regression (0/1) because the diagnostic has no bun-current scenario. The corrected runner passes 5/5 targeted tests, including a real non-git SDK tracker, timeout termination, nonzero exit, missing executable, bounded privacy-preserving previews, exact matrix completion, and the actual entrypoint failure report. npm run build:test, npm run typecheck and npm run docstring pass; this repository has no separate lint script."
   "2026-11-06T15:18:02.757Z",codex-sol,"Behavioral reverts were run only in disposable copies. Reverting runPackedCommand to the original subprocess behavior fails 3/5 tests; replacing summarizePackedOutput with raw passthrough fails 4/5; removing packedMatrixReport completion enforcement fails 1/5; restoring the entrypoint throw-only failure path fails its focused test 1/1. All reverted implementations were discarded, and the fixed targeted suite passed again. Linked pm test run passed 5/5; automatic result tracking is disabled by project policy, so this comment records the receipt. Tracker commands use the pinned CLI 2026.11.4; the public registry reports 2026.11.6, and dependencies remain unchanged."
@@ -21,12 +21,16 @@ comments[12]{created_at,author,text}:
   "2026-11-06T19:12:44.253Z",codex-sol,"Resumed PR 185 after CodeRabbit reviewed head 16e33ca and posted one actionable finding: preserve safe ENOENT and EACCES startup error codes without exposing exception messages. Reviewed the complete review body; no outside-diff or nitpick findings were present. Reuse this item and retain previous completed verification. The earlier receipt commit cc28152 remains local and will be pushed with this correction under the updated instruction to publish all commits. Canonical checkout dependencies were stale and have now been refreshed to the pinned CLI before tracker writes."
   "2026-11-06T19:15:45.162Z",codex-sol,"CodeRabbit finding PRRT_kwDOSZpews60ovCW is valid: PackedCommandError discarded safe startup error identities. Added a failing-first real-process regression using a missing executable, an owned non-executable fixture, and a non-directory working directory. It failed 0/1 before the fix, then passed with ENOENT and EACCES preserved and unlisted ENOTDIR kept generic. Only the four allowlisted codes are emitted; exception messages, paths and fixture data remain omitted. Behavioral mutation proofs in disposable copies independently removing ENOENT, removing EACCES, or exposing arbitrary error codes each fail the focused test 0/1. Restoring the fix passes 7/7 targeted tests. npm run typecheck, npm run build:test, npm run docstring and git diff --check pass. README documents the safe codes; no deadlines, buffers, consumers, dependencies or thresholds changed."
   "2026-11-06T19:17:28.782Z",codex-sol,"Linked pm test run passed 7/7 with zero failures or skips; automatic linked-result tracking remains disabled by project policy. The new startup-code regression independently fails when either ENOENT or EACCES handling is reverted and when unknown codes are exposed. All disposable copies were removed; fixed tests pass after restoration. Release claim without closing and regenerate changelog after this final tracker write. Push both the prior receipt commit cc28152 and this code correction, reply to PRRT_kwDOSZpews60ovCW, and requeue CodeRabbit immediately. Fresh exact-head CI and review results will be retained in PR 185; prior head 16e33ca evidence is historical, not certification of the next head."
-files[3]{path,scope}:
+  "2026-11-15T15:45:06.185Z",codex-sol,"Reuse existing CI timeout item for Fleet CI v2, companion pm-cli-website-dyhg. Preserve test (22.18.0) and test (26), all original gates and six packed consumers. Plan: deterministic quick prefixes, operation-bounded correctness tests, harness-only time scaling, docs identity and packaging gates, full deep npm/Bun gates. No release-owned changes or review-thread actions."
+files[4]{path,scope}:
+  .github/workflows/ci.yml,project
   scripts/accept-packed.ts,project
   scripts/packed-diagnostics.ts,project
   test/packed-diagnostics.test.ts,project
-tests[1]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+tests[2]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
   node --test --test-concurrency=2 test/packed-diagnostics.test.ts,project,codex-sol,"2026-11-06T15:16:07.431Z",local_mutation,bun-init-timeout-diagnostics
-docs[1]{path,scope}:
+  "npm run typecheck && npm run build:test && npm run docstring",project,codex-sol,"2026-11-15T15:47:22.345Z",local_mutation,ci/quick-pr-tier-deep-local-tier
+docs[2]{path,scope}:
+  docs/ci-tiers.md,project
   README.md,project
 body: ""

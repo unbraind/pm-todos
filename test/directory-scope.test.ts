@@ -1,3 +1,4 @@
+import { testDepth } from "./support/depth.ts";
 /** Confined filesystem operations must survive ancestor ABA swaps at every syscall boundary. */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -115,7 +116,7 @@ for (const mode of ["reads", "chmod", "copy"] as const) test("every validation t
 
 test("seed 0x64697266: 500 scoped read/create/replay operations resist ancestor ABA", t => {
   let seed = 0x64697266;
-  for (let index = 0; index < 500; index++) {
+  for (let index = 0; index < testDepth(500); index++) {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
     const f = fixture(seed % 4), file = [...f.names, "sentinel"].join("/"), output = [...f.names, "output"].join("/");
     const step = (seed >>> 4) % 45 + 1;
