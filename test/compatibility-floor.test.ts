@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { matchesGlob, resolve } from "node:path";
 import test from "node:test";
 import { parseDocument } from "yaml";
 
@@ -111,4 +111,18 @@ test("deep CI gives each Node and package-manager pair one release gate", () => 
     const gate = job.steps.find((step: { run?: string }) => step.run === `${manager} run release:check`);
     assert.equal(gate.if, `matrix.package-manager == '${manager}'`);
   }
+});
+
+/** Prose can skip security analysis; executable files in prose/tracker trees cannot. */
+test("CodeQL includes executable tracker and documentation files", () => {
+  const parsed = parseDocument(readFileSync(resolve(repoRoot, ".github/workflows/codeql.yml"), "utf8"), { uniqueKeys: true });
+  assert.deepEqual(parsed.errors, []);
+  const workflow = parsed.toJS();
+  for (const event of ["pull_request", "push"]) {
+    const patterns = workflow.on[event].paths as string[];
+    for (const [path, expected] of [["README.md", false], ["docs/notes.md", false], [".agents/pm/tasks/example.toon", false], ["package-lock.json", false], [".agents/pm/check.ts", true], [".agents/pm/nested/check.mjs", true], ["docs/check.js", true], ["index.ts", true]] as const) {
+      assert.equal(patterns.reduce((selected, pattern) => matchesGlob(path, pattern.replace(/^!/, "")) ? !pattern.startsWith("!") : selected, false), expected, path);
+    }
+  }
+  assert.match(ciWorkflow, /\*\.mjs\|\*\.cjs\|\*\.js\|\*\.ts\) code=true/u);
 });

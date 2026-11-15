@@ -16,13 +16,14 @@ the quick tier; pushes to main start deep validation instead.
 | Six packed npm/npx and Bun/bunx consumers, minimum/current SDK | — | yes | — | full npm + Bun |
 | Publish attestation verification (all tracked shebangs) | — | yes | yes | full npm + Bun |
 | Bun package graph install smoke | — | yes | — | yes |
-| CodeQL, separate workflow | matching paths | matching paths | filtered | main matching paths + Monday 04:31 UTC |
+| CodeQL, separate workflow | matching paths | matching paths | executable files only | main matching paths + Monday 04:31 UTC |
 
 There is no standalone lint, duplication or privacy script. Identity auditing
 checks added lines and commit identities, including docs and tracker files.
 Package dry-run builds and lists the shipped documentation. The canonical-reader
 acceptance creates a synthetic tracker and does not consume repository docs.
-Executable tracker files take the code path. Existing tests that create packed
+Executable tracker and documentation files take the code path and remain
+eligible for CodeQL; only their non-executable data/prose is filtered. Existing tests that create packed
 fixtures remain in the Node floor test suite; there is no separate pack command
 on that leg. All six packed consumers already prove Bun project/global tarball
 installs and bunx host invocation; a second Bun PR release gate adds no install
