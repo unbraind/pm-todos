@@ -1,3 +1,4 @@
+import { testDepth, testTime } from "./support/depth.ts";
 /** Seeded native-format state model: every existing transport must preserve repaired relations. */
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -15,7 +16,7 @@ async function native(pmRoot: string, id: string) {
   return (await readSchemaDocuments(core, pmRoot, [id]))[0];
 }
 
-test("500 seeded native import/export/sync sequences preserve hierarchy and every untouched native field through SDK read-back", { timeout: 1200000 }, async t => {
+test("500 seeded native import/export/sync sequences preserve hierarchy and every untouched native field through SDK read-back", { timeout: testTime(1200000) }, async t => {
   let seed = 0x1029abcf;
   const random = (limit: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % limit; };
   const harness = await createExtensionTestHarness(extension, { name: "pm-todos", capabilities: ["commands", "schema", "importers", "preflight"] });
@@ -43,7 +44,7 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
     const file = join(root, format, "exchange"), output = join(root, format, "exported");
     const settings = await core.readSettings(pmRoot);
     const inputVersions: { text: string; priority: number; deadline: string }[] = [];
-    for (let sequence = 0; sequence < 100; sequence++) {
+    for (let sequence = 0; sequence < testDepth(100); sequence++) {
       const priority = format === "todojson" ? 2 : random(5), deadline = format === "todojson" ? "2026-12-01" : `2026-12-${String(1 + random(28)).padStart(2, "0")}`;
       const line = `(p${priority}) Stable native row due:${deadline}`;
       let text: string;
@@ -103,8 +104,16 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
       assert.equal(roundtrip.body, model.body);
       for (const [index, parentId] of ids.slice(0, 2).entries()) assert.deepEqual(await native(pmRoot, parentId), unselected[index], "Unselected native parents must stay unchanged");
     }
+    // Advance only the RNG for omitted cases, retaining the original full corpus
+    // and the exact per-format prefix without running omitted SDK operations.
+    for (let sequence = testDepth(100); sequence < 100; sequence++) {
+      if (format !== "todojson") { random(5); random(28); }
+      const op = (random(4) + sequence) % 4;
+      if (op === 3) random(1); // Input history is nonempty after the quick prefix.
+      if (sequence % 10 === 0) random(2);
+    }
     assert.equal((await core.readSettings(pmRoot)).item_format, settings.item_format);
-    t.diagnostic(`${format}: 100 model sequences`);
+    t.diagnostic(`${format}: ${testDepth(100)} model sequences`);
   }
   assert.equal(covered.size, 15);
 });

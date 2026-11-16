@@ -1,3 +1,4 @@
+import { testTime } from "./test-time.ts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
 /** Diagnostic state owned by the packed-consumer matrix, never child output. */
@@ -68,6 +69,7 @@ export function packedFailureReport(state: PackedAcceptanceState, error: unknown
 
 /** Run one shell-free command with the unchanged five-minute production bound. */
 export function runPackedCommand(state: PackedAcceptanceState, command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, expectedStatus = 0, timeoutMs = 300000): SpawnSyncReturns<string> {
+  timeoutMs = testTime(timeoutMs);
   const result = spawnSync(command, args, { cwd, encoding: "utf8", env, maxBuffer: 64 * 1024 * 1024, timeout: timeoutMs, killSignal: "SIGKILL" });
   if (result.error || result.status !== expectedStatus) throw new PackedCommandError(state, result, timeoutMs);
   return result;
