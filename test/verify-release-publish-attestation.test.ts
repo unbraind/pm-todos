@@ -142,6 +142,29 @@ test("this repository's own workflows pass the gate", () => {
   }
 });
 
+test("a forced-offline tag lookup defers attestation without ever claiming one", () => {
+  // PM_OPS_OFFLINE=1 makes the canonical tag resolver throw, which is the
+  // same path an unreachable API takes. The branch above is conditional on
+  // CI having network; this one forces the offline answer so the deferral
+  // contract cannot silently lose coverage on a runner that resolves tags.
+  const saved = process.env.PM_OPS_OFFLINE;
+  try {
+    process.env.PM_OPS_OFFLINE = "1";
+    const audited = verify(root);
+    const lines: string[] = [];
+    let exitCode = 0;
+    report(audited, (line) => lines.push(line), (code) => { exitCode = code; });
+    assert.equal(audited.recognition.kind, "unverified-offline", "a disabled lookup must defer, not refuse or attest");
+    assert.equal(exitCode, 0, "a deferral is not a failure");
+    assert.deepEqual(audited.failures, [], "an offline lookup must not manufacture publish failures");
+    assert.ok(lines.some((line) => line.includes("unverified-offline; attestation deferred")), lines.join("\n"));
+    assert.ok(lines.every((line) => !line.includes("every publish invocation is attested")), "a deferred lookup must never claim an attestation");
+  } finally {
+    if (saved === undefined) delete process.env.PM_OPS_OFFLINE;
+    else process.env.PM_OPS_OFFLINE = saved;
+  }
+});
+
 test("the launcher runs only as the process entry point", () => {
   // A bare `if` at module scope leaves its own body unreachable from any
   // in-process test, which is how an entry point quietly stops running.
