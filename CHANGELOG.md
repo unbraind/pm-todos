@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2026.11.15 - 2026-11-15
 
-### Other
+No changes.
 
-- Close delivered pm items and reserve in progress for active work (2026-10-24) ([pm-todos-rbm5](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-rbm5.toon))
+## 2026.11.14 - 2026-11-14
+
+### Dependencies
+
+- Bump the pm-toolchain group with 2 updates ([#198](https://github.com/unbraind/pm-todos/pull/198))
 
 ## 2026.11.13 - 2026-11-13
 
@@ -20,13 +24,14 @@
 
 ## 2026.11.11 - 2026-11-11
 
-### Fixed
+### Dependencies
 
-- Packed acceptance reports a bare timeout without scenario or subprocess diagnostics ([pm-todos-tnou](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-tnou.toon))
-
-### Other
-
-- Migrate PR183 to the November 4 pm toolchain ([pm-todos-toolchain-1104](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-toolchain-1104.toon))
+- Bump the pm-toolchain group with 2 updates ([#191](https://github.com/unbraind/pm-todos/pull/191))
+- Bump the pm-toolchain group with 3 updates ([#189](https://github.com/unbraind/pm-todos/pull/189))
+- Bump the codeql-action group across 1 directory with 2 updates ([#186](https://github.com/unbraind/pm-todos/pull/186))
+- Bump unbraind/pm-github/.github/workflows/pm-github-sync.yml ([#187](https://github.com/unbraind/pm-todos/pull/187))
+- Bump unbraind/pm-github/.github/workflows/pm-github-closeout.yml ([#188](https://github.com/unbraind/pm-todos/pull/188))
+- Bump the pm-toolchain group across 1 directory with 3 updates ([#183](https://github.com/unbraind/pm-todos/pull/183))
 
 ## 2026.11.3 - 2026-11-03
 

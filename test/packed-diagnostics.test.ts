@@ -1,3 +1,4 @@
+import { testTime } from "./support/depth.ts";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -40,7 +41,7 @@ test("real subprocess timeout retains safe progress, runtime and partial coverag
   for (const privateValue of [root, "synthetic-secret", body, "setInterval"]) assert.ok(!failure.message.includes(privateValue));
   assert.ok(failure instanceof PackedCommandError);
   assert.equal(failure.report.signal, "SIGKILL");
-  assert.equal(failure.report.timeout_ms, 3000);
+  assert.equal(failure.report.timeout_ms, testTime(3000));
   assert.deepEqual(failure.report.receipts, [{ scenario: "npm-current" }]);
 });
 
@@ -126,7 +127,7 @@ test("the actual acceptance entrypoint emits incomplete JSON and exits nonzero o
   const { root } = await fixture(t);
   const scripts = join(root, "scripts");
   mkdirSync(scripts);
-  for (const name of ["accept-packed.ts", "packed-diagnostics.ts"]) cpSync(join(import.meta.dirname, "..", "scripts", name), join(scripts, name));
+  for (const name of ["accept-packed.ts", "packed-diagnostics.ts", "test-time.ts"]) cpSync(join(import.meta.dirname, "..", "scripts", name), join(scripts, name));
   cpSync(join(import.meta.dirname, "..", "package.json"), join(root, "package.json"));
   symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "dir");
   // Fault injection changes only executable selection in this disposable copy.
@@ -136,7 +137,7 @@ test("the actual acceptance entrypoint emits incomplete JSON and exits nonzero o
   const loader = join(root, "inject.cjs");
   writeFileSync(loader, "const cp = require('node:child_process'); const { dirname, join } = require('node:path'); const launcher = join(dirname(dirname(process.argv[1])), 'fail-pack.cjs'); const original = cp.spawnSync; cp.spawnSync = (command, args, options) => original(process.execPath, [launcher, ...args], options); require('node:module').syncBuiltinESMExports();\n");
   for (const selection of [[], ["npm-current"]]) {
-    const result = spawnSync(process.execPath, ["--require", loader, join(scripts, "accept-packed.ts"), ...selection], { cwd: root, encoding: "utf8", timeout: 15000,
+    const result = spawnSync(process.execPath, ["--require", loader, join(scripts, "accept-packed.ts"), ...selection], { cwd: root, encoding: "utf8", timeout: testTime(15000),
       env: { NPM_CONFIG_USERCONFIG: devNull, GIT_CEILING_DIRECTORIES: dirname(root) } });
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "");
@@ -153,7 +154,7 @@ test("the actual acceptance entrypoint emits incomplete JSON and exits nonzero o
     assert.ok(!result.stderr.includes("synthetic-secret"));
   }
   const invalid = spawnSync(process.execPath, [join(scripts, "accept-packed.ts"), "synthetic-private-scenario"], {
-    cwd: root, encoding: "utf8", timeout: 15000, env: { NPM_CONFIG_USERCONFIG: devNull },
+    cwd: root, encoding: "utf8", timeout: testTime(15000), env: { NPM_CONFIG_USERCONFIG: devNull },
   });
   assert.equal(invalid.status, 1);
   assert.equal(invalid.stdout, "");
@@ -161,4 +162,20 @@ test("the actual acceptance entrypoint emits incomplete JSON and exits nonzero o
   assert.equal(refusal.validation, "unknown_scenario");
   assert.equal(refusal.matrix_complete, false);
   assert.ok(!invalid.stderr.includes("synthetic-private-scenario"));
+});
+
+test("harness budgets round fractional scales and reject invalid scales before spawning", async t => {
+  assert.equal(testTime(3, "1.1"), 4);
+  assert.equal(testTime(3, "3"), 9);
+  const { root, state } = await fixture(t);
+  const previous = process.env.PM_TEST_TIME_SCALE;
+  try {
+    for (const scale of ["", "0", "-1", "NaN", "Infinity", "1000000000"]) {
+      process.env.PM_TEST_TIME_SCALE = scale;
+      assert.throws(() => runPackedCommand(state, "missing-scale-probe", [], root, {}), /PM_TEST_TIME_SCALE/);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.PM_TEST_TIME_SCALE;
+    else process.env.PM_TEST_TIME_SCALE = previous;
+  }
 });

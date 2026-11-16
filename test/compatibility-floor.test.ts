@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { matchesGlob, resolve } from "node:path";
 import test from "node:test";
+import { parseDocument } from "yaml";
 
 import { checkExtensionManifestCompatibility } from "@unbrained/pm-cli/sdk/authoring";
 
@@ -68,13 +69,7 @@ test("every whole-tracker changelog read disables both universal output bounds",
     assert.match(script, /--pm-arg=--output-limit\s+--pm-arg=unbounded/u, `${name} must disable the row limit`);
     assert.match(script, /--pm-bin\s+\.\/node_modules\/\.bin\/pm/u, `${name} must use the pinned project host`);
   }
-  const directCalls = releaseWorkflow.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("npx pm-changelog "));
-  assert.equal(directCalls.length, 3);
-  for (const invocation of directCalls) {
-    assert.match(invocation, /--pm-arg=--output-budget\s+--pm-arg=unbounded/u);
-    assert.match(invocation, /--pm-arg=--output-limit\s+--pm-arg=unbounded/u);
-    assert.match(invocation, /--pm-bin\s+\.\/node_modules\/\.bin\/pm/u);
-  }
+  assert.match(releaseWorkflow, /uses: unbraind\/pm-ops\/\.github\/workflows\/daily-release\.yml@[a-f0-9]{40}/u);
 });
 
 test("the mandatory release gate includes canonical-reader and packed-host acceptance", () => {
@@ -94,13 +89,40 @@ test("calendar versions compare numerically rather than lexicographically", () =
   assert.ok(atOrAbove("2027.1.1", "2026.12.31"));
 });
 
-/** Historical empty tags remain visible; new release notes still require real changes. */
-test("history regeneration explicitly includes empty tagged releases without weakening new notes", () => {
+/** Historical and item-less changed windows retain valid empty release sections. */
+test("all changelog hooks explicitly allow empty sections for changed release windows", () => {
   for (const name of ["changelog:full", "changelog:check"]) {
     assert.match(packageJson.scripts?.[name] ?? "", /--all-release-tags --include-empty/u);
     assert.doesNotMatch(packageJson.scripts?.[name] ?? "", /--no-pending-release/u);
   }
   for (const name of ["changelog", "release:notes"]) {
-    assert.doesNotMatch(packageJson.scripts?.[name] ?? "", /--include-empty/u);
+    assert.match(packageJson.scripts?.[name] ?? "", /--include-empty/u);
   }
+});
+
+/** Bound each exhaustive job to one runtime gate while retaining both package managers. */
+test("deep CI gives each Node and package-manager pair one release gate", () => {
+  const document = parseDocument(readFileSync(resolve(repoRoot, ".github/workflows/ci-deep.yml"), "utf8"), { uniqueKeys: true });
+  assert.deepEqual(document.errors, []);
+  const job = document.toJS().jobs.deep;
+  assert.deepEqual(job.strategy.matrix["node-version"], ["22.18.0", 26]);
+  assert.deepEqual(job.strategy.matrix["package-manager"], ["npm", "bun"]);
+  for (const manager of ["npm", "bun"]) {
+    const gate = job.steps.find((step: { run?: string }) => step.run === `${manager} run release:check`);
+    assert.equal(gate.if, `matrix.package-manager == '${manager}'`);
+  }
+});
+
+/** Prose can skip security analysis; executable files in prose/tracker trees cannot. */
+test("CodeQL includes executable tracker and documentation files", () => {
+  const parsed = parseDocument(readFileSync(resolve(repoRoot, ".github/workflows/codeql.yml"), "utf8"), { uniqueKeys: true });
+  assert.deepEqual(parsed.errors, []);
+  const workflow = parsed.toJS();
+  for (const event of ["pull_request", "push"]) {
+    const patterns = workflow.on[event].paths as string[];
+    for (const [path, expected] of [["README.md", false], ["docs/notes.md", false], [".agents/pm/tasks/example.toon", false], ["package-lock.json", false], [".agents/pm/check.ts", true], [".agents/pm/nested/check.mjs", true], ["docs/check.js", true], ["index.ts", true]] as const) {
+      assert.equal(patterns.reduce((selected, pattern) => matchesGlob(path, pattern.replace(/^!/, "")) ? !pattern.startsWith("!") : selected, false), expected, path);
+    }
+  }
+  assert.match(ciWorkflow, /\*\.mjs\|\*\.cjs\|\*\.js\|\*\.ts\) code=true/u);
 });

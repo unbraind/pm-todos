@@ -1,3 +1,4 @@
+import { testDepth, testTime } from "./support/depth.ts";
 /** Real tracker acceptance for reviewed checklist relationships, including replay and races. */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, symlinkSync, cpSync } from "node:fs";
@@ -216,11 +217,11 @@ test("extreme untrusted inputs refuse before SDK use; old titles and invalid rec
   assert.ok(partial.refusals.some(row => row.code === "orphan_row" && row.id === f.ids[1]));
 });
 
-test("500 seeded operation sequences compare SDK state with an independent relationship model under random status registries and ambient focus", { timeout: 1200000 }, async t => {
+test("500 seeded operation sequences compare SDK state with an independent relationship model under random status registries and ambient focus", { timeout: testTime(1200000) }, async t => {
   let seed = 0x48594552;
   const random = (max: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % max; };
   const operations = new Set<number>();
-  for (let cohort = 0; cohort < 10; cohort++) {
+  for (let cohort = 0; cohort < Math.ceil(testDepth(500) / 50); cohort++) {
     const f = await fixture(t, 4), ids = f.ids.slice(0, 3), relation: TodoHierarchyRelation = cohort % 2 ? "blocked_by" : "parent";
     for (let index = 0; index < 4; index++) {
       const name = `state-${random(100000000)}`;
@@ -352,7 +353,7 @@ test("built CLI works without git and detects an ordinary OS-process writer befo
   cpSync(join(repo, "dist"), join(extensionPath, "dist"), { recursive: true }); cpSync(join(repo, "manifest.json"), join(extensionPath, "manifest.json"));
   const childEnvironment: NodeJS.ProcessEnv = { ...process.env, PATH: bin, HOME: f.root, GIT_CEILING_DIRECTORIES: dirname(f.root), PM_AUTHOR: "process-peer" };
   for (const key of Object.keys(childEnvironment)) if (/token|secret|password|credential|api.?key|private.?key|access.?key|^NPM_MEDIA_SERVER$/i.test(key)) delete childEnvironment[key];
-  const pm = (args: string[]) => spawnSync(process.execPath, [join(repo, "node_modules/@unbrained/pm-cli/dist/cli.js"), "--pm-path", f.pmRoot, ...args], { cwd: f.root, env: childEnvironment, encoding: "utf8", timeout: 60000 });
+  const pm = (args: string[]) => spawnSync(process.execPath, [join(repo, "node_modules/@unbrained/pm-cli/dist/cli.js"), "--pm-path", f.pmRoot, ...args], { cwd: f.root, env: childEnvironment, encoding: "utf8", timeout: testTime(60000) });
   const selection = join(f.root, "ids.json"), file = join(f.root, "checklist.md"), session = join(f.root, "baseline.json");
   writeFileSync(selection, JSON.stringify(f.ids));
   const exported = pm(["todos", "hierarchy", "export", "--selection", selection, "--file", file, "--session", session, "--json"]);
@@ -442,7 +443,7 @@ const receipt = await applyTodoHierarchy(process.argv[1], JSON.parse(process.arg
 process.stdout.write(JSON.stringify(receipt));`;
   const childEnvironment: NodeJS.ProcessEnv = { ...process.env, GIT_CEILING_DIRECTORIES: dirname(f.root) };
   for (const key of Object.keys(childEnvironment)) if (/token|secret|password|credential|api.?key|private.?key|access.?key|^NPM_MEDIA_SERVER$/i.test(key)) delete childEnvironment[key];
-  const result = spawnSync(process.execPath, ["--no-enable-experimental-regexp-engine-on-excessive-backtracks", "--input-type=module", "-e", script, f.pmRoot, JSON.stringify(exported.session)], { cwd: f.root, env: childEnvironment, encoding: "utf8", timeout: 15000 });
+  const result = spawnSync(process.execPath, ["--no-enable-experimental-regexp-engine-on-excessive-backtracks", "--input-type=module", "-e", script, f.pmRoot, JSON.stringify(exported.session)], { cwd: f.root, env: childEnvironment, encoding: "utf8", timeout: testTime(15000) });
   assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr);
   const receipt = JSON.parse(result.stdout) as TodoHierarchyResult;
   assert.equal(receipt.ok, false); assert.equal(receipt.refusals[0].code, "orphan_row"); assert.equal(receipt.applied, 0);

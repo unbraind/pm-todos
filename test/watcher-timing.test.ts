@@ -1,3 +1,4 @@
+import { testDepth } from "./support/depth.ts";
 /** Early timer wakes exercise the real command, filesystem and SDK tracker outside git. */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -119,7 +120,7 @@ test("one-shot command persists explicit zero-change evidence", async () => {
 test("one-shot real-timer command queues durable proposals in 200 serial cycles without git", async () => {
   await withSource(async (ctx, edited) => {
     const spool = String(ctx.options.spool);
-    for (let iteration = 0; iteration < 200; iteration++) {
+    for (let iteration = 0; iteration < testDepth(200); iteration++) {
       ctx.options.spool = `${spool}-${iteration}`;
       const result = await runTodoWatchCommand(ctx) as TodoWatcherReceipt;
       assert.equal(result.state, "queued", `cycle ${iteration + 1}`);
