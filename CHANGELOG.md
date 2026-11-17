@@ -4,7 +4,7 @@
 
 ### Dependencies
 
-- Bump the pm-toolchain group with 2 updates
+- Bump the pm-toolchain group with 2 updates ([#207](https://github.com/unbraind/pm-todos/pull/207))
 
 ## 2026.11.14 - 2026-11-14
 
