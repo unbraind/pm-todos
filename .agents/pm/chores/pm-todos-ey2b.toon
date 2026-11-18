@@ -1,0 +1,15 @@
+id: pm-todos-ey2b
+title: Preserve published dependencies in item-covered changelog windows
+description: "Review follow-up: published tag v2026.11.11 includes dependency PRs 191, 189, 186, 187, 188 that default tracker regeneration omits when the release window contains closed items. The pinned generator only enriches such windows when dependency-updates is enabled. Updating package scripts or generator behavior is outside this tracker-only synchronization."
+type: Chore
+status: open
+priority: 3
+tags[3]: changelog,"gh:unbraind/pm-todos#199",maintenance
+created_at: "2026-11-16T15:28:25.824Z"
+updated_at: "2026-11-16T15:28:33.790Z"
+author: codex-sol
+estimated_minutes: 30
+acceptance_criteria: Regeneration preserves the published dependency PR entries alongside tracker notes and the unchanged changelog check passes; implementation receives its own source review.
+comments[1]{created_at,author,text}:
+  "2026-11-16T15:28:33.789Z",codex-sol,"Verified the unresolved dependency-note review against published tag v2026.11.11: dependency PRs 191, 189, 186, 187, 188 are present there. The configured changelog:full omits --dependency-updates; the pinned generator enriches item-covered windows only with that option. A persistent fix requires package-script or generator changes, outside the authorized tracker/changelog scope. Reused this follow-up; no review reply or resolution was sent."
+body: ""

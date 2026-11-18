@@ -6,9 +6,9 @@ status: in_progress
 priority: 2
 tags[5]: ci,diagnostics,"gh:unbraind/pm-todos#165","gh:unbraind/pm-todos#205",performance
 created_at: "2026-11-02T09:18:44.778Z"
-updated_at: "2026-11-15T20:14:19.870Z"
+updated_at: "2026-11-16T15:27:16.681Z"
 author: pi-glm
-comments[23]{created_at,author,text}:
+comments[25]{created_at,author,text}:
   "2026-11-06T15:12:19.018Z",codex-sol,"Issue 165 remains reproducible on main: the subprocess timeout branch drops captured output and scenario context, and receipts appear only after all scenarios succeed. Reuse this tagged item. Plan: deterministic real-process timeout regression in a non-git SDK tracker, shared bounded sanitized diagnostics for every subprocess, partial receipts and runtime context, unchanged five-minute production timeout and all six current scenarios. Historical Bun hang cause and repeatability remain unknown."
   "2026-11-06T15:15:59.004Z",codex-sol,"Failing-first proof: the original timeout behavior fails the real subprocess regression (0/1) because the diagnostic has no bun-current scenario. The corrected runner passes 5/5 targeted tests, including a real non-git SDK tracker, timeout termination, nonzero exit, missing executable, bounded privacy-preserving previews, exact matrix completion, and the actual entrypoint failure report. npm run build:test, npm run typecheck and npm run docstring pass; this repository has no separate lint script."
   "2026-11-06T15:18:02.757Z",codex-sol,"Behavioral reverts were run only in disposable copies. Reverting runPackedCommand to the original subprocess behavior fails 3/5 tests; replacing summarizePackedOutput with raw passthrough fails 4/5; removing packedMatrixReport completion enforcement fails 1/5; restoring the entrypoint throw-only failure path fails its focused test 1/1. All reverted implementations were discarded, and the fixed targeted suite passed again. Linked pm test run passed 5/5; automatic result tracking is disabled by project policy, so this comment records the receipt. Tracker commands use the pinned CLI 2026.11.4; the public registry reports 2026.11.6, and dependencies remain unchanged."
@@ -21,6 +21,7 @@ comments[23]{created_at,author,text}:
   "2026-11-06T19:12:44.253Z",codex-sol,"Resumed PR 185 after CodeRabbit reviewed head 16e33ca and posted one actionable finding: preserve safe ENOENT and EACCES startup error codes without exposing exception messages. Reviewed the complete review body; no outside-diff or nitpick findings were present. Reuse this item and retain previous completed verification. The earlier receipt commit cc28152 remains local and will be pushed with this correction under the updated instruction to publish all commits. Canonical checkout dependencies were stale and have now been refreshed to the pinned CLI before tracker writes."
   "2026-11-06T19:15:45.162Z",codex-sol,"CodeRabbit finding PRRT_kwDOSZpews60ovCW is valid: PackedCommandError discarded safe startup error identities. Added a failing-first real-process regression using a missing executable, an owned non-executable fixture, and a non-directory working directory. It failed 0/1 before the fix, then passed with ENOENT and EACCES preserved and unlisted ENOTDIR kept generic. Only the four allowlisted codes are emitted; exception messages, paths and fixture data remain omitted. Behavioral mutation proofs in disposable copies independently removing ENOENT, removing EACCES, or exposing arbitrary error codes each fail the focused test 0/1. Restoring the fix passes 7/7 targeted tests. npm run typecheck, npm run build:test, npm run docstring and git diff --check pass. README documents the safe codes; no deadlines, buffers, consumers, dependencies or thresholds changed."
   "2026-11-06T19:17:28.782Z",codex-sol,"Linked pm test run passed 7/7 with zero failures or skips; automatic linked-result tracking remains disabled by project policy. The new startup-code regression independently fails when either ENOENT or EACCES handling is reverted and when unknown codes are exposed. All disposable copies were removed; fixed tests pass after restoration. Release claim without closing and regenerate changelog after this final tracker write. Push both the prior receipt commit cc28152 and this code correction, reply to PRRT_kwDOSZpews60ovCW, and requeue CodeRabbit immediately. Fresh exact-head CI and review results will be retained in PR 185; prior head 16e33ca evidence is historical, not certification of the next head."
+  "2026-11-14T10:15:54.289Z",codex-sweep-1114,"Release-attribution correction: completed_at = 2026-11-06T23:11:34Z from https://github.com/unbraind/pm-todos/pull/185 (merge SHA d5726cfd2503d174c3a6ea53335fb30674ed8591); first containing release tag v2026.11.11, recorded release 2026.11.11."
   "2026-11-15T15:45:06.185Z",codex-sol,"Reuse existing CI timeout item for Fleet CI v2, companion pm-cli-website-dyhg. Preserve test (22.18.0) and test (26), all original gates and six packed consumers. Plan: deterministic quick prefixes, operation-bounded correctness tests, harness-only time scaling, docs identity and packaging gates, full deep npm/Bun gates. No release-owned changes or review-thread actions."
   "2026-11-15T15:48:24.506Z",codex-sol,"Baseline run 43653601827: Node floor execution 27m32s, Node 26 22m04s; run creation-to-completion 105m36s and 117m32s. Slowest seeded tests 161.85s recurrence, 105.57s stored schedules, 93.53s source sessions. Static typechecks, docstrings and strict workflow YAML parsing pass; there is no lint script. Local direct tests initially started before building ignored dist, so packed-fixture results from that invocation are not valid implementation evidence; rebuild and rerun those files. Product mock-clock deadlines are unchanged. Harness watchdog scaling validates before spawn and uses integer milliseconds."
   "2026-11-15T15:49:48.922Z",codex-sol,"PR #205 is open at 328f9ef. Required-check CI run 43731940906 is queued; no wall-time result exists yet. Diagnostic and timeout regressions pass 8/8 in 25.62s, including fractional rounding and invalid-scale rejection before spawn. Quick hierarchy model passes its first 50 sequences and all operation classes. The one quick coverage run has a 20-minute command limit. Native-format streams are independent in both depths, preserving each format prefix. No full-depth local tests or review-thread actions."
@@ -32,13 +33,14 @@ comments[23]{created_at,author,text}:
   "2026-11-15T20:01:43.716Z",codex-sol-round-d,"Round D validation: replacement linked packed-fixture commands now both start with npm run build; command identities were replaced through the CLI with fresh provenance. Node by npm/Bun deep jobs each run one gate and a workflow regression guards the routing. Linked scoped gate passes 26 tests with zero failures or skips: typecheck, test compilation, docstring gate, production build, compatibility/workflow/identity/diagnostics tests. Strict YAML parse, strict tracker health and changelog check pass. This repo has no lint script. No covered source changed, so no coverage rerun. Full suites execute under Node even when launched by Bun; docs state that boundary. No thread actions, no merge, no CI wait."
   "2026-11-15T20:12:29.707Z",codex-sol-round-d,"Final self-review found CodeQL suppressed executable files under the tracker/docs exclusions. Replace blanket exclusions with ordered path selection that restores JS/TS files, and route executable docs through the ordinary code tier as well. Add regression cases for ordinary prose, tracker data, executable tracker/docs files and normal source; retain all required check names."
   "2026-11-15T20:14:16.445Z",codex-sol-round-d,"Additional self-review validation passes: typecheck, test compilation, docstring gate and 9 compatibility/workflow regressions. Initial glob regression failed for hidden tracker scripts; explicit tracker script patterns fix it. Strict YAML passes. Required branch protection contexts remain the two test jobs; CodeQL remains optional and now includes executable tracker/docs changes. No covered source changed and no coverage run."
+  "2026-11-16T15:27:16.277Z",codex-sol,Main synchronization drops the 2026-11-14 closure because main linked subsequent CI work to this item. Preserve the current main lifecycle and all history from both sides; the earlier merged delivery remains historical evidence.
 files[6]{path,scope}:
-  .github/workflows/ci.yml,project
-  .github/workflows/codeql.yml,project
   scripts/accept-packed.ts,project
   scripts/packed-diagnostics.ts,project
-  test/compatibility-floor.test.ts,project
   test/packed-diagnostics.test.ts,project
+  .github/workflows/ci.yml,project
+  .github/workflows/codeql.yml,project
+  test/compatibility-floor.test.ts,project
 tests[6]:
   - command: node --test --test-concurrency=2 test/packed-diagnostics.test.ts
     scope: project
@@ -52,28 +54,28 @@ tests[6]:
     provenance:
       author: codex-sol
       created_at: "2026-11-15T15:47:22.345Z"
-      source_kind: local_mutation
+      source_kind: merge_union
       source_ref: ci/quick-pr-tier-deep-local-tier
   - command: "npm run typecheck && npm run build:test && npm run docstring && npm run build && PM_TEST_DEPTH=quick node --test test/compatibility-floor.test.ts test/release-workflow.test.ts test/identity-audit.test.ts test/packed-diagnostics.test.ts"
     scope: project
     provenance:
       author: codex-sol-round-d
       created_at: "2026-11-15T19:59:08.972Z"
-      source_kind: local_mutation
+      source_kind: merge_union
       source_ref: ci/quick-pr-tier-deep-local-tier
   - command: npm run build && PM_TEST_DEPTH=quick node --test --test-concurrency=2 test/validation-tree.test.ts test/directory-scope.test.ts test/hierarchy-roundtrip-model.test.ts test/recurrence.test.ts test/hierarchy.test.ts test/source-sessions.test.ts test/watcher-timing.test.ts test/sessions.test.ts test/packed-diagnostics.test.ts
     scope: project
     provenance:
       author: codex-sol-round-d
       created_at: "2026-11-15T19:59:22.083Z"
-      source_kind: local_mutation
+      source_kind: merge_union
       source_ref: ci/quick-pr-tier-deep-local-tier
   - command: "npm run build && PM_TEST_DEPTH=quick node --test --test-name-pattern=\"seed 0x72656375|stored schedule model|strict boundary\" test/recurrence.test.ts"
     scope: project
     provenance:
       author: codex-sol-round-d
       created_at: "2026-11-15T19:59:28.966Z"
-      source_kind: local_mutation
+      source_kind: merge_union
       source_ref: ci/quick-pr-tier-deep-local-tier
   - command: "npm run typecheck && npm run build:test && npm run docstring && node --test test/compatibility-floor.test.ts"
     scope: project
@@ -81,7 +83,7 @@ tests[6]:
     provenance:
       author: codex-sol-round-d
       created_at: "2026-11-15T20:12:37.031Z"
-      source_kind: local_mutation
+      source_kind: merge_union
       source_ref: ci/quick-pr-tier-deep-local-tier
 docs[2]{path,scope}:
   docs/ci-tiers.md,project
