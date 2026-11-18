@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.11.18 - 2026-11-18
+
+### Dependencies
+
+- Bump @unbrained/pm-cli from 2026.11.13 to 2026.11.14 in the pm-toolchain group ([#209](https://github.com/unbraind/pm-todos/pull/209))
+
 ## 2026.11.15 - 2026-11-17
 
 ### Dependencies
