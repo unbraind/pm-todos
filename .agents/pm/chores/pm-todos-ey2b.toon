@@ -6,11 +6,11 @@ status: in_progress
 priority: 3
 tags[3]: changelog,"gh:unbraind/pm-todos#199",maintenance
 created_at: "2026-11-16T15:28:25.824Z"
-updated_at: "2026-11-23T16:36:57.615Z"
+updated_at: "2026-11-23T22:35:07.891Z"
 author: codex-sol
 estimated_minutes: 30
 acceptance_criteria: Regeneration preserves the published dependency PR entries alongside tracker notes and the unchanged changelog check passes; implementation receives its own source review.
-comments[11]{created_at,author,text}:
+comments[13]{created_at,author,text}:
   "2026-11-16T15:28:33.789Z",codex-sol,"Verified the unresolved dependency-note review against published tag v2026.11.11: dependency PRs 191, 189, 186, 187, 188 are present there. The configured changelog:full omits --dependency-updates; the pinned generator enriches item-covered windows only with that option. A persistent fix requires package-script or generator changes, outside the authorized tracker/changelog scope. Reused this follow-up; no review reply or resolution was sent."
   "2026-11-23T09:52:03.084Z",codex-agent,"Closure follow-up: changelog dependency updates. Verify against current main and the existing PR head before recording the result."
   "2026-11-23T09:53:10.465Z",codex-agent,The closure verifier allows tracker files and CHANGELOG.md only. This follow-up explicitly calls for package.json flags so the verifier will still report the manifest as out of scope.
@@ -22,16 +22,19 @@ comments[11]{created_at,author,text}:
   "2026-11-23T16:21:32.687Z",codex-agent,"Use the opt-in in every package changelog invocation, including delegated verification. The same-tag comparison and generated release headings verify the previously published dependency PRs: 183,186,187,188,189,191."
   "2026-11-23T16:26:08.503Z",codex-agent,"The linked release notes command, direct release notes and package identity test passed. With the flag enabled, the generated ledger contains all identified published dependency PRs at their release headings. Changelog verification is repeated after this tracker update."
   "2026-11-23T16:36:56.312Z",codex-agent,The release-workflow regression now protects the dependency flag on every package changelog entry point and preserves delegated verification where configured. Removing only the flag from the package scripts in a disposable copy fails this regression. The fixed release-workflow suite passes.
+  "2026-11-23T22:30:42.603Z",codex-agent,"Integrated current main, kept its paired tracker records and retained the closure transitions. Regenerate with the merged dependency-update generator and verify the published sections and closure evidence."
+  "2026-11-23T22:35:00.779Z",codex-agent,Regeneration with the merged generator retains every base-branch dependency entry under its original release. The unchanged changelog check accepts the generated output.
 files[4]{path,scope}:
   .agents/pm/issues/pm-todos-tnou.toon,project
   CHANGELOG.md,project
   package.json,project
   test/release-workflow.test.ts,project
-tests[4]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+tests[5]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
   node --test --test-concurrency=2 test/identity-audit.test.ts test/verify-release-changelog-date.test.ts test/prepare-merge-driver.test.ts,project,codex-agent,"2026-11-23T09:53:08.204Z",local_mutation,codex/closure-1122/chore/in-progress-sweep-2026-11-14
   "npm run changelog:check",project,codex-agent,"2026-11-23T16:13:14.096Z",local_mutation,codex/closure-1122/chore/in-progress-sweep-2026-11-14
   "npm run release:notes",project,codex-agent,"2026-11-23T16:21:47.251Z",local_mutation,fix/changelog-keep-dependency-updates
   node --test --test-concurrency=2 test/release-workflow.test.ts,project,codex-agent,"2026-11-23T16:36:52.175Z",local_mutation,fix/changelog-keep-dependency-updates
+  node --test --test-concurrency=2 test/identity-audit.test.ts test/verify-release-changelog-date.test.ts test/prepare-merge-driver.test.ts test/release-workflow.test.ts,project,codex-agent,"2026-11-23T22:30:54.762Z",local_mutation,codex/closure-1122/chore/in-progress-sweep-2026-11-14
 docs[2]{path,scope}:
   CHANGELOG.md,project
   README.md,project
