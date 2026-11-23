@@ -6,13 +6,13 @@ status: open
 priority: 2
 tags[3]: "gh:unbraind/pm-todos#199",maintenance,tracker-hygiene
 created_at: "2026-10-24T21:41:10.003Z"
-updated_at: "2026-11-16T15:47:51.566Z"
+updated_at: "2026-11-23T00:07:49.552Z"
 author: codex-agent
 estimated_minutes: 60
 acceptance_criteria: "Every original in-progress and open item is inspected; delivery closures name the implementing merged PR, date and merge SHA and match the recorded acceptance; inactive work is open with claims released; original history records remain append-only; tracker health, changelog and PR CI outcomes are recorded."
 risk: low
 confidence: high
-comments[10]{created_at,author,text}:
+comments[13]{created_at,author,text}:
   "2026-10-24T21:41:12.724Z",codex-agent,"Oriented context, searched existing hygiene work, and read the complete tracker. Checking every original in-progress and open item against PR title/body/commits, delivery links and acceptance. The owner authorizes evidence-backed closure in this sweep. Ambiguous claims remain open; no PR merge or history rewrite."
   "2026-10-24T21:48:49.927Z",codex-agent,"Reviewed 8 original active items. 5 verified deliveries closed and 0 inactive items returned to open. Every other original open item remains open because complete delivery or explicit supersession was not established. No cancellation by inference, software change, threshold reduction, or history rewrite. Per-item evidence is recorded in closure reasons and the PR table. Tracker, changelog and CI verification follow."
   "2026-10-24T21:49:42.482Z",codex-agent,"Local tracker verification passed: repository changelog generation and consistency check, pinned strict health with required merge drivers under isolated Git identity, changed-item history verification, independent original-history prefix checks and linked git diff --check. All original inactive work and this audit have released claims; no in-progress item remains. No production function changed, so source-function revert proof is inapplicable; per-item merged ancestry and lifecycle/history checks are the evidence. The PR will carry the full before/after/evidence table. Complete npm/Bun release checks and native platform checks run in PR CI; their final outcome is reported separately, without treating queued or skipped checks as approval."
@@ -23,7 +23,10 @@ comments[10]{created_at,author,text}:
   "2026-11-16T15:27:53.632Z",codex-sol,"Continuation preserved the existing PR branch and merged current main. CHANGELOG.md used main before regeneration. The original merge snapshot was settled with trusted merge-driver hash evidence, without force; both source histories remain intact. Dropped the old closure for pm-todos-tnou because main linked subsequent CI work. Verified retained delivered PRs, timestamps and first containing tags; sweep closure remains reserved for the orchestrator."
   "2026-11-16T15:37:20.835Z",codex-sol,The tracker-only quick gate uses the repository documentation and public identity contracts. Full package npm test includes long native-state/model workloads; the initial two broader attempts were interrupted and are not passing evidence. Focused commands are linked and run to completion separately; no source coverage or full release-gate claim is made.
   "2026-11-16T15:47:47.418Z",codex-sol,"Continuation verification: npm ci passed; focused documentation/tracker tests (PM_TEST_DEPTH=quick node --test --test-concurrency=2 test/identity-audit.test.ts) passed to completion. All retained delivery rows were checked against current GitHub merge state, completion timestamps and first containing tags. No active implementation PR delivers the remaining reopened roadmap work. Both source history streams are retained in timestamp order, including original records carried by audited reanchor evidence. Final released-state tracker validation, repository changelog generation/check and identity gates run before push. The unresolved dependency-note review is valid but requires package-script or generator changes; tracked in pm-todos-ey2b. No thread reply or resolution was sent."
-files[3]:
+  "2026-11-22T23:51:47.229Z",codex-agent,PR #183 delivered the toolchain migration. The published dependency notes concern is tracked by pm-todos-ey2b.
+  "2026-11-23T00:05:22.293Z",codex-agent,"Focused linked test completed successfully. 25 pass, 0 fail, 0 skipped."
+  "2026-11-23T00:07:49.552Z",codex-agent,"The unchanged generator drops dependency PRs #183, #186, #187, #188, #189 and #191 from 2026.11.11. Enabling dependency updates in a scratch run restores all six. pm-todos-ey2b tracks the package-script policy change. The one permitted merge reconcile attempt refused the inherited pm-todos-tnou receipt because it does not prove the current snapshot. Both findings hold the push."
+files[4]:
   - path: .agents/pm
     scope: project
     note: Tracker lifecycle and append-only evidence
@@ -31,7 +34,9 @@ files[3]:
     scope: project
   - path: .agents/pm/issues/pm-todos-tnou.toon
     scope: project
-tests[4]:
+  - path: CHANGELOG.md
+    scope: project
+tests[5]:
   - command: git diff --check
     scope: project
     provenance:
@@ -62,6 +67,13 @@ tests[4]:
       created_at: "2026-11-16T15:38:15.680Z"
       source_kind: local_mutation
       source_ref: chore/in-progress-sweep-2026-11-14
+  - command: node --test --test-concurrency=2 test/identity-audit.test.ts test/verify-release-changelog-date.test.ts
+    scope: project
+    provenance:
+      author: codex-agent
+      created_at: "2026-11-22T23:51:52.554Z"
+      source_kind: local_mutation
+      source_ref: codex/closure-1122/chore/in-progress-sweep-2026-11-14
 docs[1]{path,scope,note}:
   CHANGELOG.md,project,Regenerated package release notes
 body: ""
