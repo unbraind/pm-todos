@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Dependencies
+
+- Bump unbraind/pm-github/.github/workflows/pm-github-closeout.yml ([#215](https://github.com/unbraind/pm-todos/pull/215))
+- Bump unbraind/pm-ops/.github/workflows/daily-release.yml ([#214](https://github.com/unbraind/pm-todos/pull/214))
+- Bump unbraind/pm-github/.github/workflows/pm-github-sync.yml ([#213](https://github.com/unbraind/pm-todos/pull/213))
+
 ## 2026.11.18 - 2026-11-18
 
 ### Dependencies
@@ -30,25 +38,49 @@
 
 - Daily release fails its own release:check: the release regenerates CHANGELOG.md without --include-empty ([pm-todos-oyf7](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-oyf7.toon))
 
+### Dependencies
+
+- Bump @unbrained/pm-cli from 2026.11.7 to 2026.11.8 in the pm-toolchain group ([#194](https://github.com/unbraind/pm-todos/pull/194))
+
 ## 2026.11.11 - 2026-11-11
 
 ### Other
 
 - Migrate PR183 to the November 4 pm toolchain ([pm-todos-toolchain-1104](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-toolchain-1104.toon))
 
+### Dependencies
+
+- Bump the pm-toolchain group with 2 updates ([#191](https://github.com/unbraind/pm-todos/pull/191))
+- Bump the pm-toolchain group with 3 updates ([#189](https://github.com/unbraind/pm-todos/pull/189))
+- Bump the codeql-action group across 1 directory with 2 updates ([#186](https://github.com/unbraind/pm-todos/pull/186))
+- Bump unbraind/pm-github/.github/workflows/pm-github-sync.yml ([#187](https://github.com/unbraind/pm-todos/pull/187))
+- Bump unbraind/pm-github/.github/workflows/pm-github-closeout.yml ([#188](https://github.com/unbraind/pm-todos/pull/188))
+- Bump the pm-toolchain group across 1 directory with 3 updates ([#183](https://github.com/unbraind/pm-todos/pull/183))
+
 ## 2026.11.3 - 2026-11-03
 
-No changes.
+### Dependencies
+
+- Bump @types/node ([#181](https://github.com/unbraind/pm-todos/pull/181))
+- Bump the pm-toolchain group with 3 updates ([#180](https://github.com/unbraind/pm-todos/pull/180))
+- Bump unbraind/pm-github/.github/workflows/pm-github-sync.yml ([#176](https://github.com/unbraind/pm-todos/pull/176))
+- Bump unbraind/pm-github/.github/workflows/pm-github-closeout.yml ([#177](https://github.com/unbraind/pm-todos/pull/177))
 
 ## 2026.10.31 - 2026-10-31
 
-No changes.
+### Dependencies
+
+- Bump the pm-toolchain group with 3 updates ([#173](https://github.com/unbraind/pm-todos/pull/173))
 
 ## 2026.10.30 - 2026-10-30
 
 ### Fixed
 
 - Restore generated notes for prepared 2026.10.29 ([pm-todos-release-notes-1029](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-release-notes-1029.toon))
+
+### Dependencies
+
+- Bump the pm-toolchain group with 3 updates ([#171](https://github.com/unbraind/pm-todos/pull/171))
 
 ## 2026.10.29 - 2026-10-29
 
@@ -57,17 +89,32 @@ No changes.
 - Preview marked checklist hierarchy repairs before applying relations ([pm-todos-checklist-hierarchy](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-checklist-hierarchy.toon))
 - Coordinate row ownership across selected TODO files ([pm-todos-cross-file](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/features/pm-todos-cross-file.toon))
 
+### Dependencies
+
+- Bump the pm-toolchain group with 3 updates ([#167](https://github.com/unbraind/pm-todos/pull/167))
+
 ## 2026.10.28 - 2026-10-28
 
 ### Fixed
 
 - Release checks fail after the release version bump ([pm-todos-pack-name](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-pack-name.toon))
 
+### Dependencies
+
+- Bump the pm-toolchain group with 3 updates ([#163](https://github.com/unbraind/pm-todos/pull/163))
+- Bump the pm-toolchain group with 3 updates ([#158](https://github.com/unbraind/pm-todos/pull/158))
+
 ## 2026.10.27 - 2026-10-27
 
 ### Other
 
 - Point the npm homepage at the package catalog and link the author ([pm-todos-oet6](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-oet6.toon))
+
+### Dependencies
+
+- Bump the codeql-action group across 1 directory with 2 updates ([#152](https://github.com/unbraind/pm-todos/pull/152))
+- Bump unbraind/pm-github/.github/workflows/pm-github-sync.yml ([#154](https://github.com/unbraind/pm-todos/pull/154))
+- Bump unbraind/pm-github/.github/workflows/pm-github-closeout.yml ([#153](https://github.com/unbraind/pm-todos/pull/153))
 
 ## 2026.10.25 - 2026-10-25
 
@@ -84,7 +131,9 @@ No changes.
 
 ## 2026.10.24 - 2026-10-24
 
-No changes.
+### Dependencies
+
+- Bump the pm-toolchain group across 1 directory with 3 updates ([#139](https://github.com/unbraind/pm-todos/pull/139))
 
 ## 2026.10.23 - 2026-10-23
 
@@ -116,15 +165,21 @@ No changes.
 
 ## 2026.10.20 - 2026-10-20
 
-No changes.
+### Dependencies
+
+- Bump the pm-toolchain group with 3 updates ([#134](https://github.com/unbraind/pm-todos/pull/134))
 
 ## 2026.10.19 - 2026-10-19
 
-No changes.
+### Dependencies
+
+- Bump the codeql-action group with 2 updates ([#132](https://github.com/unbraind/pm-todos/pull/132))
 
 ## 2026.10.17 - 2026-10-17
 
-No changes.
+### Dependencies
+
+- Bump the pm-toolchain group across 1 directory with 3 updates ([#128](https://github.com/unbraind/pm-todos/pull/128))
 
 ## 2026.10.16 - 2026-10-16
 
@@ -132,11 +187,16 @@ No changes.
 
 ## 2026.10.15 - 2026-10-15
 
-No changes.
+### Dependencies
+
+- Bump @unbrained/pm-cli ([#126](https://github.com/unbraind/pm-todos/pull/126))
 
 ## 2026.10.14 - 2026-10-14
 
-No changes.
+### Dependencies
+
+- Bump @unbrained/pm-cli ([#122](https://github.com/unbraind/pm-todos/pull/122))
+- Bump @types/node ([#123](https://github.com/unbraind/pm-todos/pull/123))
 
 ## 2026.10.12 - 2026-10-12
 
@@ -144,13 +204,21 @@ No changes.
 
 - Isolate concurrent packed fixtures from repository merge-driver configuration ([pm-todos-il19](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-il19.toon))
 
+### Dependencies
+
+- Bump the codeql-action group with 2 updates ([#119](https://github.com/unbraind/pm-todos/pull/119))
+
 ## 2026.10.11 - 2026-10-11
 
-No changes.
+### Dependencies
+
+- Bump the pm-toolchain group with 3 updates ([#115](https://github.com/unbraind/pm-todos/pull/115))
 
 ## 2026.10.9 - 2026-10-09
 
-No changes.
+### Dependencies
+
+- Bump the pm-toolchain group with 2 updates ([#113](https://github.com/unbraind/pm-todos/pull/113))
 
 ## 2026.10.8 - 2026-10-08
 
@@ -184,6 +252,10 @@ No changes.
 
 - Certify pm CLI 2026.9.21 and install merge drivers through the canonical pm-ops launcher ([pm-todos-cmx2](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-cmx2.toon))
 
+### Dependencies
+
+- Bump @types/node from 26.5.1 to 26.6.2 ([#98](https://github.com/unbraind/pm-todos/pull/98))
+
 ## 2026.9.19 - 2026-09-19
 
 No changes.
@@ -193,6 +265,12 @@ No changes.
 ### Other
 
 - Certify pm CLI 2026.9.17 ([pm-todos-zrxn](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-zrxn.toon))
+
+### Dependencies
+
+- Bump pm-changelog from 2026.9.6 to 2026.9.13 ([#91](https://github.com/unbraind/pm-todos/pull/91))
+- Bump @types/node from 26.4.1 to 26.5.1 ([#92](https://github.com/unbraind/pm-todos/pull/92))
+- Bump the codeql-action group with 2 updates ([#93](https://github.com/unbraind/pm-todos/pull/93))
 
 ## 2026.9.13 - 2026-09-13
 
@@ -224,6 +302,10 @@ No changes.
 
 - Consume the canonical attestation gate instead of carrying a copy of it ([pm-todos-sgex](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-sgex.toon))
 
+### Dependencies
+
+- Bump @types/node from 26.4.0 to 26.4.1 ([#79](https://github.com/unbraind/pm-todos/pull/79))
+
 ## 2026.9.7 - 2026-09-07
 
 ### Other
@@ -241,6 +323,13 @@ No changes.
 ### Fixed
 
 - pm-todos runs CodeQL but received no dependency updates, because it had no Dependabot configuration ([pm-todos-shd9](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/issues/pm-todos-shd9.toon))
+
+### Dependencies
+
+- Bump actions/checkout from 6 to 7 ([#73](https://github.com/unbraind/pm-todos/pull/73))
+- Bump actions/setup-node from 6 to 7 ([#72](https://github.com/unbraind/pm-todos/pull/72))
+- Bump @types/node from 26.1.1 to 26.4.0 ([#70](https://github.com/unbraind/pm-todos/pull/70))
+- Bump the codeql-action group with 2 updates ([#71](https://github.com/unbraind/pm-todos/pull/71))
 
 ## 2026.8.29 - 2026-08-29
 
@@ -389,6 +478,10 @@ No changes.
 ### Other
 
 - Enhance pm-todos: jsonl, sync, filter, priority-map, checkbox formats ([pm-todos-272z](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/tasks/pm-todos-272z.toon))
+
+### Dependencies
+
+- Bump @unbrained/pm-cli + pm-changelog to 2026.7.6, set version 2026.7.6-1
 
 ## 2026.7.6 - 2026-07-06
 

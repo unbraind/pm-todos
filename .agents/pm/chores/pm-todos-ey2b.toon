@@ -2,14 +2,27 @@ id: pm-todos-ey2b
 title: Preserve published dependencies in item-covered changelog windows
 description: "Review follow-up: published tag v2026.11.11 includes dependency PRs 191, 189, 186, 187, 188 that default tracker regeneration omits when the release window contains closed items. The pinned generator only enriches such windows when dependency-updates is enabled. Updating package scripts or generator behavior is outside this tracker-only synchronization."
 type: Chore
-status: open
+status: in_progress
 priority: 3
 tags[3]: changelog,"gh:unbraind/pm-todos#199",maintenance
 created_at: "2026-11-16T15:28:25.824Z"
-updated_at: "2026-11-16T15:28:33.790Z"
+updated_at: "2026-11-23T10:09:50.897Z"
 author: codex-sol
 estimated_minutes: 30
 acceptance_criteria: Regeneration preserves the published dependency PR entries alongside tracker notes and the unchanged changelog check passes; implementation receives its own source review.
-comments[1]{created_at,author,text}:
+comments[6]{created_at,author,text}:
   "2026-11-16T15:28:33.789Z",codex-sol,"Verified the unresolved dependency-note review against published tag v2026.11.11: dependency PRs 191, 189, 186, 187, 188 are present there. The configured changelog:full omits --dependency-updates; the pinned generator enriches item-covered windows only with that option. A persistent fix requires package-script or generator changes, outside the authorized tracker/changelog scope. Reused this follow-up; no review reply or resolution was sent."
+  "2026-11-23T09:52:03.084Z",codex-agent,"Closure follow-up: changelog dependency updates. Verify against current main and the existing PR head before recording the result."
+  "2026-11-23T09:53:10.465Z",codex-agent,The closure verifier allows tracker files and CHANGELOG.md only. This follow-up explicitly calls for package.json flags so the verifier will still report the manifest as out of scope.
+  "2026-11-23T09:54:42.080Z",codex-agent,"The inherited reconciled receipt 29b6266a-7423-4ed5-aed7-a03a5aa835aa for pm-todos-tnou predates the current main snapshot. The item and history are byte-identical to current main, which carries no receipt or history reference to it. Pinned reconcile dry-run refused the old receipt with no_receipt_set_proves_snapshot. Restoring main's active receipt set made the same reconcile dry-run report ok and zero pending receipts, and pinned validation passed. The old receipt remains in Git history."
+  "2026-11-23T09:57:25.633Z",codex-agent,"Package changelog generation, verification and release notes use --dependency-updates, including checks that delegate to the full generator. With the same tracker and fetched tags, running the original manifest omitted the published dependency bullets for #183, #186, #187, #188, #189, #191. The flag restored all of them. Changelog byte check and release notes rendering passed."
+  "2026-11-23T10:09:47.648Z",codex-agent,"Linked Node tests passed 36/36 with no skips, and the changelog check passed. Final verification will use the committed branch. CI checks for the closure follow-up are tracked at https://github.com/unbraind/pm-todos/pull/199/checks."
+files[3]{path,scope}:
+  .agents/pm/issues/pm-todos-tnou.toon,project
+  CHANGELOG.md,project
+  package.json,project
+tests[1]{command,scope,provenance{author,created_at,source_kind,source_ref}}:
+  node --test --test-concurrency=2 test/identity-audit.test.ts test/verify-release-changelog-date.test.ts test/prepare-merge-driver.test.ts,project,codex-agent,"2026-11-23T09:53:08.204Z",local_mutation,codex/closure-1122/chore/in-progress-sweep-2026-11-14
+docs[1]{path,scope}:
+  README.md,project
 body: ""
