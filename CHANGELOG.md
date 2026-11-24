@@ -44,6 +44,10 @@
 
 ## 2026.11.11 - 2026-11-11
 
+### Other
+
+- Migrate PR183 to the November 4 pm toolchain ([pm-todos-toolchain-1104](https://github.com/unbraind/pm-todos/blob/main/.agents/pm/chores/pm-todos-toolchain-1104.toon))
+
 ### Dependencies
 
 - Bump the pm-toolchain group with 2 updates ([#191](https://github.com/unbraind/pm-todos/pull/191))
