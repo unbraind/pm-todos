@@ -25,7 +25,7 @@ async function fixture(t: test.TestContext, count = 3) {
   process.env.GIT_CEILING_DIRECTORIES = dirname(root);
   t.after(() => { if (ceiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = ceiling; rmSync(root, { recursive: true, force: true }); });
   await core.init(undefined, {}, { pmRoot, cwd: root, noExtensions: true });
-  const client = new core.PmClient({ pmRoot, cwd: root, author: "selection-test" });
+  const client = new core.PmClient({ pmRoot, author: "selection-test" });
   const ids: string[] = [];
   for (let n = 0; n < count; n++) {
     const { item } = await client.create({ id: `source-row-${n}`, title: `Original row ${n}`, type: "Task", priority: 2, tags: "project", ...(n ? { parent: ids[0] } : {}), unset: [...(n ? [] : ["parent"]), "sprint", "release"], description: `Preserved description ${n}`, body: `Preserved body ${n}`, comment: ["text=Seeded comment"], note: ["text=Seeded note"], file: ["path=example.ts"], doc: ["path=README.md"], test: ["command=node --version"], dep: n > 1 ? [`id=${ids[n-1]},kind=blocked_by`] : [] });

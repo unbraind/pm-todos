@@ -248,6 +248,23 @@ test("todos sync accepts the file option when no positional argument is supplied
   assert.equal((result.result as { imported: number }).imported, 1);
 });
 
+test("native host refuses import and sync flags on unsupported commands before either tracker or source writes", async () => {
+  const content = "- [ ] Scope checks\n";
+  const file = tempFile("flag-scope.md", content);
+  await assert.rejects(
+    harness.runCommand({ command: "todos sync", args: [file], options: { upsert: true }, pmRoot: tracker }),
+    { code: "unknown_option", exitCode: 2, message: /upsert/u },
+  );
+  for (const importer of ["todos", "todos-import"]) {
+    await assert.rejects(
+      harness.runImporter({ importer, args: [file], options: { metadata: true }, pmRoot: tracker }),
+      { code: "unknown_option", exitCode: 2, message: /metadata/u },
+    );
+  }
+  assert.deepEqual(listItems(), []);
+  assert.equal(readFileSync(file, "utf8"), content);
+});
+
 test("todos sync with --dry-run does not write", async () => {
   const file = tempFile("s2.md", "# TODO\n\n- [ ] Task\n");
   const before = readFileSync(file, "utf-8");

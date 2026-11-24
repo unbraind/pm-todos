@@ -25,7 +25,7 @@ async function fixture(t: test.TestContext, sourceRoot = process.cwd()) {
   command(["package", "install", tarball, "--project", "--json"]);
   mkdirSync(join(root, "bin"));
   copyFileSync(process.execPath, join(root, "bin", basename(process.execPath)));
-  const client = new PmClient({ pmRoot, cwd: root, author: "test-agent" });
+  const client = new PmClient({ pmRoot, author: "test-agent" });
   const harness = await createExtensionTestHarness(extension, { capabilities: ["commands", "schema", "importers", "preflight"] });
   /** Create a completed native fidelity source without hand-normalizing SDK state. */
   const source = async (suffix: string, options: PmCreateActionOptions = {}) => {
@@ -313,13 +313,14 @@ test("seed 0x72656375: 500 random import/export/sync sequences retain fields and
         Object.assign(expected, { priority: model.priority, deadline: model.due });
       }
       writeFileSync(file, (crlf ? " \t\r\n" : "\n") + content + (crlf ? "\r\n\r\n" : "\n\n"));
-      const options = { format, upsert: true, "todotxt-mapping": "fidelity", "section-tags": false };
+      const syncOptions = { format, "todotxt-mapping": "fidelity", "section-tags": false };
+      const importOptions = { ...syncOptions, upsert: true };
       await referenceClient.update("fixture-model", expected);
       if (random(3) === 0) {
-        const result = await f.harness.runCommand({ command: "todos sync", args: [file], options, pmRoot: activeRoot });
+        const result = await f.harness.runCommand({ command: "todos sync", args: [file], options: syncOptions, pmRoot: activeRoot });
         assert.equal((result.result as { updated: number }).updated, 1); counts.syncs++;
       } else {
-        const result = await f.harness.runImporter({ importer: random(2) ? "todos" : "todos-import", args: [file], options, pmRoot: activeRoot });
+        const result = await f.harness.runImporter({ importer: random(2) ? "todos" : "todos-import", args: [file], options: importOptions, pmRoot: activeRoot });
         assert.equal((result.result as { updated: number }).updated, 1); counts.imports++;
       }
       await check(`seed 0x72656375 sequence ${sequence} op ${operation} ${format}`);
@@ -339,7 +340,7 @@ test("seed 0x72656375: 500 random import/export/sync sequences retain fields and
       }
       if (outputFormat === "todojson") await referenceClient.update("fixture-model", { tags: "todo" });
       writeFileSync(file, output);
-      const roundTrip = await f.harness.runImporter({ importer: "todos", args: [file], options: { ...options, format: outputFormat === "tasklist" ? "markdown" : outputFormat }, pmRoot: activeRoot });
+      const roundTrip = await f.harness.runImporter({ importer: "todos", args: [file], options: { ...importOptions, format: outputFormat === "tasklist" ? "markdown" : outputFormat }, pmRoot: activeRoot });
       assert.equal((roundTrip.result as { updated: number }).updated, 3);
       await check(`export roundtrip sequence ${sequence} op ${operation} ${outputFormat}`);
       // Disabled recurrence is a no-op even after old-input replays and lossy projections.
