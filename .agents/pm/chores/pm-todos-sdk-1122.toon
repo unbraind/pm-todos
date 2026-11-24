@@ -1,0 +1,31 @@
+id: pm-todos-sdk-1122
+title: Adopt pm-cli 2026.11.24 host-aligned SDK behaviour
+description: Adopt the current first-party toolchain and align native TODO transport tests with the shipped SDK. Companion item pm-cli-website-spus.
+type: Chore
+status: in_progress
+priority: 2
+tags[2]: dependencies,sdk-adoption
+created_at: "2026-11-24T10:56:39.130Z"
+updated_at: "2026-11-24T14:22:36.508Z"
+author: codex-agent
+acceptance_criteria: "Pin the latest first-party toolchain, preserve every native field across the seeded model, keep published dependency bullets, and pass the unchanged package gates."
+comments[1]{created_at,author,text}:
+  "2026-11-24T14:22:34.014Z",codex-agent,"- `500 seeded native import/export/sync sequences preserve hierarchy and every untouched native field through SDK read-back` and `seed 0x72656375: 500 random import/export/sync sequences retain fields and relationships` reused one option object across transports. The former harness accepted cross-command flags. The current host returns `unknown_option` for `upsert` on sync and `metadata` on either importer. The models use each transport's declared options, and the refusal regression checks both the tracker and the input file.\n- `every apply boundary detects competing ordinary writers, including ABA and partial retry dependencies`, `every apply boundary retains source lease and handles competing target creation`, and `stored schedule CAS and read-back revalidate every reschedule boundary` used clients with an explicit cwd inside an active extension scope. The previous host allowed the nested cwd change. The current host returns `invalid_argument_value` with reason `nested_cwd_unavailable` before changing state. The competing SDK clients use the tracker path and retain the stale-revision, lock and CAS assertions. The hierarchy test also asserts the host refusal and restores the actual original title for the ABA case.\n- `pending forward ownership is revalidated inside the selection lease at prepared`, `pending forward ownership is revalidated inside the selection lease at step_applied`, `pending forward ownership is revalidated inside the selection lease at step_recorded`, `every forward transaction boundary rechecks all targets; failures compensate with append-only history`, `compensation refuses to overwrite a peer; every compensation boundary is observable and retry-safe`, and `a skipped foreign step cannot subtract another row's retained write from the failure receipt` hit the same scope rule. Path-bound test clients let each peer read or write reach the intended recovery boundary and preserve every original ownership and history assertion.\n\nThe first full run on the new pins passed 468 of 479 tests, with zero skipped or cancelled. Reverting the fixture inputs reproduced the host refusals. A disposable comparison between 2026.11.14 and 2026.11.24 confirmed the change in undeclared flag handling and nested cwd admission.\n\nFull npm and Bun release checks each passed 480 tests, zero failed, skipped or cancelled. The 10-source coverage report measured 99.27% lines, 93.77% branches and 99.73% functions against unchanged 97%, 93% and 98% thresholds. Both passed the six packed consumer scenarios, canonical-reader acceptance, production audit, typecheck, build, 158 declaration docstrings, changelog verification and release workflow attestation. Linked pm tests passed 62 checks in the repository quick profile, one hierarchy boundary test and eight recurrence and recovery cases. The installed Bun graph matched the exact pins. The existing four changelog entry points and regression from #217 already enforce dependency updates. Regeneration retained all 46 published bullets, and removing any single flag failed the existing test.\n\nThe installed testing declaration still says undeclared keys pass through. A minimal registered command with one declared `--count` flag, called through `runCommand` with `options: { foreignFlag: true }`, returns `unknown_option` with exit 2. The native validation is intentional."
+files[9]{path,scope}:
+  package-lock.json,project
+  package.json,project
+  test/coverage-commands.test.ts,project
+  test/hierarchy-roundtrip-model.test.ts,project
+  test/hierarchy.test.ts,project
+  test/recurrence.test.ts,project
+  test/release-workflow.test.ts,project
+  test/source-recovery.test.ts,project
+  test/source-sessions.test.ts,project
+tests[3]{command,scope,timeout_seconds,provenance{author,created_at,source_kind,source_ref}}:
+  node --test --test-concurrency=2 test/coverage-commands.test.ts test/hierarchy-roundtrip-model.test.ts test/release-workflow.test.ts,project,1200,codex-agent,"2026-11-24T11:10:16.174Z",local_mutation,deps/adopt-pm-cli-host-alignment-1122
+  "node --test --test-concurrency=2 --test-name-pattern=\"every apply boundary\" test/hierarchy.test.ts",project,300,codex-agent,"2026-11-24T11:33:35.385Z",local_mutation,deps/adopt-pm-cli-host-alignment-1122
+  "node --test --test-concurrency=2 --test-name-pattern=\"every apply boundary retains|stored schedule CAS|pending forward ownership|every forward transaction boundary|compensation refuses to overwrite|a skipped foreign step\" test/recurrence.test.ts test/source-recovery.test.ts test/source-sessions.test.ts",project,1200,codex-agent,"2026-11-24T11:37:41.096Z",local_mutation,deps/adopt-pm-cli-host-alignment-1122
+docs[2]{path,scope}:
+  CHANGELOG.md,project
+  README.md,project
+body: ""

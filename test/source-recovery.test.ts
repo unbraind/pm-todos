@@ -20,7 +20,7 @@ async function fixture(t: test.TestContext, count: number) {
     rmSync(root, { recursive: true, force: true });
   });
   await core.init(undefined, {}, { pmRoot, cwd: root, noExtensions: true });
-  const client = new core.PmClient({ pmRoot, cwd: root, author: "selection-test" });
+  const client = new core.PmClient({ pmRoot, author: "selection-test" });
   const statuses = ["recovery-review", "recovery-wait", "recovery-accepted", "recovery-retired"];
   if (count === 3) for (const [index, role] of [["active"], ["blocked"], ["terminal", "terminal_done"], ["terminal", "terminal_canceled"]].entries()) await client.schemaAddStatus(statuses[index], { role });
   const ids: string[] = [];

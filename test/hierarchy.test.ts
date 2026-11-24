@@ -177,13 +177,28 @@ test("every apply boundary detects competing ordinary writers, including ABA and
   for (const [boundary, occurrence] of [["planned", 1], ["before_write", 1], ["locked", 1], ["after_write", 1], ["before_write", 2], ["after_write", 2]] as const) {
     const f = await fixture(t), ids = f.ids.slice(0, 3), exported = await checkout(f.pmRoot, ids);
     const text = markdown(ids, [null, ids[0], ids[1]]);
+    const peer = new core.PmClient({ pmRoot: f.pmRoot, author: "hierarchy-peer" });
+    const originalTitle = (await f.client.get(ids[2])).item.title;
     let injected = false, occurrences = 0;
     const result = await apply(f.pmRoot, exported.session, text, { author: "hierarchy-test", async onBoundary(at) {
       if (at !== boundary || ++occurrences !== occurrence || injected) return; injected = true;
-      await f.client.update(ids[2], { title: "Peer temporary" }); await f.client.update(ids[2], { title: "Row 2" });
+      if (boundary === "planned") {
+        await assert.rejects(f.client.update(ids[2], { title: "Outside the active cwd" }), (error: unknown) => {
+          assert.ok(core.isPmCliExpectedError(error));
+          assert.equal(error.exitCode, 2);
+          assert.equal(error.context.code, "invalid_argument_value");
+          assert.equal(error.context.reason, "nested_cwd_unavailable");
+          assert.equal(error.context.changed, false);
+          return true;
+        });
+      }
+      await peer.update(ids[2], { title: "Peer temporary" });
+      await peer.update(ids[2], { title: originalTitle });
     } });
     assert.ok(injected); assert.equal(result.ok, false, boundary); assert.equal(result.refusals[0].code, "stale_revision");
-    assert.equal((await f.client.get(ids[2])).item.parent, boundary === "after_write" && occurrence === 2 ? ids[1] : undefined);
+    const observed = (await f.client.get(ids[2])).item;
+    assert.equal(observed.title, originalTitle);
+    assert.equal(observed.parent, boundary === "after_write" && occurrence === 2 ? ids[1] : undefined);
     assert.equal(result.applied, boundary === "after_write" ? occurrence : occurrence - 1);
     const before = await state(f.pmRoot, f.ids);
     const retry = await apply(f.pmRoot, exported.session, text, { author: "hierarchy-test" });

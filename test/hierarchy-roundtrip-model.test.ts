@@ -44,6 +44,9 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
     const file = join(root, format, "exchange"), output = join(root, format, "exported");
     const settings = await core.readSettings(pmRoot);
     const inputVersions: { text: string; priority: number; deadline: string }[] = [];
+    const selection = { format, sectionTags: false, status: active, type: "Task", filter: "type=Task" };
+    const importOptions = { ...selection, upsert: true };
+    const syncOptions = { ...selection, metadata: true };
     for (let sequence = 0; sequence < testDepth(100); sequence++) {
       const priority = format === "todojson" ? 2 : random(5), deadline = format === "todojson" ? "2026-12-01" : `2026-12-${String(1 + random(28)).padStart(2, "0")}`;
       const line = `(p${priority}) Stable native row due:${deadline}`;
@@ -67,14 +70,13 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
         assert.equal(repaired.ok, true, JSON.stringify(repaired)); model.metadata.parent = parentId;
       }
       await client.focus(peer.item.id);
-      const options = { format, upsert: true, sectionTags: false, status: active, metadata: true, type: "Task", filter: "type=Task" };
       // Both importer names and sync share the real native write path.
-      if (op % 3 === 0) { await harness.runImporter({ importer: "todos", args: [file], options, pmRoot }); covered.add(`${format}:import`); }
-      else if (op % 3 === 1) { await harness.runImporter({ importer: "todos-import", args: [file], options, pmRoot }); covered.add(`${format}:legacy`); }
-      else { await harness.runCommand({ command: "todos sync", args: [file], options, pmRoot }); covered.add(`${format}:sync`); }
+      if (op % 3 === 0) { await harness.runImporter({ importer: "todos", args: [file], options: importOptions, pmRoot }); covered.add(`${format}:import`); }
+      else if (op % 3 === 1) { await harness.runImporter({ importer: "todos-import", args: [file], options: importOptions, pmRoot }); covered.add(`${format}:legacy`); }
+      else { await harness.runCommand({ command: "todos sync", args: [file], options: syncOptions, pmRoot }); covered.add(`${format}:sync`); }
       if (op % 3 === 2) {
         await harness.runCommand({ command: "todos validate", args: [file], options: { format }, pmRoot, sdk });
-        await harness.runImporter({ importer: "todos", args: [file], options, pmRoot });
+        await harness.runImporter({ importer: "todos", args: [file], options: importOptions, pmRoot });
       }
       assert.notEqual(process.exitCode, 1, "Native import must not silently drop a record");
       const read = await native(pmRoot, id);
@@ -98,7 +100,7 @@ test("500 seeded native import/export/sync sequences preserve hierarchy and ever
       assert.ok(produced.length);
       await harness.runCommand({ command: "todos validate", args: [output], options: { format: outputFormat === "tasklist" ? "markdown" : outputFormat }, pmRoot, sdk });
       // Re-import the producer output and compare every native field again.
-      await harness.runImporter({ importer: "todos", args: [output], options, pmRoot });
+      await harness.runImporter({ importer: "todos", args: [output], options: importOptions, pmRoot });
       const roundtrip = await native(pmRoot, id);
       for (const key of new Set([...Object.keys(read.metadata), ...Object.keys(roundtrip.metadata)])) if (key !== "updated_at") assert.deepEqual((roundtrip.metadata as unknown as Record<string, unknown>)[key], (read.metadata as unknown as Record<string, unknown>)[key], `${format}/${sequence}: producer ${key}`);
       assert.equal(roundtrip.body, model.body);
