@@ -20,7 +20,7 @@ jobs:
       checks: read
       id-token: write
       issues: write
-    uses: unbraind/pm-ops/.github/workflows/daily-release.yml@6fa60e56331d0fd831421f2221d46d038d4a2360 # v2026.11.19
+    uses: unbraind/pm-ops/.github/workflows/daily-release.yml@1d9f9daba721f2cb8bec4aef69ca54402b08350e # v2026.11.22
     with:
       reconcile-only: ${{ (github.event_name == 'schedule' && github.event.schedule ==
         '41 * * * *') || inputs.retire-unpublished == true }}
