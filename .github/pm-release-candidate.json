@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "repository": "unbraind/pm-todos",
-  "baseSha": "44d784a1c13112b9faef4e0f567f380b73038a29",
-  "version": "2026.11.24",
-  "runId": 45619847332,
+  "baseSha": "8ba9e06412d561da836889ea8848035844ef84de",
+  "version": "2026.11.26",
+  "runId": 45822445084,
   "runAttempt": 1,
   "configDigest": "8473bb6708cc7e769b8bad538160052226631f89b6e07f2524414196dc719072"
 }
