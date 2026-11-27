@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Dependencies
+
+- Bump @types/node
+
 ## 2026.11.26 - 2026-11-26
 
 ### Dependencies
