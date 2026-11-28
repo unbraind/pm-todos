@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 2026.11.28 - 2026-11-28
 
 ### Dependencies
 
-- Bump @types/node
+- Bump @types/node from 26.6.6 to 26.6.7 in the dependencies group ([#225](https://github.com/unbraind/pm-todos/pull/225))
 
 ## 2026.11.26 - 2026-11-26
 
